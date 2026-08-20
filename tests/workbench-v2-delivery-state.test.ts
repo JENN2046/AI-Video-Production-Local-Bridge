@@ -17,6 +17,7 @@ import {
   completeWorkbenchAssemblyFixture,
   completeWorkbenchExportFixture,
   createAcceptedAssemblyClipFixture,
+  ensureAcceptedAssemblyClipsFixture,
   failWorkbenchAssemblyFixture,
   insertWorkbenchExportFixture,
   queueWorkbenchAssemblyFixture
@@ -682,7 +683,7 @@ test("delivery evidence pointers change only through legal assembly, review, rew
     const now = "2026-08-14T01:00:00.000Z";
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
       .run(projectId, projectJson(projectId, "video_review"));
-    createAcceptedAssemblyClipFixture(db, { project_id: projectId, label: "pointer" });
+    const pointerClip = createAcceptedAssemblyClipFixture(db, { project_id: projectId, label: "pointer" });
     insertFinalArtifact(db, projectId, "artifact_pointer_a");
     insertFinalArtifact(db, projectId, "artifact_pointer_b");
 
@@ -712,8 +713,19 @@ test("delivery evidence pointers change only through legal assembly, review, rew
     db.prepare(`INSERT INTO workbench_delivery_events
       (event_id, project_id, event_type, from_state, to_state, artifact_id, input_fingerprint, reason_code, data_json, created_at)
       VALUES ('event_pointer_a_regenerate', ?, 'final_review_regenerate_shots', 'approved', 'revision_requested',
-        'artifact_pointer_a', ?, 'FINAL_SHOT_REGENERATION_REQUESTED', '{}', ?)`)
-      .run(projectId, pointerAFingerprint, now);
+        'artifact_pointer_a', ?, 'FINAL_SHOT_REGENERATION_REQUESTED', ?, ?)`)
+      .run(projectId, pointerAFingerprint, JSON.stringify({ shot_ids: [pointerClip.shot_id] }), now);
+    const reworkShot = getShot(db, pointerClip.shot_id);
+    assert.equal(reworkShot?.status, "revision_needed");
+    assert.equal(reworkShot?.review.approval_status, "revision_needed");
+    assert.equal(reworkShot?.accepted_clip_artifact_id, "");
+    assert.equal(reworkShot?.clip_versions.find((version) => version.artifact_id === pointerClip.artifact_id)?.review_status,
+      "rejected");
+    ensureAcceptedAssemblyClipsFixture(db, projectId);
+    const replacementClipId = getShot(db, pointerClip.shot_id)?.accepted_clip_artifact_id;
+    assert.ok(replacementClipId);
+    const pointerBInputFingerprint = workbenchAssemblyInputFingerprint(db, projectId, [replacementClipId]);
+    assert.ok(pointerBInputFingerprint);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, projectId);
     completeWorkbenchAssemblyFixture(db, {
@@ -721,7 +733,8 @@ test("delivery evidence pointers change only through legal assembly, review, rew
       artifact_id: "artifact_pointer_b",
       job_id: "job_pointer_b_assembly",
       event_id: "event_pointer_b_assembly",
-      created_at: now
+      created_at: now,
+      input_fingerprint: pointerBInputFingerprint
     });
     const pointerBFingerprint = (db.prepare(`SELECT assembly_input_fingerprint FROM workbench_delivery_state
       WHERE project_id = ?`).get(projectId) as { assembly_input_fingerprint: string }).assembly_input_fingerprint;
@@ -1092,10 +1105,26 @@ test("final review events bind to the current final evidence and target delivery
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'revision_requested',
       updated_at = ? WHERE project_id = ?`).run(now, projectId),
     /WORKBENCH_DELIVERY_STATE_TRANSITION_INVALID/);
-    assert.doesNotThrow(() => insertReviewEvent.run("event_review_regenerate", projectId, null,
-      "final_review_regenerate_shots", "final_review", "revision_requested", "artifact_review_other", null, fingerprint, now));
+    const reviewShot = (db.prepare("SELECT shot_id FROM shots WHERE project_id = ? ORDER BY shot_id LIMIT 1")
+      .get(projectId) as { shot_id: string }).shot_id;
+    assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, input_fingerprint,
+        reason_code, data_json, created_at)
+      VALUES ('event_review_regenerate_empty', ?, 'final_review_regenerate_shots', 'final_review',
+        'revision_requested', 'artifact_review_other', ?, 'FINAL_SHOT_REGENERATION_REQUESTED', '{}', ?)`)
+      .run(projectId, fingerprint, now), /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
+    assert.doesNotThrow(() => db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, from_state, to_state, artifact_id, input_fingerprint,
+        reason_code, data_json, created_at)
+      VALUES ('event_review_regenerate', ?, 'final_review_regenerate_shots', 'final_review',
+        'revision_requested', 'artifact_review_other', ?, 'FINAL_SHOT_REGENERATION_REQUESTED', ?, ?)`)
+      .run(projectId, fingerprint, JSON.stringify({ shot_ids: [reviewShot] }), now));
     assert.equal((db.prepare("SELECT workflow_state FROM workbench_delivery_state WHERE project_id = ?")
       .get(projectId) as { workflow_state: string }).workflow_state, "revision_requested");
+    const targetedShot = getShot(db, reviewShot);
+    assert.equal(targetedShot?.status, "revision_needed");
+    assert.equal(targetedShot?.review.approval_status, "revision_needed");
+    assert.equal(targetedShot?.accepted_clip_artifact_id, "");
   } finally {
     db.close();
   }

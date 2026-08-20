@@ -268,7 +268,7 @@ test("M0-F assembly succeeds after all shots are approved", async () => {
   }
 });
 
-test("M0-F reassembly rejects a retained clip after targeted final-review regeneration", async () => {
+test("M0-F reassembly rejects a cleared clip after targeted final-review regeneration", async () => {
   const db = openM0Database();
   try {
     const { project, storyboard, generation } = await setupGeneratedProject(db);
@@ -306,15 +306,13 @@ test("M0-F reassembly rejects a retained clip after targeted final-review regene
         'revision_requested', ?, ?, 'FINAL_SHOT_REGENERATION_REQUESTED', ?, ?)`)
       .run(project.project_id, first.final_video_artifact_id, delivery.assembly_input_fingerprint,
         JSON.stringify({ shot_ids: [targetShot.shot_id] }), "2026-08-18T08:00:00.000Z");
-    const rejected = markShotClipReview({
-      shot_id: targetShot.shot_id,
-      artifact_id: targetShot.accepted_clip_artifact_id,
-      decision: "revision_needed",
-      rejection_reasons: ["targeted final review regeneration"]
-    }, db);
-    assert.equal(rejected.ok, true);
     db.exec("COMMIT");
-    assert.equal(getShot(db, targetShot.shot_id)?.accepted_clip_artifact_id, targetShot.accepted_clip_artifact_id);
+    const reworkShot = getShot(db, targetShot.shot_id);
+    assert.equal(reworkShot?.status, "revision_needed");
+    assert.equal(reworkShot?.review.approval_status, "revision_needed");
+    assert.equal(reworkShot?.accepted_clip_artifact_id, "");
+    assert.equal(reworkShot?.clip_versions.find((version) => version.artifact_id === targetShot.accepted_clip_artifact_id)
+      ?.review_status, "rejected");
 
     const reassembled = assembleFinalVideo({
       project_id: project.project_id,
@@ -323,7 +321,7 @@ test("M0-F reassembly rejects a retained clip after targeted final-review regene
     assert.equal(reassembled.ok, false);
     if (!reassembled.ok) {
       assert.equal(reassembled.error.code, "FINAL_ASSEMBLY_NOT_READY");
-      assert.equal(reassembled.blocking_reasons?.some((reason) => reason.includes("SHOT_ACCEPTED_CLIP_NOT_APPROVED")), true);
+      assert.equal(reassembled.blocking_reasons?.some((reason) => reason.includes("has no accepted clip")), true);
     }
     assert.equal((db.prepare("SELECT workflow_state FROM workbench_delivery_state WHERE project_id = ?")
       .get(project.project_id) as { workflow_state: string }).workflow_state, "revision_requested");

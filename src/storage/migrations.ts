@@ -1689,6 +1689,29 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
             AND d.approved_artifact_id IS NULL AND d.latest_export_id IS NULL)
         )
     ))
+    OR (NEW.event_type = 'final_review_regenerate_shots' AND (
+      json_type(NEW.data_json, '$.shot_ids') IS NOT 'array'
+      OR json_array_length(NEW.data_json, '$.shot_ids') < 1
+      OR (SELECT COUNT(DISTINCT CAST(target.value AS TEXT))
+          FROM json_each(NEW.data_json, '$.shot_ids') target
+          WHERE target.type = 'text' AND CAST(target.value AS TEXT) <> '')
+        <> json_array_length(NEW.data_json, '$.shot_ids')
+      OR EXISTS (
+        SELECT 1 FROM json_each(NEW.data_json, '$.shot_ids') target
+        LEFT JOIN shots shot ON shot.shot_id = CAST(target.value AS TEXT)
+          AND shot.project_id = NEW.project_id
+        WHERE target.type <> 'text' OR CAST(target.value AS TEXT) = '' OR shot.shot_id IS NULL
+          OR COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') = ''
+          OR COALESCE(json_extract(shot.data_json, '$.status'), '') <> 'approved'
+          OR COALESCE(json_extract(shot.data_json, '$.review.approval_status'), '') <> 'approved'
+          OR NOT EXISTS (
+            SELECT 1 FROM json_each(shot.data_json, '$.clip_versions') clip_version
+            WHERE json_extract(clip_version.value, '$.artifact_id')
+                IS json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+              AND json_extract(clip_version.value, '$.review_status') = 'approved'
+          )
+      )
+    ))
     OR (NEW.event_type = 'closeout' AND (
       EXISTS (
         SELECT 1 FROM workbench_delivery_events existing
@@ -1847,6 +1870,34 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
           AND approved_artifact_id IS NULL AND latest_export_id IS NULL
           AND assembly_input_fingerprint IS NULL));
     SELECT CASE WHEN changes() <> 1
+      THEN RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_BINDING_INVALID') END;
+    UPDATE shots
+    SET data_json = json_set(
+        data_json,
+        '$.status', 'revision_needed',
+        '$.review.approval_status', 'revision_needed',
+        '$.accepted_clip_artifact_id', '',
+        '$.clip_versions', (
+          SELECT json_group_array(json(
+            CASE
+              WHEN json_extract(clip_version.value, '$.artifact_id')
+                  IS json_extract(shots.data_json, '$.accepted_clip_artifact_id')
+                THEN json_set(clip_version.value, '$.review_status', 'rejected')
+              ELSE clip_version.value
+            END
+          ))
+          FROM json_each(shots.data_json, '$.clip_versions') clip_version
+        )
+      ),
+      updated_at = NEW.created_at
+    WHERE NEW.event_type = 'final_review_regenerate_shots'
+      AND project_id = NEW.project_id
+      AND shot_id IN (
+        SELECT CAST(target.value AS TEXT)
+        FROM json_each(NEW.data_json, '$.shot_ids') target
+      );
+    SELECT CASE WHEN NEW.event_type = 'final_review_regenerate_shots'
+        AND changes() <> json_array_length(NEW.data_json, '$.shot_ids')
       THEN RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_BINDING_INVALID') END;
   END;
   CREATE TRIGGER workbench_delivery_closeout_apply AFTER INSERT ON workbench_delivery_events

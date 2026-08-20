@@ -1268,6 +1268,57 @@ test("database check detects first-review missing, approved missing, duplicate, 
   }
 });
 
+test("database check detects malformed or non-atomic targeted SHOT rework evidence", () => {
+  const root = tempRoot();
+  try {
+    for (const scenario of ["malformed", "shot_drift"] as const) {
+      const sqlitePath = join(root, `targeted-rework-${scenario}.sqlite`);
+      migrateDatabase(sqlitePath);
+      const db = openM0Database(sqlitePath);
+      const now = "2026-08-15T10:10:00.000Z";
+      const fixture = createApprovedDeliveryFixture(db, `targeted_${scenario}`, now);
+      const shotId = (db.prepare("SELECT shot_id FROM shots WHERE project_id = ? ORDER BY shot_id LIMIT 1")
+        .get(fixture.project_id) as { shot_id: string }).shot_id;
+      const triggerSql = (name: string) => (db.prepare(`SELECT sql FROM sqlite_master
+        WHERE type = 'trigger' AND name = ?`).get(name) as { sql: string }).sql;
+      const applySql = triggerSql("workbench_delivery_rework_apply");
+      db.exec("DROP TRIGGER workbench_delivery_rework_apply");
+      if (scenario === "malformed") {
+        const validateSql = triggerSql("workbench_delivery_events_validate_insert");
+        db.exec("DROP TRIGGER workbench_delivery_events_validate_insert");
+        db.prepare(`INSERT INTO workbench_delivery_events
+          (event_id, project_id, event_type, from_state, to_state, artifact_id,
+            input_fingerprint, reason_code, data_json, created_at)
+          VALUES ('event_targeted_rework_malformed', ?, 'final_review_regenerate_shots', 'approved',
+            'revision_requested', ?, ?, 'FINAL_SHOT_REGENERATION_REQUESTED', '{}', ?)`)
+          .run(fixture.project_id, fixture.artifact_id, fixture.fingerprint, now);
+        db.exec(validateSql);
+      } else {
+        db.prepare(`INSERT INTO workbench_delivery_events
+          (event_id, project_id, event_type, from_state, to_state, artifact_id,
+            input_fingerprint, reason_code, data_json, created_at)
+          VALUES ('event_targeted_rework_shot_drift', ?, 'final_review_regenerate_shots', 'approved',
+            'revision_requested', ?, ?, 'FINAL_SHOT_REGENERATION_REQUESTED', ?, ?)`)
+          .run(fixture.project_id, fixture.artifact_id, fixture.fingerprint,
+            JSON.stringify({ shot_ids: [shotId] }), now);
+        db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'revision_requested',
+          approved_artifact_id = NULL, latest_export_id = NULL, latest_exported_at = NULL,
+          closed_at = NULL, updated_at = ? WHERE project_id = ?`).run(now, fixture.project_id);
+      }
+      db.exec(applySql);
+      assert.doesNotThrow(() => assertSchemaCurrent(db));
+      db.close();
+
+      const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
+      assert.equal(checked.schema_current, true);
+      assert.ok(checked.orphan_rows >= 1, JSON.stringify(checked));
+      assert.equal(checked.result, "FAIL");
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("database check detects a legacy final pointer downgraded without reset evidence", () => {
   const root = tempRoot();
   let db: ReturnType<typeof openM0Database> | null = null;

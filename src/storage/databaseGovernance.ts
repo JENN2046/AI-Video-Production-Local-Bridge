@@ -475,6 +475,38 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
           AND event.from_state = 'exported' AND event.to_state = 'closed')
       )`,
       `SELECT COUNT(*) AS count FROM workbench_delivery_events event
+        WHERE event.event_type = 'final_review_regenerate_shots' AND (
+          json_type(event.data_json, '$.shot_ids') IS NOT 'array'
+          OR json_array_length(event.data_json, '$.shot_ids') < 1
+          OR (SELECT COUNT(DISTINCT CAST(target.value AS TEXT))
+              FROM json_each(event.data_json, '$.shot_ids') target
+              WHERE target.type = 'text' AND CAST(target.value AS TEXT) <> '')
+            <> json_array_length(event.data_json, '$.shot_ids')
+          OR EXISTS (
+            SELECT 1 FROM json_each(event.data_json, '$.shot_ids') target
+            LEFT JOIN shots shot ON shot.shot_id = CAST(target.value AS TEXT)
+              AND shot.project_id = event.project_id
+            WHERE target.type <> 'text' OR CAST(target.value AS TEXT) = '' OR shot.shot_id IS NULL
+          )
+        )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_state state
+        WHERE state.workflow_state = 'revision_requested' AND NOT EXISTS (
+          SELECT 1 FROM workbench_delivery_events event
+          JOIN json_each(event.data_json, '$.shot_ids') target
+          JOIN shots shot ON shot.shot_id = CAST(target.value AS TEXT)
+            AND shot.project_id = event.project_id
+          WHERE event.project_id = state.project_id
+            AND event.event_type = 'final_review_regenerate_shots'
+            AND event.to_state = 'revision_requested'
+            AND json_extract(shot.data_json, '$.status') = 'revision_needed'
+            AND json_extract(shot.data_json, '$.review.approval_status') = 'revision_needed'
+            AND COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') = ''
+            AND EXISTS (
+              SELECT 1 FROM json_each(shot.data_json, '$.clip_versions') clip_version
+              WHERE json_extract(clip_version.value, '$.review_status') = 'rejected'
+            )
+        )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_events event
         LEFT JOIN media_artifacts artifact ON artifact.artifact_id = event.artifact_id
           AND artifact.project_id = event.project_id AND COALESCE(artifact.shot_id, '') = ''
           AND artifact.role = 'final_video' AND artifact.artifact_type = 'video'

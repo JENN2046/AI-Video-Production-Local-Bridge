@@ -421,8 +421,9 @@ test("readonly snapshot accepts persisted not-ready and assembly summaries when 
         (event_id, project_id, event_type, from_state, to_state, artifact_id, input_fingerprint,
           reason_code, data_json, created_at)
         VALUES ('event_revision_projection_request', ?, 'final_review_regenerate_shots', 'final_review',
-          'revision_requested', ?, ?, 'FINAL_SHOT_REGENERATION_REQUESTED', '{}', ?)`)
-        .run(fixture.project_id, retainedFinalArtifactId, assemblyFingerprint, "2026-08-14T00:03:00.000Z");
+          'revision_requested', ?, ?, 'FINAL_SHOT_REGENERATION_REQUESTED', ?, ?)`)
+        .run(fixture.project_id, retainedFinalArtifactId, assemblyFingerprint,
+          JSON.stringify({ shot_ids: [fixture.shot_id] }), "2026-08-14T00:03:00.000Z");
     } finally {
       revisionDb.close();
     }
