@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { lstatSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import test from "node:test";
@@ -101,6 +102,20 @@ function setProductionDeliveryProjectionFixture(
   context.db.prepare(`UPDATE projects SET data_json = ?, updated_at = CURRENT_TIMESTAMP
     WHERE project_id = ?`).run(JSON.stringify(project), project.project_id);
   context.production = project;
+}
+
+function setProductionDeliveryProjectionDriftFixture(
+  context: TestContext,
+  input: { status?: Project["status"]; final_artifact_id?: string }
+): void {
+  const guard = (context.db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
+    AND name = 'workbench_delivery_project_content_guard'`).get() as { sql: string }).sql;
+  context.db.exec("DROP TRIGGER workbench_delivery_project_content_guard");
+  try {
+    setProductionDeliveryProjectionFixture(context, input);
+  } finally {
+    context.db.exec(guard);
+  }
 }
 
 function closeProductionProject(context: TestContext): void {
@@ -383,13 +398,39 @@ test("closed delivery stops claiming delivered when the current Export file drif
       const summary = initialWorkbench.data.summary as WorkbenchProjectSummary | null;
       assert.equal(summary?.delivery_state, "delivered");
     }
-    const currentExport = context.db.prepare(`SELECT export.relative_path
+    const currentExport = context.db.prepare(`SELECT export.export_id, export.project_id, export.artifact_id,
+        export.relative_path, export.sha256, export.size_bytes, export.file_identity_sha256
       FROM workbench_delivery_state state
       JOIN workbench_exports export ON export.export_id = state.latest_export_id
-      WHERE state.project_id = ?`).get(context.production.project_id) as { relative_path: string };
+      WHERE state.project_id = ?`).get(context.production.project_id) as {
+        export_id: string;
+        project_id: string;
+        artifact_id: string;
+        relative_path: string;
+        sha256: string;
+        size_bytes: number;
+        file_identity_sha256: string;
+      };
     exportPath = join(paths.exportsRoot, context.production.project_id, basename(currentExport.relative_path));
 
-    writeFileSync(exportPath, Buffer.from("tampered export", "utf8"));
+    const tamperedBytes = Buffer.from(readFileSync(exportPath));
+    tamperedBytes[0] = tamperedBytes[0] === 0 ? 1 : tamperedBytes[0]! ^ 0xff;
+    writeFileSync(exportPath, tamperedBytes);
+    const stat = lstatSync(exportPath);
+    currentExport.file_identity_sha256 = createHash("sha256").update(JSON.stringify({
+      dev: String(stat.dev),
+      ino: String(stat.ino),
+      size: stat.size,
+      mtime_ms: String(stat.mtimeMs),
+      ctime_ms: String(stat.ctimeMs)
+    })).digest("hex");
+    const immutableExportGuard = (context.db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
+      AND name = 'workbench_exports_no_update'`).get() as { sql: string }).sql;
+    context.db.exec("DROP TRIGGER workbench_exports_no_update");
+    context.db.prepare("UPDATE workbench_exports SET file_identity_sha256 = ? WHERE export_id = ?")
+      .run(currentExport.file_identity_sha256, currentExport.export_id);
+    context.db.exec(immutableExportGuard);
+    assert.equal(verifyWorkbenchExportFileIdentity(currentExport).ok, true);
     const drifted = getProductionDeliveryStatus({ project_id: context.production.project_id }, context.db);
     assert.equal(drifted.ok, true);
     if (drifted.ok) assert.equal(drifted.data.delivered, false);
@@ -475,7 +516,7 @@ test("dashboard pending delivery follows the persisted closed state instead of l
     assert.equal(beforeClose.totals.pending_delivery, 1);
 
     closeProductionProject(context);
-    setProductionDeliveryProjectionFixture(context, { status: "video_review" });
+    setProductionDeliveryProjectionDriftFixture(context, { status: "video_review" });
     const afterClose = getWorkbenchDashboard(context.db) as { totals: { pending_delivery: number } };
     assert.equal(afterClose.totals.pending_delivery, 0);
   } finally {

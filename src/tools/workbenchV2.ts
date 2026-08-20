@@ -369,12 +369,14 @@ export function getWorkbenchProjectSummary(
   options: { verify_export_integrity?: boolean } = {}
 ): WorkbenchProjectSummary | null {
   const deliveryState = getWorkbenchDeliveryState(db, projectId);
+  let fullExportIntegrityFailed = false;
   if (options.verify_export_integrity !== false && deliveryState?.workflow_state === "closed") {
     const currentExport = getLatestWorkbenchExport(db, projectId);
-    if (currentExport) verifyWorkbenchExportFile(currentExport);
+    if (currentExport) fullExportIntegrityFailed = !verifyWorkbenchExportFile(currentExport).ok;
   }
   const result = listWorkbenchProjects({ scope: "all", lifecycle: "all", classification: "all", query: projectId, limit: 10 }, db);
-  return result.items.find((item) => item.project.project_id === projectId) ?? null;
+  const summary = result.items.find((item) => item.project.project_id === projectId) ?? null;
+  return fullExportIntegrityFailed ? withExportIntegrityBlocked(summary) : summary;
 }
 
 type SummaryAssemblyReadiness = "not_applicable" | "unverified" | "ready" | "invalid";
@@ -404,6 +406,24 @@ const BLOCKER_LABELS: Record<string, string> = {
 
 function blockerLabel(code: string): string {
   return BLOCKER_LABELS[code] ?? code;
+}
+
+function withExportIntegrityBlocked(summary: WorkbenchProjectSummary | null): WorkbenchProjectSummary | null {
+  if (!summary || summary.blocker_codes.includes("EXPORT_INTEGRITY_FAILED")) return summary;
+  const derived: WorkbenchNextAction["derived"] = {
+    label: "导出完整性异常",
+    reason_code: "export_integrity_failed",
+    priority: "urgent"
+  };
+  return {
+    ...summary,
+    blocker_count: summary.blocker_count + 1,
+    blocker_codes: [...summary.blocker_codes, "EXPORT_INTEGRITY_FAILED"],
+    blocker_reason: [summary.blocker_reason, `1 个${blockerLabel("EXPORT_INTEGRITY_FAILED")}`].filter(Boolean).join("、"),
+    delivery_state: "final_review",
+    next_action: { source: "derived", ...derived, expires_at: null, derived },
+    risk: "blocked"
+  };
 }
 
 function hasAcceptedClipIntegrityBlocker(summary: ProjectOperationalSummary): boolean {
