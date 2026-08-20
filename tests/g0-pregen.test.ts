@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -15,6 +15,7 @@ import {
   validateG0StoryboardPackage,
   type G0StoryboardPackageInput
 } from "../src/index.js";
+import { saveG0ArtifactInManagedTransaction } from "../src/tools/g0Pregen.js";
 import {
   approveWorkbenchDeliveryFixture,
   completeWorkbenchAssemblyFixture,
@@ -89,6 +90,42 @@ test("G0 persists creative artifacts under the app project boundary", () => {
 
     const storedProject = getProject(db, project.project_id);
     assert.equal(storedProject?.brief.objective, "15s vertical commercial");
+
+    const briefPath = `${g0ProjectRoot(project.project_id)}/creative_brief.json`;
+    const briefBeforeFailure = readFileSync(briefPath, "utf8");
+    const projectBeforeFailure = getProject(db, project.project_id);
+    db.exec(`CREATE TRIGGER fail_g0_project_update BEFORE UPDATE OF data_json ON projects
+      WHEN OLD.project_id = '${project.project_id}'
+      BEGIN SELECT RAISE(ABORT, 'SYNTHETIC_G0_PROJECT_FAILURE'); END;`);
+    const failed = saveG0Artifact({
+      project_id: project.project_id,
+      kind: "creative_brief",
+      payload: { product: "must not replace committed bytes" }
+    }, db);
+    assert.equal(failed.ok ? null : failed.error.code, "G0_ARTIFACT_SAVE_FAILED");
+    assert.equal(readFileSync(briefPath, "utf8"), briefBeforeFailure);
+    assert.deepEqual(getProject(db, project.project_id), projectBeforeFailure);
+    assert.deepEqual(readdirSync(g0ProjectRoot(project.project_id)).filter((name) => name.endsWith(".part") || name.endsWith(".backup")), []);
+    db.exec("DROP TRIGGER fail_g0_project_update");
+
+    const managedEffects: Array<{ commit(): void; rollback(): void }> = [];
+    db.exec("BEGIN IMMEDIATE");
+    const managed = saveG0ArtifactInManagedTransaction({
+      project_id: project.project_id,
+      kind: "creative_brief",
+      payload: { product: "managed outer transaction" }
+    }, db, {
+      register(effect) {
+        managedEffects.push(effect);
+      }
+    });
+    assert.equal(managed.ok, true);
+    assert.notEqual(readFileSync(briefPath, "utf8"), briefBeforeFailure);
+    db.exec("ROLLBACK");
+    for (const effect of managedEffects.reverse()) effect.rollback();
+    assert.equal(readFileSync(briefPath, "utf8"), briefBeforeFailure);
+    assert.deepEqual(getProject(db, project.project_id), projectBeforeFailure);
+    assert.deepEqual(readdirSync(g0ProjectRoot(project.project_id)).filter((name) => name.endsWith(".part") || name.endsWith(".backup")), []);
   } finally {
     db.close();
   }

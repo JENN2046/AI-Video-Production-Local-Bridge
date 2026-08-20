@@ -329,6 +329,24 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       assert.throws(() => saveProject(db, project), new RegExp(expectedCode));
       assert.deepEqual(db.prepare("SELECT data_json, updated_at FROM projects WHERE project_id = 'project_delivery'").get(), before);
     };
+    const assertDatabaseContentMutationBlocked = (): void => {
+      const projectBefore = db.prepare("SELECT data_json, updated_at FROM projects WHERE project_id = 'project_delivery'").get();
+      const shotBefore = db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = 'shot_delivery'").get();
+      assert.throws(() => db.prepare(`UPDATE projects SET data_json = json_set(data_json,
+        '$.brief.database_bypass', 1), updated_at = CURRENT_TIMESTAMP
+        WHERE project_id = 'project_delivery'`).run(), /WORKBENCH_DELIVERY_PROJECT_CONTENT_FROZEN/);
+      assert.throws(() => db.prepare(`UPDATE shots SET data_json = json_set(data_json,
+        '$.video_prompt', 'database bypass'), updated_at = CURRENT_TIMESTAMP
+        WHERE shot_id = 'shot_delivery'`).run(), /WORKBENCH_DELIVERY_SHOT_CONTENT_FROZEN/);
+      assert.throws(() => db.prepare(`INSERT INTO shots (shot_id, project_id, data_json)
+        VALUES ('shot_delivery_bypass', 'project_delivery',
+          '{"shot_id":"shot_delivery_bypass","project_id":"project_delivery"}')`).run(),
+      /WORKBENCH_DELIVERY_SHOT_CONTENT_FROZEN/);
+      assert.throws(() => db.prepare("DELETE FROM shots WHERE shot_id = 'shot_delivery'").run(),
+        /WORKBENCH_DELIVERY_SHOT_CONTENT_FROZEN/);
+      assert.deepEqual(db.prepare("SELECT data_json, updated_at FROM projects WHERE project_id = 'project_delivery'").get(), projectBefore);
+      assert.deepEqual(db.prepare("SELECT data_json, updated_at FROM shots WHERE shot_id = 'shot_delivery'").get(), shotBefore);
+    };
     const assertTitleUpdatePreservesDeliveryEvidence = (title: string): void => {
       const before = {
         state: db.prepare("SELECT * FROM workbench_delivery_state WHERE project_id = 'project_delivery'").get(),
@@ -389,6 +407,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       active_assembly_job_id = 'job_assembly', assembly_input_fingerprint = ?, updated_at = ?
       WHERE project_id = 'project_delivery'`).run(assemblyFingerprint, now);
     db.exec("COMMIT");
+    assertDatabaseContentMutationBlocked();
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
       VALUES ('job_assembly_conflict', 'project_delivery', 'assembly', 'queued', ?,
@@ -446,6 +465,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
       event_id: "event_assembly_current",
       created_at: now
     });
+    assertDatabaseContentMutationBlocked();
     assertShotMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden final review rewrite");
     assertProjectMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden final review project rewrite");
     const frozenFingerprintState = db.prepare(`SELECT workflow_state, current_final_artifact_id,
@@ -481,6 +501,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
     assert.throws(() => db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'approved', approved_artifact_id = 'artifact_delivery', updated_at = ? WHERE project_id = 'project_delivery'")
       .run(now), /FOREIGN KEY constraint failed/);
     acceptFinalReview(db, "project_delivery", "event_final_review_accepted_delivery", now);
+    assertDatabaseContentMutationBlocked();
     assertTitleUpdatePreservesDeliveryEvidence("approved title");
     assertShotMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden approved rewrite");
     assertProjectMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden approved project rewrite");
@@ -532,6 +553,7 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
     assert.doesNotThrow(() => insertSucceededEvent.run("event_export_succeeded", "job_export_delivery",
       "export_succeeded", "artifact_delivery", "export_delivery", now));
     db.exec("COMMIT");
+    assertDatabaseContentMutationBlocked();
     assertTitleUpdatePreservesDeliveryEvidence("exported title");
     assertShotMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden exported rewrite");
     assertProjectMutationBlocked("DELIVERY_REWORK_REQUIRED", "forbidden exported project rewrite");
@@ -577,6 +599,10 @@ test("delivery tables enforce one active job, legal transitions, append-only evi
     assert.deepEqual({ ...(db.prepare(`SELECT workflow_state, closed_at FROM workbench_delivery_state
       WHERE project_id = 'project_delivery'`).get() as Record<string, unknown>) },
     { workflow_state: "closed", closed_at: now });
+    assertDatabaseContentMutationBlocked();
+    assert.throws(() => db.prepare(`UPDATE projects SET data_json = json_set(data_json,
+      '$.title', 'closed database bypass') WHERE project_id = 'project_delivery'`).run(),
+    /WORKBENCH_DELIVERY_PROJECT_CONTENT_FROZEN/);
     assert.throws(() => insertCloseout.run("event_closeout_duplicate", "artifact_delivery", "export_delivery", "2026-08-13T00:01:00.000Z"),
       /WORKBENCH_DELIVERY_EVENT_BINDING_INVALID/);
     const writable = assertWorkbenchProjectWritable(db, "project_delivery");

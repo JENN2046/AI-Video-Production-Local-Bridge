@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { assertInsideWorkspace, paths } from "../paths.js";
@@ -80,6 +81,15 @@ export type G0SaveResult =
   | { ok: true; saved: G0SavedArtifact }
   | { ok: false; error: ToolError };
 
+export interface G0ManagedFileEffect {
+  commit(): void;
+  rollback(): void;
+}
+
+export interface G0ManagedTransactionLifecycle {
+  register(effect: G0ManagedFileEffect): void;
+}
+
 export type G0ImportResult =
   | {
       ok: true;
@@ -117,46 +127,113 @@ function projectOrError(projectId: string, db: M0Database): Project | ToolError 
   return project;
 }
 
+function persistG0Artifact(
+  input: { project_id: string; kind: G0ArtifactKind; payload: unknown },
+  db: M0Database,
+  lifecycle?: G0ManagedTransactionLifecycle
+): G0SaveResult {
+  const filename = G0_ARTIFACT_FILENAMES[input.kind];
+  if (!filename) return { ok: false, error: { code: "G0_UNSUPPORTED_ARTIFACT_KIND", message: `Unsupported G0 artifact kind: ${input.kind}` } };
+  const ownsTransaction = !(db as unknown as { isTransaction?: boolean }).isTransaction;
+  if (!ownsTransaction && !lifecycle) {
+    return { ok: false, error: { code: "G0_TRANSACTION_UNSAFE", message: "G0 artifacts require a top-level atomic save." } };
+  }
+
+  let target = "";
+  let temporary = "";
+  let backup = "";
+  let targetPlaced = false;
+  let failure: ToolError | null = null;
+  const savedAt = new Date().toISOString();
+  const rollbackFile = (): void => {
+    if (targetPlaced && existsSync(target)) rmSync(target, { force: true });
+    if (backup && existsSync(backup)) renameSync(backup, target);
+    if (temporary && existsSync(temporary)) rmSync(temporary, { force: true });
+    targetPlaced = false;
+  };
+  const commitFile = (): void => {
+    try {
+      if (existsSync(backup)) rmSync(backup, { force: true });
+    } catch { /* the committed target remains authoritative; stale backup cleanup is recoverable */ }
+  };
+  try {
+    if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
+    const writable = assertWorkbenchContentMutationAllowed(db, input.project_id);
+    if (!writable.ok) {
+      failure = writable.error;
+      throw new Error(writable.error.code);
+    }
+    const project = projectOrError(input.project_id, db);
+    if ("code" in project) {
+      failure = project;
+      throw new Error(project.code);
+    }
+
+    const root = ensureG0ProjectRoot(input.project_id);
+    target = assertInsideWorkspace(join(root, filename), root);
+    const nonce = randomUUID().replaceAll("-", "");
+    temporary = assertInsideWorkspace(join(root, `.${filename}.${nonce}.part`), root);
+    backup = assertInsideWorkspace(join(root, `.${filename}.${nonce}.backup`), root);
+    const envelope: G0SavedArtifactEnvelope = {
+      project_id: input.project_id,
+      kind: input.kind,
+      saved_at: savedAt,
+      payload: input.payload
+    };
+    writeFileSync(temporary, `${JSON.stringify(envelope, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+
+    if (input.kind === "creative_brief" && input.payload && typeof input.payload === "object" && !Array.isArray(input.payload)) {
+      project.brief = input.payload as Record<string, unknown>;
+      saveProject(db, project);
+    }
+    const finalBoundary = assertWorkbenchContentMutationAllowed(db, input.project_id);
+    if (!finalBoundary.ok) {
+      failure = finalBoundary.error;
+      throw new Error(finalBoundary.error.code);
+    }
+
+    if (existsSync(target)) renameSync(target, backup);
+    renameSync(temporary, target);
+    targetPlaced = true;
+    if (ownsTransaction) {
+      db.exec("COMMIT");
+      commitFile();
+    } else {
+      lifecycle?.register({ commit: commitFile, rollback: rollbackFile });
+    }
+    return {
+      ok: true,
+      saved: { project_id: input.project_id, kind: input.kind, filename, path: target, saved_at: savedAt }
+    };
+  } catch {
+    try {
+      rollbackFile();
+    } finally {
+      if (ownsTransaction && (db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+    }
+    return {
+      ok: false,
+      error: failure ?? { code: "G0_ARTIFACT_SAVE_FAILED", message: "G0 artifact and project changes were not committed." }
+    };
+  }
+}
+
 export function saveG0Artifact(
   input: { project_id: string; kind: G0ArtifactKind; payload: unknown },
   db = openM0Database()
 ): G0SaveResult {
-  const writable = assertWorkbenchContentMutationAllowed(db, input.project_id);
-  if (!writable.ok) return { ok: false, error: writable.error };
+  return persistG0Artifact(input, db);
+}
 
-  const project = projectOrError(input.project_id, db);
-  if ("code" in project) return { ok: false, error: project };
-
-  const filename = G0_ARTIFACT_FILENAMES[input.kind];
-  if (!filename) return { ok: false, error: { code: "G0_UNSUPPORTED_ARTIFACT_KIND", message: `Unsupported G0 artifact kind: ${input.kind}` } };
-
-  const root = ensureG0ProjectRoot(input.project_id);
-  const target = assertInsideWorkspace(join(root, filename), root);
-  const savedAt = new Date().toISOString();
-  const envelope: G0SavedArtifactEnvelope = {
-    project_id: input.project_id,
-    kind: input.kind,
-    saved_at: savedAt,
-    payload: input.payload
-  };
-
-  writeFileSync(target, `${JSON.stringify(envelope, null, 2)}\n`, "utf8");
-
-  if (input.kind === "creative_brief" && input.payload && typeof input.payload === "object" && !Array.isArray(input.payload)) {
-    project.brief = input.payload as Record<string, unknown>;
-    saveProject(db, project);
+export function saveG0ArtifactInManagedTransaction(
+  input: { project_id: string; kind: G0ArtifactKind; payload: unknown },
+  db: M0Database,
+  lifecycle: G0ManagedTransactionLifecycle
+): G0SaveResult {
+  if (!(db as unknown as { isTransaction?: boolean }).isTransaction) {
+    return { ok: false, error: { code: "G0_TRANSACTION_REQUIRED", message: "Managed G0 saves require an active outer transaction." } };
   }
-
-  return {
-    ok: true,
-    saved: {
-      project_id: input.project_id,
-      kind: input.kind,
-      filename,
-      path: target,
-      saved_at: savedAt
-    }
-  };
+  return persistG0Artifact(input, db, lifecycle);
 }
 
 export function readG0Artifact(projectId: string, kind: G0ArtifactKind): G0SavedArtifactEnvelope | null {
@@ -260,7 +337,11 @@ export function validateG0StoryboardPackage(input: G0StoryboardPackageInput, db 
   };
 }
 
-export function importG0AppReadyStoryboardPackage(input: G0StoryboardPackageInput, db = openM0Database()): G0ImportResult {
+function importG0AppReadyStoryboardPackageInternal(
+  input: G0StoryboardPackageInput,
+  db: M0Database,
+  lifecycle?: G0ManagedTransactionLifecycle
+): G0ImportResult {
   const validation = validateG0StoryboardPackage(input, db);
   if (!validation.ok) return validation;
   if (!validation.app_ready || !validation.import_input) {
@@ -270,7 +351,18 @@ export function importG0AppReadyStoryboardPackage(input: G0StoryboardPackageInpu
   const imported = importStoryboardPackage(validation.import_input, db);
   if (!imported.ok) return imported;
 
-  const saved = saveG0Artifact(
+  const saved = lifecycle ? saveG0ArtifactInManagedTransaction(
+    {
+      project_id: input.project_id,
+      kind: "storyboard_package",
+      payload: {
+        ...input,
+        storyboard_package_id: imported.storyboard_package_id
+      }
+    },
+    db,
+    lifecycle
+  ) : saveG0Artifact(
     {
       project_id: input.project_id,
       kind: "storyboard_package",
@@ -290,4 +382,22 @@ export function importG0AppReadyStoryboardPackage(input: G0StoryboardPackageInpu
     shots: imported.shots,
     saved_package: saved.saved
   };
+}
+
+export function importG0AppReadyStoryboardPackage(
+  input: G0StoryboardPackageInput,
+  db = openM0Database()
+): G0ImportResult {
+  return importG0AppReadyStoryboardPackageInternal(input, db);
+}
+
+export function importG0AppReadyStoryboardPackageInManagedTransaction(
+  input: G0StoryboardPackageInput,
+  db: M0Database,
+  lifecycle: G0ManagedTransactionLifecycle
+): G0ImportResult {
+  if (!(db as unknown as { isTransaction?: boolean }).isTransaction) {
+    return { ok: false, error: { code: "G0_TRANSACTION_REQUIRED", message: "Managed G0 imports require an active outer transaction." } };
+  }
+  return importG0AppReadyStoryboardPackageInternal(input, db, lifecycle);
 }

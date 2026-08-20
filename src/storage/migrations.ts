@@ -1910,6 +1910,96 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_ASSEMBLY_ACTIVE_EVIDENCE_REQUIRED');
   END;
+  CREATE TRIGGER workbench_delivery_project_content_guard BEFORE UPDATE OF data_json ON projects
+  WHEN OLD.data_json IS NOT NEW.data_json AND (
+    EXISTS (
+      SELECT 1 FROM workbench_project_meta meta
+      WHERE meta.project_id = OLD.project_id AND meta.lifecycle = 'archived'
+    )
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_jobs job
+      WHERE job.project_id = OLD.project_id AND job.job_type = 'assembly'
+        AND job.state IN ('queued','running')
+    )
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_state state
+      WHERE state.project_id = OLD.project_id
+        AND state.workflow_state IN ('assembling','final_review','approved','exported','closed','legacy_review_required')
+        AND NOT (
+          state.workflow_state IN ('final_review','approved','exported','legacy_review_required')
+          AND json_type(NEW.data_json, '$.title') = 'text'
+          AND length(trim(json_extract(NEW.data_json, '$.title'))) > 0
+          AND json_remove(OLD.data_json, '$.title') = json_remove(NEW.data_json, '$.title')
+        )
+        AND NOT (
+          state.workflow_state = 'final_review'
+          AND json_extract(NEW.data_json, '$.status') = 'video_review'
+          AND json_extract(NEW.data_json, '$.exports.final_video_artifact_id') = state.current_final_artifact_id
+          AND json_remove(OLD.data_json, '$.status', '$.exports.final_video_artifact_id')
+            = json_remove(NEW.data_json, '$.status', '$.exports.final_video_artifact_id')
+          AND EXISTS (
+            SELECT 1 FROM workbench_delivery_jobs job
+            JOIN workbench_delivery_events event ON event.job_id = job.job_id
+              AND event.project_id = job.project_id AND event.event_type = 'assembly_succeeded'
+              AND event.artifact_id = job.output_artifact_id
+            WHERE job.project_id = OLD.project_id AND job.job_type = 'assembly'
+              AND job.state = 'succeeded' AND job.output_artifact_id = state.current_final_artifact_id
+          )
+        )
+    )
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_PROJECT_CONTENT_FROZEN');
+  END;
+  CREATE TRIGGER workbench_delivery_shot_insert_guard BEFORE INSERT ON shots
+  WHEN EXISTS (
+    SELECT 1 FROM workbench_project_meta meta
+    WHERE meta.project_id = NEW.project_id AND meta.lifecycle = 'archived'
+    UNION ALL
+    SELECT 1 FROM workbench_delivery_state state
+    WHERE state.project_id = NEW.project_id
+      AND state.workflow_state IN ('assembling','final_review','approved','exported','closed','legacy_review_required')
+    UNION ALL
+    SELECT 1 FROM workbench_delivery_jobs job
+    WHERE job.project_id = NEW.project_id AND job.job_type = 'assembly'
+      AND job.state IN ('queued','running')
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_SHOT_CONTENT_FROZEN');
+  END;
+  CREATE TRIGGER workbench_delivery_shot_update_guard BEFORE UPDATE OF project_id, data_json ON shots
+  WHEN (OLD.project_id IS NOT NEW.project_id OR OLD.data_json IS NOT NEW.data_json)
+  AND EXISTS (
+    SELECT 1 FROM workbench_project_meta meta
+    WHERE meta.project_id IN (OLD.project_id, NEW.project_id) AND meta.lifecycle = 'archived'
+    UNION ALL
+    SELECT 1 FROM workbench_delivery_state state
+    WHERE state.project_id IN (OLD.project_id, NEW.project_id)
+      AND state.workflow_state IN ('assembling','final_review','approved','exported','closed','legacy_review_required')
+    UNION ALL
+    SELECT 1 FROM workbench_delivery_jobs job
+    WHERE job.project_id IN (OLD.project_id, NEW.project_id) AND job.job_type = 'assembly'
+      AND job.state IN ('queued','running')
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_SHOT_CONTENT_FROZEN');
+  END;
+  CREATE TRIGGER workbench_delivery_shot_delete_guard BEFORE DELETE ON shots
+  WHEN EXISTS (
+    SELECT 1 FROM workbench_project_meta meta
+    WHERE meta.project_id = OLD.project_id AND meta.lifecycle = 'archived'
+    UNION ALL
+    SELECT 1 FROM workbench_delivery_state state
+    WHERE state.project_id = OLD.project_id
+      AND state.workflow_state IN ('assembling','final_review','approved','exported','closed','legacy_review_required')
+    UNION ALL
+    SELECT 1 FROM workbench_delivery_jobs job
+    WHERE job.project_id = OLD.project_id AND job.job_type = 'assembly'
+      AND job.state IN ('queued','running')
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_SHOT_CONTENT_FROZEN');
+  END;
   CREATE TRIGGER workbench_delivery_artifact_status_guard BEFORE UPDATE OF status ON media_artifacts
   WHEN OLD.status = 'active' AND NEW.status <> 'active' AND EXISTS (
     SELECT 1 FROM workbench_delivery_state d
@@ -2575,6 +2665,10 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_state_validate_artifacts",
         "workbench_delivery_state_validate_artifacts_update",
         "workbench_delivery_assembly_active_evidence_guard",
+        "workbench_delivery_project_content_guard",
+        "workbench_delivery_shot_insert_guard",
+        "workbench_delivery_shot_update_guard",
+        "workbench_delivery_shot_delete_guard",
         "workbench_delivery_artifact_status_guard",
         "workbench_delivery_artifact_content_guard",
         "workbench_delivery_artifact_blob_insert_guard",

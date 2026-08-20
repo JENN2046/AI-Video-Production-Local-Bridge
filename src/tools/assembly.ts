@@ -26,7 +26,8 @@ function synchronizeAssemblyProjectResult(db: M0Database, projectId: string, art
       AND EXISTS (
         SELECT 1 FROM workbench_delivery_state delivery
         WHERE delivery.project_id = projects.project_id
-          AND delivery.workflow_state = 'assembling'
+          AND delivery.workflow_state = 'final_review'
+          AND delivery.current_final_artifact_id = ?
       )
       AND EXISTS (
         SELECT 1 FROM media_artifacts artifact
@@ -36,8 +37,16 @@ function synchronizeAssemblyProjectResult(db: M0Database, projectId: string, art
           AND COALESCE(artifact.shot_id, '') = ''
           AND artifact.role = 'final_video' AND artifact.artifact_type = 'video'
           AND artifact.status = 'active' AND blob.integrity_state = 'verified'
+      )
+      AND EXISTS (
+        SELECT 1 FROM workbench_delivery_jobs job
+        JOIN workbench_delivery_events event ON event.job_id = job.job_id
+          AND event.project_id = job.project_id AND event.event_type = 'assembly_succeeded'
+          AND event.artifact_id = job.output_artifact_id
+        WHERE job.project_id = projects.project_id AND job.job_type = 'assembly'
+          AND job.state = 'succeeded' AND job.output_artifact_id = ?
       )`)
-    .run(artifactId, projectId, projectId, artifactId) as { changes: number | bigint };
+    .run(artifactId, projectId, projectId, artifactId, artifactId, artifactId) as { changes: number | bigint };
   if (Number(updated.changes) !== 1) throw new Error("ASSEMBLY_INPUT_CHANGED");
 }
 
@@ -278,7 +287,6 @@ export function assembleFinalVideo(
       }
     };
 
-    synchronizeAssemblyProjectResult(db, currentProject.project_id, activatedArtifactId);
     saveGenerationRun(db, run);
 
     db.prepare(`UPDATE workbench_delivery_jobs
@@ -291,6 +299,7 @@ export function assembleFinalVideo(
         'LEGACY_ASSEMBLY_SUCCEEDED', '{}', ?)`)
       .run(deliverySucceededEventId, currentProject.project_id, deliveryJobId,
         activatedArtifactId, assemblyFingerprint, assemblyAt);
+    synchronizeAssemblyProjectResult(db, currentProject.project_id, activatedArtifactId);
     committed = { run, artifact_id: activatedArtifactId };
     db.exec(`RELEASE SAVEPOINT ${savepoint}`);
   } catch (error) {

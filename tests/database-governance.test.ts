@@ -1566,12 +1566,16 @@ test("database check detects zero-SHOT and partial-SHOT succeeded assembly evide
 
     const cleanCheck = checkDatabase(sqlitePath, { recover_media_activations: false });
     assert.equal(cleanCheck.result, "PASS", JSON.stringify(cleanCheck));
+    const shotUpdateGuard = (db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
+      AND name = 'workbench_delivery_shot_update_guard'`).get() as { sql: string }).sql;
+    db.exec("DROP TRIGGER workbench_delivery_shot_update_guard");
     db.prepare(`UPDATE shots SET data_json = json_set(
         data_json,
         '$.status', 'revision_needed',
         '$.review.approval_status', 'revision_needed',
         '$.clip_versions[0].review_status', 'rejected'
       ), updated_at = ? WHERE shot_id = ?`).run("2026-08-17T11:00:01.000Z", approvalClip.shot_id);
+    db.exec(shotUpdateGuard);
     const insertGuard = (db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
       AND name = 'workbench_delivery_jobs_validate_insert'`).get() as { sql: string }).sql;
     db.exec("DROP TRIGGER workbench_delivery_jobs_validate_insert");

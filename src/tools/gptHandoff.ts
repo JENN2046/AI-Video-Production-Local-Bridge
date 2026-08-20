@@ -5,7 +5,13 @@ import { extname, isAbsolute, join, relative, resolve } from "node:path";
 import { ensureM0Directories, paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { validateImageFile, type ImageValidationResult } from "./imageValidity.js";
-import { importG0AppReadyStoryboardPackage, validateG0StoryboardPackage, type G0StoryboardPackageInput } from "./g0Pregen.js";
+import {
+  importG0AppReadyStoryboardPackageInManagedTransaction,
+  validateG0StoryboardPackage,
+  type G0ManagedFileEffect,
+  type G0ManagedTransactionLifecycle,
+  type G0StoryboardPackageInput
+} from "./g0Pregen.js";
 import { cleanupCommittedMediaActivationMarkers, cleanupRolledBackMediaActivationFiles, registerMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
 import { createProject, getProject, type Project } from "./projects.js";
 import { classifyStoryboardImageImport, isNineSixteenDimensions, STORYBOARD_IMAGE_EXTENSIONS } from "./importClassifier.js";
@@ -361,11 +367,18 @@ export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, 
   }
 
   let transactionOpen = false;
+  const managedG0Effects: G0ManagedFileEffect[] = [];
+  const g0Lifecycle: G0ManagedTransactionLifecycle = {
+    register(effect) {
+      managedG0Effects.push(effect);
+    }
+  };
   const rollback = (report: FreezeGptHandoffReport): void => {
     if (transactionOpen) {
       db.exec("ROLLBACK");
       transactionOpen = false;
     }
+    for (const effect of managedG0Effects.splice(0).reverse()) effect.rollback();
     const filesRemoved = cleanupImportedArtifactFiles(report, runtime);
     if (!filesRemoved) return;
   };
@@ -464,7 +477,7 @@ export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, 
   const validation = validateG0StoryboardPackage(packageInput, db);
   if (!validation.ok) return fail(validation.error.code, validation.error.message);
 
-  const imported = importG0AppReadyStoryboardPackage(packageInput, db);
+  const imported = importG0AppReadyStoryboardPackageInManagedTransaction(packageInput, db, g0Lifecycle);
   if (!imported.ok) {
     return fail(
       imported.error.code,
@@ -502,6 +515,7 @@ export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, 
   };
   db.exec("COMMIT");
   transactionOpen = false;
+  for (const effect of managedG0Effects.splice(0)) effect.commit();
   successReport = success;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected handoff freeze failure.";
