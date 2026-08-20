@@ -22,6 +22,7 @@ import { requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import type { ProjectOperationalSummary } from "../packages/domain/operationalState.js";
 import { markShotClipReview, type RevisionInstruction } from "./review.js";
 import { listWorkbenchDraftRecords, listWorkbenchPendingActionRecords } from "./workbenchInboxStore.js";
+import { projectWorkbenchDeliverySummaryState, requireWorkbenchDeliveryState } from "./workbenchDeliveryState.js";
 
 export type WorkbenchProjectClassification = "unclassified" | "production" | "test";
 export type WorkbenchProjectLifecycle = "active" | "archived";
@@ -307,7 +308,7 @@ export function listWorkbenchProjects(
       revision_needed_count: 0,
       latest_failed_count: 0
     } : integrityBlockedSummary(project);
-    return projectSummaryFromRow(project, row, operational);
+    return projectSummaryFromRow(db, project, row, operational);
   }), totalRow.count, limit, offset);
 }
 
@@ -385,7 +386,7 @@ function hasAcceptedClipIntegrityBlocker(summary: ProjectOperationalSummary): bo
   return summary.blocker_codes.some((code) => code === "SHOT_STATE_INCONSISTENT" || code === "ARTIFACT_NOT_IN_SHOT_REVIEW" || code.startsWith("ACCEPTED_CLIP_"));
 }
 
-function projectSummaryFromRow(project: Project, row: ProjectRow, operational: ProjectOperationalSummary): WorkbenchProjectSummary {
+function projectSummaryFromRow(db: M0Database, project: Project, row: ProjectRow, operational: ProjectOperationalSummary): WorkbenchProjectSummary {
   const meta = projectMetaFromRow(row);
   const assemblyReadiness: SummaryAssemblyReadiness = operational.shot_count > 0
     && operational.accepted_count === operational.shot_count
@@ -410,11 +411,7 @@ function projectSummaryFromRow(project: Project, row: ProjectRow, operational: P
     expires_at: meta.next_action_expires_at,
     derived
   } : { source: "derived", ...derived, expires_at: null, derived };
-  const deliveryState = project.status === "final_approved"
-    ? "delivered"
-    : project.exports.final_video_artifact_id
-      ? "final_review"
-      : "not_ready";
+  const deliveryState = projectWorkbenchDeliverySummaryState(requireWorkbenchDeliveryState(db, project.project_id).workflow_state);
   const blockerParts = operational.blocker_codes.map((code) => `${operational.blocker_code_counts[code] ?? 0} 个${blockerLabel(code)}`);
   const risk: "blocked" | "attention" | "clear" = operational.blocker_count > 0 || operational.latest_failed_count > 0
     ? "blocked"

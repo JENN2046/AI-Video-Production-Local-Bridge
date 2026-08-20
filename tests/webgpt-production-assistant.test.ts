@@ -6,7 +6,6 @@ import {
   createGenerationRunFromPackageShot,
   createMemorySavebackProposal,
   createProject,
-  executeH4FinalAssembly,
   executeWebGptProductionAssistantTool,
   importStoryboardPackage,
   loadWebGptProductionAssistantStore,
@@ -73,10 +72,6 @@ async function createProductionContext(db: ReturnType<typeof openM0Database>): P
   const approved = approveH3GeneratedClip({ shot_id: storyboard.shots[0].shot_id, artifact_id: generated.generated_artifact_id, write_report: false }, db);
   assert.equal(approved.ok, true);
   if (!approved.ok) throw new Error("Clip approval failed.");
-
-  const assembled = executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, undefined, db);
-  assert.equal(assembled.ok, true);
-  if (!assembled.ok) throw new Error("Assembly failed.");
 
   const proposal = createMemorySavebackProposal({ project_id: project.project_id, write_report: false }, db);
   assert.equal(proposal.ok, true);

@@ -20,13 +20,14 @@ import {
 } from "../webgpt-v4/contracts.js";
 
 export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v4";
-export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-6";
-export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0011";
-// Snapshot v4's public projection did not change in migration 0011. Retain
-// the immediately preceding source ledger as a verification-only input so a
+export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-7";
+export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0012";
+// Snapshot v4 retains the immediately preceding source ledger as a
+// verification-only input so a
 // remote can keep serving an already signed v4 snapshot while its publisher
 // is upgraded. New exports always require the current ledger above.
-export const READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION = "0010";
+export const READONLY_SNAPSHOT_PREVIOUS_SOURCE_SCHEMA = "workbench-v2-6";
+export const READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION = "0011";
 export const READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA = "workbench-v2-5";
 export const READONLY_SNAPSHOT_LEGACY_SOURCE_MIGRATION = "0008";
 export const READONLY_SNAPSHOT_MAX_TTL_SECONDS = 24 * 60 * 60;
@@ -384,13 +385,21 @@ function validateProjectProjectionBindings(
     shot_count: project.shots_full.length,
     accepted_count: project.shots_full.filter((shot) => Boolean(shot.accepted_clip_artifact_id)).length,
     review_pending_count: readonlySnapshotReviewPendingCount(project.shots_full),
-    delivery_state: project.list_item_full.project.status === "final_approved"
-      ? "delivered"
-      : project.delivery.final_artifact
-          || (project.delivery.final_artifact_reason_code
-            && project.delivery.final_artifact_reason_code !== "FINAL_ARTIFACT_NOT_CREATED")
-        ? "final_review"
-        : "not_ready"
+    delivery_state: project.delivery.workflow_state === undefined
+      ? project.list_item_full.project.status === "final_approved"
+        ? "delivered"
+        : project.delivery.final_artifact
+            || (project.delivery.final_artifact_reason_code
+              && project.delivery.final_artifact_reason_code !== "FINAL_ARTIFACT_NOT_CREATED")
+          ? "final_review"
+          : "not_ready"
+      : project.delivery.workflow_state === "closed"
+        ? "delivered"
+        : project.delivery.workflow_state === "ready_to_assemble" || project.delivery.workflow_state === "assembling"
+          ? "ready_to_assemble"
+          : ["final_review", "revision_requested", "approved", "exported", "legacy_review_required"].includes(project.delivery.workflow_state)
+            ? "final_review"
+            : "not_ready"
   };
   if (canonicalSummary.shot_count !== expectedSummaryState.shot_count
     || canonicalSummary.accepted_count !== expectedSummaryState.accepted_count
@@ -695,7 +704,9 @@ function validateProjectProjectionBindings(
   }
   const acceptedCount = project.delivery.readiness_checks.filter((check) => check.ok).length;
   const readyForAssembly = project.shots_full.length > 0 && project.delivery.readiness_checks.every((check) => check.ok);
-  const delivered = project.list_item_full.project.status === "final_approved" && project.delivery.final_artifact !== null;
+  const delivered = project.delivery.workflow_state === undefined
+    ? project.list_item_full.project.status === "final_approved" && project.delivery.final_artifact !== null
+    : project.delivery.workflow_state === "closed" && project.delivery.final_artifact !== null;
   if (project.delivery.project_status !== project.list_item_full.project.status
     || project.delivery.shots_total !== project.shots_full.length
     || project.delivery.shots_accepted !== acceptedCount
@@ -713,7 +724,7 @@ export function readonlySnapshotReviewPendingCount(shots: Array<{
 
 const readonlySnapshotShape = {
   schema_version: z.literal(READONLY_SNAPSHOT_SCHEMA_VERSION),
-  source_schema: z.enum([READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA, READONLY_SNAPSHOT_REQUIRED_SCHEMA]),
+  source_schema: z.enum([READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA, READONLY_SNAPSHOT_PREVIOUS_SOURCE_SCHEMA, READONLY_SNAPSHOT_REQUIRED_SCHEMA]),
   source_migration: z.enum([
     READONLY_SNAPSHOT_LEGACY_SOURCE_MIGRATION,
     READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION,
@@ -736,12 +747,15 @@ function validateSnapshotBindings(value: {
 }, context: z.core.$RefinementCtx): void {
   const sourcePairIsCurrent = value.source_schema === READONLY_SNAPSHOT_REQUIRED_SCHEMA
     && value.source_migration === READONLY_SNAPSHOT_REQUIRED_MIGRATION;
-  const sourcePairIsPrevious = value.source_schema === READONLY_SNAPSHOT_REQUIRED_SCHEMA
+  const sourcePairIsPrevious = value.source_schema === READONLY_SNAPSHOT_PREVIOUS_SOURCE_SCHEMA
     && value.source_migration === READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION;
   const sourcePairIsLegacy = value.source_schema === READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA
     && value.source_migration === READONLY_SNAPSHOT_LEGACY_SOURCE_MIGRATION;
   if (!sourcePairIsCurrent && !sourcePairIsPrevious && !sourcePairIsLegacy) {
     context.addIssue({ code: "custom", message: "Snapshot source schema and migration do not form a supported pair.", path: ["source_schema"] });
+  }
+  if (sourcePairIsCurrent && value.projects.some((project) => project.delivery.workflow_state === undefined)) {
+    context.addIssue({ code: "custom", message: "Current snapshots require the durable delivery workflow state.", path: ["projects"] });
   }
   const projectIds = new Set<string>();
   for (const [projectIndex, project] of value.projects.entries()) {

@@ -402,7 +402,7 @@ test("H3 reviews generated clips and creates regeneration drafts without regener
   }
 });
 
-test("H4 shows assembly readiness and executes final assembly only after explicit confirmation", async () => {
+test("H4 keeps readiness visible while legacy placeholder assembly fails closed", async () => {
   const db = openM0Database();
 
   try {
@@ -478,18 +478,9 @@ test("H4 shows assembly readiness and executes final assembly only after explici
     assert.equal(ready.clip_order_preview[0].ffprobe?.status, "PASS");
 
     const assembled = executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, defaultH1WorkbenchState(), db);
-    assert.equal(assembled.ok, true);
-    if (!assembled.ok) return;
-
-    const report = assembled.value.report as {
-      provider_boundary: { runway_called: boolean; runninghub_called: boolean; source_asset_overwritten: boolean; final_assembly_performed: boolean };
-      final_video_artifact: { ffprobe: { status: string } | null };
-    };
-    assert.equal(report.provider_boundary.runway_called, false);
-    assert.equal(report.provider_boundary.runninghub_called, false);
-    assert.equal(report.provider_boundary.source_asset_overwritten, false);
-    assert.equal(report.provider_boundary.final_assembly_performed, true);
-    assert.equal(report.final_video_artifact.ffprobe?.status, "PASS");
+    assert.equal(assembled.ok, false);
+    if (assembled.ok) return;
+    assert.equal(assembled.error.code, "LEGACY_ASSEMBLY_INCOMPATIBLE");
     assert.equal(getMediaArtifact(db, generatedArtifactId)?.status, "active");
   } finally {
     db.close();

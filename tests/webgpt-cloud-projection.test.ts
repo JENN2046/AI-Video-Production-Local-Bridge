@@ -234,13 +234,13 @@ function stripMeta(result: ReturnType<SqliteReadonlyDataSource["listProductionPr
   return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
 }
 
-test("readonly projection requires migration 0011 and never upgrades an older database", () => {
+test("readonly projection requires migration 0012 and never upgrades an older database", () => {
   const root = mkdtempSync(join(tmpdir(), "readonly-projection-ledger-"));
   const sqlitePath = join(root, "app.sqlite");
   const db = openM0Database(sqlitePath);
   db.exec(`
-    DROP TABLE director_artifact_import_receipts;
-    DELETE FROM schema_migrations WHERE migration_id = '0011';
+    DROP TABLE workbench_delivery_state;
+    DELETE FROM schema_migrations WHERE migration_id = '0012';
   `);
   db.close();
   try {
@@ -254,9 +254,9 @@ test("readonly projection requires migration 0011 and never upgrades an older da
     );
     const verify = openM0DatabaseConnection(sqlitePath, { readOnly: true });
     try {
-      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0011'").get() as { count: number }).count, 0);
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0012'").get() as { count: number }).count, 0);
       assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'director_automation_grants'").get() as { count: number }).count, 1);
-      assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'director_artifact_import_receipts'").get() as { count: number }).count, 0);
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'workbench_delivery_state'").get() as { count: number }).count, 0);
     } finally {
       verify.close();
     }
@@ -284,6 +284,9 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
     project.status = "final_approved";
     project.exports.final_video_artifact_id = registered.artifact.artifact_id;
     saveProject(fixtureDb, project);
+    fixtureDb.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'closed', current_final_artifact_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE project_id = ?`).run(registered.artifact.artifact_id, fixture.project_id);
   } finally {
     fixtureDb.close();
   }
@@ -488,11 +491,12 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
   assert.equal(readonlySnapshotStatus(snapshot, new Date("2026-07-16T01:00:00.000Z")).freshness_status, "snapshot_expired");
 
   const currentSource = structuredClone(unsigned);
-  currentSource.source_schema = "workbench-v2-6";
-  currentSource.source_migration = "0011";
+  currentSource.source_schema = "workbench-v2-7";
+  currentSource.source_migration = "0012";
   assert.doesNotThrow(() => finalizeReadonlySnapshot(currentSource));
   const previousSource = structuredClone(currentSource);
-  previousSource.source_migration = "0010";
+  previousSource.source_schema = "workbench-v2-6";
+  previousSource.source_migration = "0011";
   assert.doesNotThrow(() => finalizeReadonlySnapshot(previousSource));
   const crossedSource = structuredClone(currentSource);
   crossedSource.source_migration = "0008";
@@ -897,7 +901,9 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     invalidFinalProject.list_item_full.summary.delivery_state = "final_review";
     invalidFinalProject.list_item_compact.summary.delivery_state = "final_review";
     invalidFinalProject.delivery.final_artifact_reason_code = "ARTIFACT_INACCESSIBLE";
+    invalidFinalProject.delivery.workflow_state = "final_review";
     invalidFinalProject.closeout.final_artifact_reason_code = "ARTIFACT_INACCESSIBLE";
+    invalidFinalProject.closeout.workflow_state = "final_review";
     for (const context of invalidFinalProject.contexts) {
       context.full.summary.delivery_state = "final_review";
       context.compact.summary.delivery_state = "final_review";
