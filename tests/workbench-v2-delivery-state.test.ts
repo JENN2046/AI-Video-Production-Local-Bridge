@@ -10,7 +10,7 @@ import { assertSchemaCurrent, DATABASE_MIGRATIONS, migrationChecksum, runDatabas
 import { openM0Database } from "../src/storage/sqlite.js";
 import { workbenchAssemblyInputFingerprint } from "../src/storage/workbenchAssemblyFingerprint.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
-import { getProject, getShot, saveProject, saveShot, type Project } from "../src/tools/projects.js";
+import { buildStoryboardApprovedShot, getProject, getShot, saveProject, saveShot, type Project } from "../src/tools/projects.js";
 import { projectSummaryDeliveryState } from "../src/tools/workbenchDeliveryState.js";
 import { assertWorkbenchProjectWritable, updateWorkbenchProject } from "../src/tools/workbenchV2.js";
 import {
@@ -78,6 +78,52 @@ function insertFinalArtifact(db: DatabaseSync, projectId: string, artifactId: st
     }));
   db.prepare(`INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)`)
     .run(artifactId, blobId);
+}
+
+function insertAcceptedClip(db: DatabaseSync, projectId: string, shotId: string, artifactId: string): void {
+  const fixturePath = resolve("fixtures/video/mock_clip.mp4");
+  const bytes = readFileSync(fixturePath);
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const proposedBlobId = `blob_${sha256.slice(0, 24)}`;
+  db.prepare(`INSERT OR IGNORE INTO media_blobs
+    (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
+    VALUES (?, ?, ?, 'video/mp4', ?, 'verified', ?)`)
+    .run(proposedBlobId, sha256, bytes.length, fixturePath, JSON.stringify({ media_root: resolve("fixtures") }));
+  const blobId = (db.prepare("SELECT blob_id FROM media_blobs WHERE sha256 = ? AND integrity_state = 'verified'")
+    .get(sha256) as { blob_id: string }).blob_id;
+  db.prepare(`INSERT INTO media_artifacts
+    (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+    VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?)`)
+    .run(artifactId, projectId, shotId, JSON.stringify({
+      artifact_id: artifactId,
+      artifact_type: "video",
+      role: "generated_clip",
+      status: "active",
+      blob_id: blobId,
+      storage: { uri: fixturePath, mime_type: "video/mp4", filename: "mock_clip.mp4" },
+      metadata: { sha256 },
+      linked_objects: { project_id: projectId, shot_id: shotId }
+    }));
+  db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(artifactId, blobId);
+  const shot = buildStoryboardApprovedShot({
+    project_id: projectId,
+    order: 1,
+    duration_seconds: 2,
+    storyboard_image_artifact_id: "",
+    video_prompt: "Legacy reassembly source"
+  });
+  shot.shot_id = shotId;
+  shot.status = "approved";
+  shot.accepted_clip_artifact_id = artifactId;
+  shot.clip_versions = [{
+    artifact_id: artifactId,
+    run_id: `run_${shotId}`,
+    attempt_number: 1,
+    review_status: "approved"
+  }];
+  shot.review.approval_status = "approved";
+  db.prepare("INSERT INTO shots (shot_id, project_id, data_json) VALUES (?, ?, ?)")
+    .run(shotId, projectId, JSON.stringify(shot));
 }
 
 function acceptFinalReview(
@@ -202,6 +248,7 @@ test("legacy delivery downgrade requires one matching immutable reassembly event
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
       .run("project_legacy_reset", projectJson("project_legacy_reset", "final_approved", "artifact_legacy_reset"));
     insertFinalArtifact(db, "project_legacy_reset", "artifact_legacy_reset");
+    insertAcceptedClip(db, "project_legacy_reset", "shot_legacy_reset", "artifact_clip_legacy_reset");
     assert.deepEqual(runDatabaseMigrations(db).applied, ["0012"]);
 
     const resetAt = "2026-08-18T02:00:00.000Z";
@@ -1371,6 +1418,9 @@ test("assembly jobs require every approved accepted clip in canonical SHOT order
     const now = "2026-08-17T10:00:00.000Z";
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
       .run("project_assembly_empty", projectJson("project_assembly_empty", "video_review"));
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'ready_to_assemble', updated_at = ?
+      WHERE project_id = 'project_assembly_empty'`).run(now), /WORKBENCH_ASSEMBLY_NOT_READY/);
     insertFinalArtifact(db, "project_assembly_empty", "artifact_assembly_empty_final");
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_json, output_artifact_id, terminal_event_id,
@@ -1396,6 +1446,9 @@ test("assembly jobs require every approved accepted clip in canonical SHOT order
     missing.clip_versions = [];
     missing.review.approval_status = "pending";
     saveShot(db, missing);
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'ready_to_assemble', updated_at = ?
+      WHERE project_id = 'project_assembly_partial'`).run(now), /WORKBENCH_ASSEMBLY_NOT_READY/);
     insertFinalArtifact(db, "project_assembly_partial", "artifact_assembly_partial_final");
     const partialInput = JSON.stringify({ source_clip_artifact_ids: [accepted.artifact_id] });
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
@@ -1422,8 +1475,12 @@ test("assembly jobs require every approved accepted clip in canonical SHOT order
       .run(accepted.artifact_id, accepted.artifact_id, now, now, now, now), /WORKBENCH_DELIVERY_JOB_BINDING_INVALID/);
     const partialFingerprint = workbenchAssemblyInputFingerprint(db, "project_assembly_partial", [accepted.artifact_id]);
     assert.ok(partialFingerprint);
+    const readyStateGuard = (db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
+      AND name = 'workbench_delivery_ready_state_guard'`).get() as { sql: string }).sql;
+    db.exec("DROP TRIGGER workbench_delivery_ready_state_guard");
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ?
       WHERE project_id = 'project_assembly_partial'`).run(now);
+    db.exec(readyStateGuard);
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, input_fingerprint, input_json, created_at, updated_at)
       VALUES ('job_assembly_partial_queued', 'project_assembly_partial', 'assembly', 'queued', ?, ?, ?, ?)`)

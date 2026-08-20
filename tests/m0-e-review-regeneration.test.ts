@@ -339,6 +339,7 @@ test("production content mutations freeze before side effects during assembling 
       decision: "revision_needed",
       rejection_reasons: ["prepare assembly freeze fixture"]
     }, db).ok, true);
+    ensureAcceptedAssemblyClipsFixture(db, assemblingFixture.project.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble' WHERE project_id = ?")
       .run(assemblingFixture.project.project_id);
     queueWorkbenchAssemblyFixture(db, {

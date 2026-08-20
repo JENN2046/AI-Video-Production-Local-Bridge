@@ -725,6 +725,31 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
             ) <> CASE approval.from_state WHEN 'final_review' THEN 1 ELSE 0 END
           )`,
       `SELECT COUNT(*) AS count FROM workbench_delivery_state state
+        WHERE state.workflow_state = 'ready_to_assemble' AND (
+          NOT EXISTS (SELECT 1 FROM shots shot WHERE shot.project_id = state.project_id)
+          OR EXISTS (
+            SELECT 1 FROM shots shot
+            LEFT JOIN media_artifacts artifact
+              ON artifact.artifact_id = json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+              AND artifact.project_id = state.project_id AND artifact.shot_id = shot.shot_id
+              AND artifact.role = 'generated_clip' AND artifact.artifact_type = 'video'
+              AND artifact.status = 'active'
+            LEFT JOIN media_artifact_blobs artifact_blob ON artifact_blob.artifact_id = artifact.artifact_id
+            LEFT JOIN media_blobs blob ON blob.blob_id = artifact_blob.blob_id AND blob.integrity_state = 'verified'
+            WHERE shot.project_id = state.project_id AND (
+              COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') = ''
+              OR COALESCE(json_extract(shot.data_json, '$.status'), '') <> 'approved'
+              OR COALESCE(json_extract(shot.data_json, '$.review.approval_status'), '') <> 'approved'
+              OR artifact.artifact_id IS NULL OR blob.blob_id IS NULL
+              OR NOT EXISTS (
+                SELECT 1 FROM json_each(shot.data_json, '$.clip_versions') clip_version
+                WHERE json_extract(clip_version.value, '$.artifact_id') IS artifact.artifact_id
+                  AND json_extract(clip_version.value, '$.review_status') = 'approved'
+              )
+            )
+          )
+        )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_state state
         WHERE state.workflow_state IN ('ready_to_assemble','revision_requested')
           AND state.current_final_artifact_id IS NOT NULL
           AND (EXISTS (

@@ -17,7 +17,7 @@ import {
   startStoryboardVideoGeneration,
   transitionMediaArtifactStatus
 } from "../src/index.js";
-import { approveWorkbenchDeliveryFixture, completeWorkbenchExportFixture, failWorkbenchAssemblyFixture, insertWorkbenchExportFixture, queueWorkbenchAssemblyFixture } from "./workbench-delivery-test-helpers.js";
+import { approveWorkbenchDeliveryFixture, completeWorkbenchExportFixture, ensureAcceptedAssemblyClipsFixture, failWorkbenchAssemblyFixture, insertWorkbenchExportFixture, queueWorkbenchAssemblyFixture } from "./workbench-delivery-test-helpers.js";
 
 async function setupGeneratedProject(db: ReturnType<typeof openM0Database>) {
   const project = createProject({ title: "M0-F Project" }, db);
@@ -449,6 +449,7 @@ test("M0-F assembly rejects same-project and global durable delivery Jobs before
     const otherProject = createProject({ title: "Other active delivery Job" }, db);
     assert.equal(otherProject.ok, true);
     if (!otherProject.ok) return;
+    ensureAcceptedAssemblyClipsFixture(db, otherProject.project_id);
     db.prepare("UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ? WHERE project_id = ?")
       .run(now, otherProject.project_id);
     queueWorkbenchAssemblyFixture(db, { project_id: otherProject.project_id,

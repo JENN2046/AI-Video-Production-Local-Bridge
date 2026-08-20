@@ -343,6 +343,31 @@ test("schema validation preserves case-sensitive CHECK and default string litera
   }
 });
 
+test("database check detects a ready-to-assemble state without complete approved clips", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "app.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    const project = createProject({ title: "Invalid ready delivery fixture" }, db);
+    assert.equal(project.ok, true);
+    if (!project.ok) throw new Error("invalid ready fixture setup failed");
+    const readyStateGuard = (db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger'
+      AND name = 'workbench_delivery_ready_state_guard'`).get() as { sql: string }).sql;
+    db.exec("DROP TRIGGER workbench_delivery_ready_state_guard");
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble'
+      WHERE project_id = ?`).run(project.project_id);
+    db.exec(readyStateGuard);
+    db.close();
+
+    const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
+    assert.equal(checked.result, "FAIL");
+    assert.ok(checked.orphan_rows >= 1, JSON.stringify(checked));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("schema validation recognizes generated columns and rejects expression drift", () => {
   const root = tempRoot();
   try {
@@ -953,6 +978,7 @@ test("database check detects duplicate lifecycle Events after the insert guard i
     assert.equal(project.ok, true);
     if (!project.ok) throw new Error("duplicate Event project setup failed");
     const now = "2026-08-15T09:00:00.000Z";
+    ensureAcceptedAssemblyClipsFixture(db, project.project_id);
     db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ?
       WHERE project_id = ?`).run(now, project.project_id);
     queueWorkbenchAssemblyFixture(db, {
@@ -1261,14 +1287,15 @@ test("database check detects a legacy final pointer downgraded without reset evi
     assert.equal(artifact.ok, true);
     if (!artifact.ok) throw new Error("legacy reset Artifact setup failed");
 
-    const transitionSql = (db.prepare(`SELECT sql FROM sqlite_master
-      WHERE type = 'trigger' AND name = 'workbench_delivery_state_transition'`).get() as { sql: string }).sql;
-    db.exec("DROP TRIGGER workbench_delivery_state_transition");
+    const bypassNames = ["workbench_delivery_state_transition", "workbench_delivery_ready_state_guard"];
+    const bypassDefinitions = bypassNames.map((name) => (db!.prepare(`SELECT sql FROM sqlite_master
+      WHERE type = 'trigger' AND name = ?`).get(name) as { sql: string }).sql);
+    for (const name of bypassNames) db.exec(`DROP TRIGGER ${name}`);
     db.prepare(`UPDATE workbench_delivery_state
       SET workflow_state = 'ready_to_assemble', current_final_artifact_id = ?,
         assembly_input_fingerprint = NULL, updated_at = '2026-08-18T02:10:00.000Z'
       WHERE project_id = ?`).run(artifact.artifact.artifact_id, project.project_id);
-    db.exec(transitionSql);
+    for (const definition of bypassDefinitions) db.exec(definition);
     db.close();
     db = null;
 
@@ -1392,7 +1419,7 @@ test("succeeded assembly input clips remain active and db:check detects bypassed
     assert.equal(clip.ok, true);
     assert.equal(finalArtifact.ok, true);
     if (!clip.ok || !finalArtifact.ok) throw new Error("assembly input evidence media setup failed");
-    shot.status = "video_review";
+    shot.status = "approved";
     shot.accepted_clip_artifact_id = clip.artifact.artifact_id;
     shot.clip_versions = [{
       artifact_id: clip.artifact.artifact_id,

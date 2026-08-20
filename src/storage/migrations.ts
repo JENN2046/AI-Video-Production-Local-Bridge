@@ -2087,6 +2087,34 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE');
   END;
+  CREATE TRIGGER workbench_delivery_ready_state_guard BEFORE UPDATE OF workflow_state ON workbench_delivery_state
+  WHEN OLD.workflow_state <> NEW.workflow_state AND NEW.workflow_state = 'ready_to_assemble' AND (
+    NOT EXISTS (SELECT 1 FROM shots shot WHERE shot.project_id = NEW.project_id)
+    OR EXISTS (
+      SELECT 1 FROM shots shot
+      LEFT JOIN media_artifacts artifact
+        ON artifact.artifact_id = json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+        AND artifact.project_id = NEW.project_id AND artifact.shot_id = shot.shot_id
+        AND artifact.role = 'generated_clip' AND artifact.artifact_type = 'video'
+        AND artifact.status = 'active'
+      LEFT JOIN media_artifact_blobs artifact_blob ON artifact_blob.artifact_id = artifact.artifact_id
+      LEFT JOIN media_blobs blob ON blob.blob_id = artifact_blob.blob_id AND blob.integrity_state = 'verified'
+      WHERE shot.project_id = NEW.project_id AND (
+        COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') = ''
+        OR COALESCE(json_extract(shot.data_json, '$.status'), '') <> 'approved'
+        OR COALESCE(json_extract(shot.data_json, '$.review.approval_status'), '') <> 'approved'
+        OR artifact.artifact_id IS NULL OR blob.blob_id IS NULL
+        OR NOT EXISTS (
+          SELECT 1 FROM json_each(shot.data_json, '$.clip_versions') clip_version
+          WHERE json_extract(clip_version.value, '$.artifact_id') IS artifact.artifact_id
+            AND json_extract(clip_version.value, '$.review_status') = 'approved'
+        )
+      )
+    )
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_ASSEMBLY_NOT_READY');
+  END;
   CREATE TRIGGER workbench_delivery_state_transition BEFORE UPDATE ON workbench_delivery_state
   WHEN (OLD.workflow_state <> NEW.workflow_state AND NOT (
       (OLD.workflow_state = 'not_ready' AND NEW.workflow_state = 'ready_to_assemble')
@@ -2673,6 +2701,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_artifact_content_guard",
         "workbench_delivery_artifact_blob_insert_guard",
         "workbench_delivery_artifact_blob_update_guard",
+        "workbench_delivery_ready_state_guard",
         "workbench_delivery_state_transition",
         "workbench_delivery_state_identity_immutable",
         "workbench_delivery_state_closed_immutable",
