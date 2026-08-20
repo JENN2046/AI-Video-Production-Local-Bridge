@@ -2156,6 +2156,18 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_ARTIFACT_ACTIVE_REQUIRED');
   END;
+  CREATE TRIGGER workbench_delivery_accepted_clip_readiness_after_status AFTER UPDATE OF status ON media_artifacts
+  WHEN OLD.status = 'active' AND NEW.status <> 'active'
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = 'not_ready', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    WHERE workflow_state = 'ready_to_assemble'
+      AND EXISTS (
+        SELECT 1 FROM shots shot
+        WHERE shot.project_id = workbench_delivery_state.project_id
+          AND json_extract(shot.data_json, '$.accepted_clip_artifact_id') = OLD.artifact_id
+      );
+  END;
   CREATE TRIGGER workbench_delivery_artifact_content_guard BEFORE UPDATE OF data_json ON media_artifacts
   WHEN OLD.status IS NEW.status AND OLD.data_json IS NOT NEW.data_json AND EXISTS (
     SELECT 1 FROM workbench_delivery_state d
@@ -2839,6 +2851,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_shot_readiness_after_delete",
         "workbench_delivery_shot_delete_guard",
         "workbench_delivery_artifact_status_guard",
+        "workbench_delivery_accepted_clip_readiness_after_status",
         "workbench_delivery_artifact_content_guard",
         "workbench_delivery_artifact_blob_insert_guard",
         "workbench_delivery_artifact_blob_update_guard",

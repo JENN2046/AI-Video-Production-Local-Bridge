@@ -10,6 +10,7 @@ import { assertSchemaCurrent, DATABASE_MIGRATIONS, migrationChecksum, runDatabas
 import { openM0Database } from "../src/storage/sqlite.js";
 import { workbenchAssemblyInputFingerprint } from "../src/storage/workbenchAssemblyFingerprint.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
+import { transitionMediaArtifactStatus } from "../src/tools/mediaArtifacts.js";
 import { buildStoryboardApprovedShot, getProject, getShot, saveProject, saveShot, type Project } from "../src/tools/projects.js";
 import { projectSummaryDeliveryState } from "../src/tools/workbenchDeliveryState.js";
 import { assertWorkbenchProjectWritable, updateWorkbenchProject } from "../src/tools/workbenchV2.js";
@@ -1617,6 +1618,19 @@ test("ready delivery state atomically downgrades when a SHOT loses assembly read
     saveShot(db, inserted);
     assert.equal((db.prepare(`SELECT workflow_state FROM workbench_delivery_state
       WHERE project_id = 'project_ready_shot_drift'`).get() as { workflow_state: string }).workflow_state, "not_ready");
+
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+      .run("project_ready_artifact_drift", projectJson("project_ready_artifact_drift", "video_review"));
+    const acceptedForArchive = createAcceptedAssemblyClipFixture(db, {
+      project_id: "project_ready_artifact_drift",
+      label: "ready Artifact drift"
+    });
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ?
+      WHERE project_id = 'project_ready_artifact_drift'`).run(now);
+    const archived = transitionMediaArtifactStatus(acceptedForArchive.artifact_id, "archived", db);
+    assert.equal(archived.ok, true, archived.ok ? undefined : archived.error.message);
+    assert.equal((db.prepare(`SELECT workflow_state FROM workbench_delivery_state
+      WHERE project_id = 'project_ready_artifact_drift'`).get() as { workflow_state: string }).workflow_state, "not_ready");
   } finally {
     db.close();
   }
