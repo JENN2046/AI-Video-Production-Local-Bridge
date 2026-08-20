@@ -856,6 +856,7 @@ test("delivery lifecycle events bind to the matching Job type, state, Artifact, 
     assert.doesNotThrow(() => insertEvent.run("event_assembly_succeeded", projectId, "job_event_assembly",
       "assembly_succeeded", "assembling", "final_review", "artifact_event_final", null, now));
     db.exec("COMMIT");
+    assert.equal(getProject(db, projectId)?.exports.final_video_artifact_id, "artifact_event_final");
     assert.throws(() => insertEvent.run("event_assembly_succeeded_duplicate", projectId, "job_event_assembly",
       "assembly_succeeded", "assembling", "final_review", "artifact_event_final", null, now),
     /WORKBENCH_DELIVERY_JOB_EVENT_DUPLICATE/);

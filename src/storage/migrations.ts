@@ -1822,6 +1822,16 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
       AND assembly_input_fingerprint IS NEW.input_fingerprint;
     SELECT CASE WHEN changes() <> 1
       THEN RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_BINDING_INVALID') END;
+    UPDATE projects
+    SET data_json = json_set(
+      data_json,
+      '$.status', 'video_review',
+      '$.exports.final_video_artifact_id', NEW.artifact_id
+    ), updated_at = NEW.created_at
+    WHERE project_id = NEW.project_id
+      AND json_extract(data_json, '$.project_id') = NEW.project_id;
+    SELECT CASE WHEN changes() <> 1
+      THEN RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_BINDING_INVALID') END;
   END;
   CREATE TRIGGER workbench_delivery_assembly_terminal_apply AFTER INSERT ON workbench_delivery_events
   WHEN NEW.event_type IN ('assembly_failed','assembly_interrupted')
