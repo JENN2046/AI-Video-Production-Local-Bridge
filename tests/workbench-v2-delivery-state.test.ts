@@ -4,7 +4,10 @@ import { DatabaseSync } from "node:sqlite";
 
 import { createProject, openM0Database } from "../src/index.js";
 import { DATABASE_MIGRATIONS, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
+import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
+import { getProject, saveProject, saveShot } from "../src/tools/projects.js";
 import { getWorkbenchDeliveryState } from "../src/tools/workbenchDeliveryState.js";
+import { getWorkbenchProjectSummary, getWorkbenchProjectWorkspace } from "../src/tools/workbenchV2.js";
 
 function migrateThrough0011(db: DatabaseSync): void {
   db.exec(`
@@ -90,14 +93,100 @@ test("legacy backfill preserves the bound final Artifact identity", () => {
     migrateThrough0011(db);
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('legacy_bound', ?)")
       .run(projectJson("legacy_bound", "final_approved", "artifact_legacy_a"));
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('legacy_other', ?)")
+      .run(projectJson("legacy_other"));
     insertFinalArtifact(db, "legacy_bound", "artifact_legacy_a");
     insertFinalArtifact(db, "legacy_bound", "artifact_legacy_b");
+    insertFinalArtifact(db, "legacy_other", "artifact_legacy_cross_project");
     assert.deepEqual(runDatabaseMigrations(db).applied, ["0012"]);
     const state = getWorkbenchDeliveryState(db, "legacy_bound");
     assert.equal(state?.workflow_state, "legacy_review_required");
     assert.equal(state?.current_final_artifact_id, "artifact_legacy_a");
+    assert.equal((db.prepare(`SELECT legacy_final_artifact_id FROM workbench_delivery_state
+      WHERE project_id = 'legacy_bound'`).get() as { legacy_final_artifact_id: string }).legacy_final_artifact_id, "artifact_legacy_a");
+
+    db.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'final_review', current_final_artifact_id = 'artifact_legacy_a'
+      WHERE project_id = 'legacy_bound'`).run();
+    assert.equal(getWorkbenchDeliveryState(db, "legacy_bound")?.workflow_state, "final_review");
+    const beforeRejectedReplacement = db.prepare(`SELECT * FROM workbench_delivery_state
+      WHERE project_id = 'legacy_bound'`).get();
     assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
       SET current_final_artifact_id = 'artifact_legacy_b' WHERE project_id = 'legacy_bound'`).run(), /WORKBENCH_LEGACY_FINAL_ARTIFACT_IMMUTABLE/);
+    assert.deepEqual(db.prepare(`SELECT * FROM workbench_delivery_state
+      WHERE project_id = 'legacy_bound'`).get(), beforeRejectedReplacement);
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
+      SET legacy_final_artifact_id = 'artifact_legacy_b'
+      WHERE project_id = 'legacy_bound'`).run(), /WORKBENCH_LEGACY_FINAL_ARTIFACT_IMMUTABLE/);
+    assert.deepEqual(db.prepare(`SELECT * FROM workbench_delivery_state
+      WHERE project_id = 'legacy_bound'`).get(), beforeRejectedReplacement);
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_state
+      SET current_final_artifact_id = 'artifact_legacy_cross_project'
+      WHERE project_id = 'legacy_bound'`).run(), /WORKBENCH_LEGACY_FINAL_ARTIFACT_IMMUTABLE/);
+    assert.deepEqual(db.prepare(`SELECT * FROM workbench_delivery_state
+      WHERE project_id = 'legacy_bound'`).get(), beforeRejectedReplacement);
+    assert.throws(() => db.prepare(`UPDATE projects SET data_json = json_set(
+      data_json, '$.exports.final_video_artifact_id', 'artifact_legacy_b'
+    ) WHERE project_id = 'legacy_bound'`).run(), /WORKBENCH_LEGACY_FINAL_ARTIFACT_IMMUTABLE/);
+    assert.equal((db.prepare(`SELECT json_extract(data_json, '$.exports.final_video_artifact_id') artifact_id
+      FROM projects WHERE project_id = 'legacy_bound'`).get() as { artifact_id: string }).artifact_id, "artifact_legacy_a");
+  } finally {
+    db.close();
+  }
+});
+
+test("legacy review durable state overrides stale delivered next-action projection", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    migrateThrough0011(db);
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('legacy_projection', ?)")
+      .run(projectJson("legacy_projection", "final_approved", "artifact_legacy_projection"));
+    insertFinalArtifact(db, "legacy_projection", "artifact_legacy_projection");
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0012"]);
+
+    const clip = registerMediaArtifact({
+      artifact_type: "video",
+      role: "generated_clip",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: "legacy_projection", shot_id: "shot_legacy_projection" }
+    }, db);
+    assert.equal(clip.ok, true);
+    if (!clip.ok) throw new Error("LEGACY_CLIP_FIXTURE_FAILED");
+    saveShot(db, {
+      shot_id: "shot_legacy_projection",
+      project_id: "legacy_projection",
+      order: 1,
+      status: "approved",
+      duration_seconds: 2,
+      description: "Legacy accepted SHOT",
+      storyboard_image_artifact_id: "",
+      video_prompt: "Legacy projection fixture",
+      negative_prompt: "",
+      generation_run_ids: [],
+      accepted_clip_artifact_id: clip.artifact.artifact_id,
+      clip_versions: [{ artifact_id: clip.artifact.artifact_id, run_id: "", attempt_number: 1, review_status: "approved" }],
+      review: { approval_status: "approved", rejection_reasons: [], latest_revision_instruction: null }
+    });
+    const project = getProject(db, "legacy_projection");
+    assert.ok(project);
+    project.shot_ids = ["shot_legacy_projection"];
+    saveProject(db, project);
+
+    const summary = getWorkbenchProjectSummary("legacy_projection", db);
+    assert.equal(summary?.delivery_state, "final_review");
+    assert.equal(summary?.next_action.source, "derived");
+    assert.deepEqual(summary?.next_action.derived, {
+      label: "最终审查",
+      reason_code: "final_review",
+      priority: "high"
+    });
+    assert.equal(summary?.next_action.reason_code, "final_review");
+
+    const workspace = getWorkbenchProjectWorkspace("legacy_projection", "overview", db, { touch_last_opened: false });
+    assert.equal(workspace.ok, true);
+    if (!workspace.ok) throw new Error("LEGACY_WORKSPACE_FIXTURE_FAILED");
+    const workspaceSummary = workspace.data.summary as { next_action: { reason_code: string } };
+    assert.equal(workspaceSummary.next_action.reason_code, "final_review");
   } finally {
     db.close();
   }

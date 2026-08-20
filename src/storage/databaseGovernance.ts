@@ -313,6 +313,18 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
           AND (artifact.artifact_id IS NULL OR COALESCE(artifact.shot_id, '') <> ''
             OR artifact.role <> 'final_video' OR artifact.artifact_type <> 'video' OR artifact.status <> 'active')`,
       `SELECT COUNT(*) AS count FROM workbench_delivery_state state
+        LEFT JOIN projects project ON project.project_id = state.project_id
+        LEFT JOIN media_artifacts artifact
+          ON artifact.project_id = state.project_id AND artifact.artifact_id = state.legacy_final_artifact_id
+        WHERE state.legacy_final_artifact_id IS NOT NULL AND (
+          state.current_final_artifact_id IS NOT state.legacy_final_artifact_id
+          OR artifact.artifact_id IS NULL OR COALESCE(artifact.shot_id, '') <> ''
+          OR artifact.role <> 'final_video' OR artifact.artifact_type <> 'video' OR artifact.status <> 'active'
+          OR CASE WHEN json_valid(project.data_json) = 1
+            THEN COALESCE(json_extract(project.data_json, '$.exports.final_video_artifact_id'), '')
+            ELSE '' END IS NOT state.legacy_final_artifact_id
+        )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_state state
         LEFT JOIN media_artifacts artifact
           ON artifact.project_id = state.project_id AND artifact.artifact_id = state.approved_artifact_id
         WHERE state.approved_artifact_id IS NOT NULL

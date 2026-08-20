@@ -1302,6 +1302,7 @@ const DELIVERY_STATE_FOUNDATION_SQL = `
     project_id TEXT PRIMARY KEY,
     workflow_state TEXT NOT NULL DEFAULT 'not_ready',
     current_final_artifact_id TEXT,
+    legacy_final_artifact_id TEXT,
     assembly_input_fingerprint TEXT,
     approved_artifact_id TEXT,
     latest_export_id TEXT,
@@ -1313,6 +1314,8 @@ const DELIVERY_STATE_FOUNDATION_SQL = `
     FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE RESTRICT,
     FOREIGN KEY (project_id, current_final_artifact_id)
       REFERENCES media_artifacts(project_id, artifact_id) ON DELETE RESTRICT,
+    FOREIGN KEY (project_id, legacy_final_artifact_id)
+      REFERENCES media_artifacts(project_id, artifact_id) ON DELETE RESTRICT,
     FOREIGN KEY (project_id, approved_artifact_id)
       REFERENCES media_artifacts(project_id, artifact_id) ON DELETE RESTRICT,
     FOREIGN KEY (project_id, latest_export_id)
@@ -1321,7 +1324,11 @@ const DELIVERY_STATE_FOUNDATION_SQL = `
       'not_ready','ready_to_assemble','assembling','final_review','revision_requested',
       'approved','exported','closed','legacy_review_required'
     )),
-    CHECK (workflow_state <> 'legacy_review_required' OR current_final_artifact_id IS NOT NULL),
+    CHECK (workflow_state <> 'legacy_review_required' OR (
+      current_final_artifact_id IS NOT NULL
+      AND legacy_final_artifact_id IS current_final_artifact_id
+    )),
+    CHECK (legacy_final_artifact_id IS NULL OR current_final_artifact_id IS legacy_final_artifact_id),
     CHECK (
       assembly_input_fingerprint IS NULL
       OR (length(assembly_input_fingerprint) = 64 AND assembly_input_fingerprint NOT GLOB '*[^0-9a-f]*')
@@ -1442,8 +1449,14 @@ const DELIVERY_STATE_FOUNDATION_SQL = `
   END;
   CREATE TRIGGER workbench_delivery_state_legacy_artifact_immutable
   BEFORE UPDATE OF current_final_artifact_id ON workbench_delivery_state
-  WHEN OLD.workflow_state = 'legacy_review_required'
+  WHEN OLD.legacy_final_artifact_id IS NOT NULL
     AND OLD.current_final_artifact_id IS NOT NEW.current_final_artifact_id
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_LEGACY_FINAL_ARTIFACT_IMMUTABLE');
+  END;
+  CREATE TRIGGER workbench_delivery_state_legacy_marker_immutable
+  BEFORE UPDATE OF legacy_final_artifact_id ON workbench_delivery_state
+  WHEN OLD.legacy_final_artifact_id IS NOT NEW.legacy_final_artifact_id
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_LEGACY_FINAL_ARTIFACT_IMMUTABLE');
   END;
@@ -1457,15 +1470,31 @@ const DELIVERY_STATE_FOUNDATION_SQL = `
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_STATE_IMMUTABLE');
   END;
 
-  INSERT INTO workbench_delivery_state (project_id, workflow_state, current_final_artifact_id)
+  INSERT INTO workbench_delivery_state (
+    project_id, workflow_state, current_final_artifact_id, legacy_final_artifact_id
+  )
   SELECT project_id,
     CASE
       WHEN COALESCE(json_extract(data_json, '$.exports.final_video_artifact_id'), '') <> ''
         THEN 'legacy_review_required'
       ELSE 'not_ready'
     END,
+    NULLIF(json_extract(data_json, '$.exports.final_video_artifact_id'), ''),
     NULLIF(json_extract(data_json, '$.exports.final_video_artifact_id'), '')
   FROM projects;
+
+  CREATE TRIGGER workbench_projects_legacy_final_artifact_immutable
+  BEFORE UPDATE OF data_json ON projects
+  WHEN EXISTS (
+    SELECT 1 FROM workbench_delivery_state state
+    WHERE state.project_id = OLD.project_id
+      AND state.legacy_final_artifact_id IS NOT NULL
+      AND COALESCE(json_extract(NEW.data_json, '$.exports.final_video_artifact_id'), '')
+        IS NOT state.legacy_final_artifact_id
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_LEGACY_FINAL_ARTIFACT_IMMUTABLE');
+  END;
 
   CREATE TRIGGER workbench_projects_validate_initial_delivery
   BEFORE INSERT ON projects
@@ -1825,7 +1854,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     workbench_exports: ["export_id", "project_id", "artifact_id", "relative_path", "sha256", "size_bytes", "created_at"],
     workbench_delivery_jobs: ["job_id", "project_id", "job_type", "state", "input_json", "output_artifact_id", "export_id", "retry_of_job_id", "terminal_event_id", "error_code", "created_at", "updated_at"],
     workbench_delivery_events: ["event_id", "project_id", "event_type", "job_id", "artifact_id", "export_id", "reason_code", "data_json", "created_at"],
-    workbench_delivery_state: ["project_id", "workflow_state", "current_final_artifact_id", "assembly_input_fingerprint", "approved_artifact_id", "latest_export_id", "last_assembled_at", "latest_exported_at", "closed_at", "created_at", "updated_at"]
+    workbench_delivery_state: ["project_id", "workflow_state", "current_final_artifact_id", "legacy_final_artifact_id", "assembly_input_fingerprint", "approved_artifact_id", "latest_export_id", "last_assembled_at", "latest_exported_at", "closed_at", "created_at", "updated_at"]
   } : V24_EXPECTED_COLUMNS;
   const expectedIndexes = includeJobs ? [
     ...V24_EXPECTED_INDEXES,
@@ -1903,8 +1932,10 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_events_no_delete",
         "workbench_delivery_state_validate_final_artifacts",
         "workbench_delivery_state_legacy_artifact_immutable",
+        "workbench_delivery_state_legacy_marker_immutable",
         "workbench_delivery_state_identity_immutable",
         "workbench_delivery_state_no_delete",
+        "workbench_projects_legacy_final_artifact_immutable",
         "workbench_projects_validate_initial_delivery",
         "workbench_delivery_state_after_project_insert"
       ]
