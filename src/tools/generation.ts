@@ -304,6 +304,7 @@ function persistKnownLegacyProviderTaskForReconciliation(
   const trackingRun: GenerationRun = {
     ...input.run,
     status: "running",
+    output: { artifact_ids: [] },
     provider: {
       ...input.run.provider,
       provider_job_id: input.provider_task_id,
@@ -946,6 +947,12 @@ export async function startStoryboardVideoGeneration(
                 );
                 if (atomicPersistence.error) return reconcileKnownTask(atomicPersistence.error);
                 if (!download.ok) {
+                  if (atomicPersistence.batch) {
+                    return reconcileKnownTask({
+                      code: "GENERATION_PERSIST_FAILED",
+                      message: "Provider output completed, but its Artifact and generation evidence could not be committed atomically."
+                    });
+                  }
                   run.status = "failed";
                   run.output.artifact_ids = [];
                   run.error = providerErrorToRunError(download.error);

@@ -1069,6 +1069,59 @@ test("M1 provider output rolls back the Artifact and dependent generation writes
   }
 });
 
+test("M1 provider output reports failure after dependent persistence ran but activation commit rolled back", async () => {
+  const db = openM0Database(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "provider-output-activation-commit-rollback-"));
+  const fixture = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
+  const providerJobId = "activation-commit-rollback";
+  const batchId = "batch_activation_commit_rollback";
+  let dependentPersistenceCompleted = false;
+  try {
+    const projectFixture = setupOneShotProject(db);
+    db.exec(`CREATE TRIGGER synthetic_activation_commit_failure
+      BEFORE UPDATE OF state ON media_activation_journal
+      WHEN NEW.state = 'committed'
+      BEGIN
+        SELECT RAISE(ABORT, 'SYNTHETIC_ACTIVATION_COMMIT_FAILURE');
+      END`);
+    const result = await downloadProviderOutputToArtifact({
+      url: "https://cdn.example.test/output.mp4",
+      provider_name: "runninghub",
+      provider_job_id: providerJobId,
+      project_id: projectFixture.project.project_id,
+      shot_id: projectFixture.storyboard.shots[0].shot_id,
+      duration_seconds: 2,
+      aspect_ratio: "9:16",
+      storage_directory: root
+    }, db, {
+      storage_root: root,
+      resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+      fetch_pinned_address: async () => new Response(fixture, {
+        status: 200,
+        headers: { "content-type": "video/mp4", "content-length": String(fixture.length) }
+      }),
+      assert_persist_allowed: () => null,
+      persist_with_artifact: () => {
+        db.prepare(`INSERT INTO generation_batches
+          (batch_id, project_id, storyboard_package_id, data_json, updated_at)
+          VALUES (?, ?, ?, '{}', CURRENT_TIMESTAMP)`)
+          .run(batchId, projectFixture.project.project_id, projectFixture.storyboard.storyboard_package.storyboard_package_id);
+        dependentPersistenceCompleted = true;
+        return null;
+      }
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(dependentPersistenceCompleted, true);
+    assert.equal(db.prepare("SELECT batch_id FROM generation_batches WHERE batch_id = ?").get(batchId), undefined);
+    assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM media_artifacts
+      WHERE json_extract(data_json, '$.source.provider_job_id') = ?`).get(providerJobId) as { count: number }).count, 0);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("M1 provider output downloader retries every validated public address", async () => {
   const db = openM0Database(":memory:");
   const root = mkdtempSync(join(tmpdir(), "provider-output-address-fallback-"));

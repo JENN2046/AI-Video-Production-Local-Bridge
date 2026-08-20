@@ -2035,6 +2035,93 @@ const WORKBENCH_DELIVERY_STATE_SQL = `
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_SHOT_CONTENT_FROZEN');
   END;
+  CREATE TRIGGER workbench_delivery_shot_readiness_after_insert AFTER INSERT ON shots
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = 'not_ready', updated_at = NEW.updated_at
+    WHERE project_id = NEW.project_id AND workflow_state = 'ready_to_assemble'
+      AND EXISTS (
+        SELECT 1 FROM shots shot
+        LEFT JOIN media_artifacts artifact
+          ON artifact.artifact_id = json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+          AND artifact.project_id = shot.project_id AND artifact.shot_id = shot.shot_id
+          AND artifact.role = 'generated_clip' AND artifact.artifact_type = 'video'
+          AND artifact.status = 'active'
+        LEFT JOIN media_artifact_blobs artifact_blob ON artifact_blob.artifact_id = artifact.artifact_id
+        LEFT JOIN media_blobs blob ON blob.blob_id = artifact_blob.blob_id AND blob.integrity_state = 'verified'
+        WHERE shot.project_id = NEW.project_id AND (
+          COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') = ''
+          OR COALESCE(json_extract(shot.data_json, '$.status'), '') <> 'approved'
+          OR COALESCE(json_extract(shot.data_json, '$.review.approval_status'), '') <> 'approved'
+          OR artifact.artifact_id IS NULL OR blob.blob_id IS NULL
+          OR NOT EXISTS (
+            SELECT 1 FROM json_each(shot.data_json, '$.clip_versions') clip_version
+            WHERE json_extract(clip_version.value, '$.artifact_id') IS artifact.artifact_id
+              AND json_extract(clip_version.value, '$.review_status') = 'approved'
+          )
+        )
+      );
+  END;
+  CREATE TRIGGER workbench_delivery_shot_readiness_after_update AFTER UPDATE OF project_id, data_json ON shots
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = 'not_ready', updated_at = NEW.updated_at
+    WHERE project_id IN (OLD.project_id, NEW.project_id) AND workflow_state = 'ready_to_assemble'
+      AND (
+        NOT EXISTS (SELECT 1 FROM shots shot WHERE shot.project_id = workbench_delivery_state.project_id)
+        OR EXISTS (
+          SELECT 1 FROM shots shot
+          LEFT JOIN media_artifacts artifact
+            ON artifact.artifact_id = json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+            AND artifact.project_id = shot.project_id AND artifact.shot_id = shot.shot_id
+            AND artifact.role = 'generated_clip' AND artifact.artifact_type = 'video'
+            AND artifact.status = 'active'
+          LEFT JOIN media_artifact_blobs artifact_blob ON artifact_blob.artifact_id = artifact.artifact_id
+          LEFT JOIN media_blobs blob ON blob.blob_id = artifact_blob.blob_id AND blob.integrity_state = 'verified'
+          WHERE shot.project_id = workbench_delivery_state.project_id AND (
+            COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') = ''
+            OR COALESCE(json_extract(shot.data_json, '$.status'), '') <> 'approved'
+            OR COALESCE(json_extract(shot.data_json, '$.review.approval_status'), '') <> 'approved'
+            OR artifact.artifact_id IS NULL OR blob.blob_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1 FROM json_each(shot.data_json, '$.clip_versions') clip_version
+              WHERE json_extract(clip_version.value, '$.artifact_id') IS artifact.artifact_id
+                AND json_extract(clip_version.value, '$.review_status') = 'approved'
+            )
+          )
+        )
+      );
+  END;
+  CREATE TRIGGER workbench_delivery_shot_readiness_after_delete AFTER DELETE ON shots
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = 'not_ready', updated_at = OLD.updated_at
+    WHERE project_id = OLD.project_id AND workflow_state = 'ready_to_assemble'
+      AND (
+        NOT EXISTS (SELECT 1 FROM shots shot WHERE shot.project_id = OLD.project_id)
+        OR EXISTS (
+          SELECT 1 FROM shots shot
+          LEFT JOIN media_artifacts artifact
+            ON artifact.artifact_id = json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+            AND artifact.project_id = shot.project_id AND artifact.shot_id = shot.shot_id
+            AND artifact.role = 'generated_clip' AND artifact.artifact_type = 'video'
+            AND artifact.status = 'active'
+          LEFT JOIN media_artifact_blobs artifact_blob ON artifact_blob.artifact_id = artifact.artifact_id
+          LEFT JOIN media_blobs blob ON blob.blob_id = artifact_blob.blob_id AND blob.integrity_state = 'verified'
+          WHERE shot.project_id = OLD.project_id AND (
+            COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') = ''
+            OR COALESCE(json_extract(shot.data_json, '$.status'), '') <> 'approved'
+            OR COALESCE(json_extract(shot.data_json, '$.review.approval_status'), '') <> 'approved'
+            OR artifact.artifact_id IS NULL OR blob.blob_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1 FROM json_each(shot.data_json, '$.clip_versions') clip_version
+              WHERE json_extract(clip_version.value, '$.artifact_id') IS artifact.artifact_id
+                AND json_extract(clip_version.value, '$.review_status') = 'approved'
+            )
+          )
+        )
+      );
+  END;
   CREATE TRIGGER workbench_delivery_shot_delete_guard BEFORE DELETE ON shots
   WHEN EXISTS (
     SELECT 1 FROM workbench_project_meta meta
@@ -2747,6 +2834,9 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_project_content_guard",
         "workbench_delivery_shot_insert_guard",
         "workbench_delivery_shot_update_guard",
+        "workbench_delivery_shot_readiness_after_insert",
+        "workbench_delivery_shot_readiness_after_update",
+        "workbench_delivery_shot_readiness_after_delete",
         "workbench_delivery_shot_delete_guard",
         "workbench_delivery_artifact_status_guard",
         "workbench_delivery_artifact_content_guard",

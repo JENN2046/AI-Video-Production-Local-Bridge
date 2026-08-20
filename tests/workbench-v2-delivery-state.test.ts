@@ -1574,6 +1574,54 @@ test("assembly jobs require every approved accepted clip in canonical SHOT order
   }
 });
 
+test("ready delivery state atomically downgrades when a SHOT loses assembly readiness", () => {
+  const db = openM0Database(":memory:");
+  try {
+    const now = "2026-08-20T05:00:00.000Z";
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+      .run("project_ready_shot_drift", projectJson("project_ready_shot_drift", "video_review"));
+    const accepted = createAcceptedAssemblyClipFixture(db, {
+      project_id: "project_ready_shot_drift",
+      label: "ready SHOT drift"
+    });
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ?
+      WHERE project_id = 'project_ready_shot_drift'`).run(now);
+
+    const shot = getShot(db, accepted.shot_id);
+    assert.ok(shot);
+    if (!shot) throw new Error("ready SHOT drift fixture missing");
+    shot.status = "revision_needed";
+    shot.review.approval_status = "revision_needed";
+    shot.clip_versions[0]!.review_status = "rejected";
+    shot.accepted_clip_artifact_id = "";
+    saveShot(db, shot);
+
+    assert.equal((db.prepare(`SELECT workflow_state FROM workbench_delivery_state
+      WHERE project_id = 'project_ready_shot_drift'`).get() as { workflow_state: string }).workflow_state, "not_ready");
+
+    shot.status = "approved";
+    shot.review.approval_status = "approved";
+    shot.clip_versions[0]!.review_status = "approved";
+    shot.accepted_clip_artifact_id = accepted.artifact_id;
+    saveShot(db, shot);
+    db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'ready_to_assemble', updated_at = ?
+      WHERE project_id = 'project_ready_shot_drift'`).run(now);
+
+    const inserted = structuredClone(shot);
+    inserted.shot_id = "shot_ready_inserted_unapproved";
+    inserted.order = 2;
+    inserted.status = "draft";
+    inserted.review.approval_status = "pending";
+    inserted.accepted_clip_artifact_id = "";
+    inserted.clip_versions = [];
+    saveShot(db, inserted);
+    assert.equal((db.prepare(`SELECT workflow_state FROM workbench_delivery_state
+      WHERE project_id = 'project_ready_shot_drift'`).get() as { workflow_state: string }).workflow_state, "not_ready");
+  } finally {
+    db.close();
+  }
+});
+
 test("legacy four-state summaries reserve delivered exclusively for closed projects", () => {
   assert.equal(projectSummaryDeliveryState("not_ready"), "not_ready");
   assert.equal(projectSummaryDeliveryState("revision_requested"), "not_ready");

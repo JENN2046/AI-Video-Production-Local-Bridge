@@ -538,6 +538,24 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
   assert.ok(deliveryContext && "final_artifact_reason_code" in deliveryContext.compact && "final_artifact_reason_code" in deliveryContext.full);
   assert.equal(deliveryContext.compact.final_artifact_reason_code, null);
   assert.equal(deliveryContext.full.final_artifact_reason_code, null);
+  const { snapshot_fingerprint: _closedFingerprint, ...closedUnsigned } = snapshot;
+  const closedWithoutFinalEvidence = structuredClone(closedUnsigned) as ReadonlySnapshotUnsigned;
+  const closedProject = closedWithoutFinalEvidence.projects[0]!;
+  closedProject.delivery.final_artifact = null;
+  closedProject.delivery.final_artifact_reason_code = "FINAL_ARTIFACT_NOT_CREATED";
+  closedProject.delivery.delivered = false;
+  closedProject.closeout.final_artifact = null;
+  closedProject.closeout.final_artifact_reason_code = "FINAL_ARTIFACT_NOT_CREATED";
+  closedProject.closeout.delivered = false;
+  for (const context of closedProject.contexts) {
+    if (context.workspace !== "delivery" || context.full.workspace !== "delivery" || context.compact.workspace !== "delivery") continue;
+    context.full.final_artifact = null;
+    context.full.final_artifact_reason_code = "FINAL_ARTIFACT_NOT_CREATED";
+    context.compact.final_artifact = null;
+    context.compact.final_artifact_reason_code = "FINAL_ARTIFACT_NOT_CREATED";
+  }
+  assert.throws(() => finalizeReadonlySnapshot(closedWithoutFinalEvidence),
+    /Closed snapshot requires a usable final artifact and delivered status/i);
   assert.deepEqual(snapshot.projects[0]!.media_bindings.map((binding) => ({
     artifact_id: binding.artifact_id,
     project_id: binding.project_id,

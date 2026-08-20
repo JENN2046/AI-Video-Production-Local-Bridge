@@ -726,6 +726,13 @@ function validateProjectProjectionBindings(
   const acceptedCount = project.delivery.readiness_checks.filter((check) => check.ok).length;
   const readyForAssembly = project.shots_full.length > 0 && project.delivery.readiness_checks.every((check) => check.ok);
   const delivered = canonicalSummary.delivery_state === "delivered" && project.delivery.final_artifact !== null;
+  if (project.workflow_state === "closed" && (
+    project.delivery.final_artifact === null
+    || project.delivery.final_artifact_reason_code !== null
+    || project.delivery.delivered !== true
+  )) {
+    addBindingIssue(context, [...base, "delivery"], "Closed snapshot requires a usable final artifact and delivered status.");
+  }
   if (project.delivery.project_status !== project.list_item_full.project.status
     || project.delivery.shots_total !== project.shots_full.length
     || project.delivery.shots_accepted !== acceptedCount
