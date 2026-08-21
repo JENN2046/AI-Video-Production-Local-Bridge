@@ -19,6 +19,23 @@ function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "ai-video-db-governance-"));
 }
 
+function rewriteDeliveryJobTableDefinition(sqlitePath: string, rewrite: (sql: string) => string): void {
+  const db = new DatabaseSync(sqlitePath);
+  try {
+    const row = db.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'workbench_delivery_jobs'")
+      .get() as { sql: string };
+    const changed = rewrite(row.sql);
+    assert.notEqual(changed, row.sql);
+    db.exec("PRAGMA writable_schema = ON");
+    db.prepare("UPDATE sqlite_schema SET sql = ? WHERE type = 'table' AND name = 'workbench_delivery_jobs'")
+      .run(changed);
+    const version = (db.prepare("PRAGMA schema_version").get() as { schema_version: number }).schema_version;
+    db.exec(`PRAGMA schema_version = ${version + 1}; PRAGMA writable_schema = RESET;`);
+  } finally {
+    db.close();
+  }
+}
+
 function insertUnverifiedArtifact(
   db: DatabaseSync,
   input: { artifact_id: string; project_id?: string; shot_id?: string; uri: string }
@@ -349,7 +366,7 @@ test("database migrated through 0003 keeps its historical checksums and upgrades
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[1]), "52dc1311414cd88468542159d215adce443717b087e65d73d3f60859e5727c75");
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[2]), "161aa27dec915827c0ab6d46bc768ca2734c2efdf4bc45ae2fa1b2f4b564fef8");
     const result = runDatabaseMigrations(db);
-    assert.deepEqual(result.applied, ["0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011"]);
+    assert.deepEqual(result.applied, ["0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012"]);
     const event = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = 'job_intent_legacy'").get() as { to_state: string; reason_code: string };
     assert.deepEqual({ ...event }, { to_state: "polling", reason_code: "MIGRATION_BACKFILL" });
     assertSchemaCurrent(db);
@@ -398,7 +415,7 @@ test("migration 0006 backfills active legacy Artifact facts from the verified Bl
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[4]), HISTORICAL_MIGRATION_0005_CHECKSUM);
     insertLedger.run(DATABASE_MIGRATIONS[4].id, DATABASE_MIGRATIONS[4].name, HISTORICAL_MIGRATION_0005_CHECKSUM);
     const migrated = runDatabaseMigrations(db);
-    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011"]);
+    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011", "0012"]);
 
     const after = JSON.parse((db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(artifact.artifact_id) as { data_json: string }).data_json) as typeof artifact;
     assert.equal(after.metadata.sha256, before.sha256);
@@ -443,7 +460,7 @@ test("migration accepts and canonicalizes the interim 0005 ledger checksum", () 
         && /Database schema version is workbench-v2-5|Missing database migration 0006/.test(error.message)
     );
     const migrated = runDatabaseMigrations(connection);
-    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011"]);
+    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011", "0012"]);
     const normalized = connection.prepare("SELECT checksum FROM schema_migrations WHERE migration_id = '0005'").get() as { checksum: string };
     assert.equal(normalized.checksum, HISTORICAL_MIGRATION_0005_CHECKSUM);
     assertSchemaCurrent(connection);
@@ -539,6 +556,7 @@ test("database check returns a structured failure for malformed JSON and missing
     migrateDatabase(malformedPath);
     const malformed = new DatabaseSync(malformedPath);
     malformed.exec("DROP INDEX idx_projects_status_updated");
+    malformed.exec("DROP TRIGGER workbench_projects_validate_initial_delivery");
     malformed.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_bad_json', '{')").run();
     malformed.close();
     const malformedResult = checkDatabase(malformedPath);
@@ -571,6 +589,59 @@ test("database check reports orphan rows", () => {
     const checked = checkDatabase(sqlitePath);
     assert.equal(checked.result, "FAIL");
     assert.equal(checked.orphan_rows > 0, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check reports delivery ledger evidence drift left by a foreign-key bypass", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "delivery-drift.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = new DatabaseSync(sqlitePath);
+    db.exec("PRAGMA foreign_keys = OFF");
+    db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_delivery_drift', ?)")
+      .run(JSON.stringify({ project_id: "project_delivery_drift", status: "draft", exports: { final_video_artifact_id: "" } }));
+    db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, terminal_event_id)
+      VALUES ('job_delivery_drift', 'project_delivery_drift', 'assembly', 'failed', 'event_missing')`).run();
+    db.close();
+
+    const checked = checkDatabase(sqlitePath, { recover_media_activations: false });
+    assert.equal(checked.schema_current, true);
+    assert.equal(checked.orphan_rows > 0, true);
+    assert.equal(checked.result, "FAIL");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("database check rejects delivery terminal generated-column metadata and expression drift", () => {
+  const root = tempRoot();
+  try {
+    const expressionPath = join(root, "generated-expression.sqlite");
+    migrateDatabase(expressionPath);
+    const canonical = checkDatabase(expressionPath, { recover_media_activations: false });
+    assert.equal(canonical.result, "PASS");
+    assert.equal(canonical.schema_current, true);
+    rewriteDeliveryJobTableDefinition(expressionPath, (sql) => sql.replace(
+      /terminal_event_type TEXT GENERATED ALWAYS AS \([\s\S]*?\) STORED,/,
+      "terminal_event_type TEXT GENERATED ALWAYS AS (NULL) STORED,"
+    ));
+    const expressionDrift = checkDatabase(expressionPath, { recover_media_activations: false });
+    assert.equal(expressionDrift.result, "FAIL");
+    assert.equal(expressionDrift.schema_current, false);
+
+    const metadataPath = join(root, "generated-metadata.sqlite");
+    migrateDatabase(metadataPath);
+    rewriteDeliveryJobTableDefinition(metadataPath, (sql) => sql.replace(
+      /(terminal_event_type TEXT GENERATED ALWAYS AS \([\s\S]*?\)) STORED,/,
+      "$1 VIRTUAL,"
+    ));
+    const metadataDrift = checkDatabase(metadataPath, { recover_media_activations: false });
+    assert.equal(metadataDrift.result, "FAIL");
+    assert.equal(metadataDrift.schema_current, false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

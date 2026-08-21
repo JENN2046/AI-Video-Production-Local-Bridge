@@ -22,6 +22,11 @@ import { requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import type { ProjectOperationalSummary } from "../packages/domain/operationalState.js";
 import { markShotClipReview, type RevisionInstruction } from "./review.js";
 import { listWorkbenchDraftRecords, listWorkbenchPendingActionRecords } from "./workbenchInboxStore.js";
+import {
+  projectWorkbenchDeliverySummaryState,
+  requireWorkbenchDeliveryState,
+  type WorkbenchDeliveryWorkflowState
+} from "./workbenchDeliveryState.js";
 
 export type WorkbenchProjectClassification = "unclassified" | "production" | "test";
 export type WorkbenchProjectLifecycle = "active" | "archived";
@@ -307,7 +312,7 @@ export function listWorkbenchProjects(
       revision_needed_count: 0,
       latest_failed_count: 0
     } : integrityBlockedSummary(project);
-    return projectSummaryFromRow(project, row, operational);
+    return projectSummaryFromRow(db, project, row, operational);
   }), totalRow.count, limit, offset);
 }
 
@@ -385,14 +390,15 @@ function hasAcceptedClipIntegrityBlocker(summary: ProjectOperationalSummary): bo
   return summary.blocker_codes.some((code) => code === "SHOT_STATE_INCONSISTENT" || code === "ARTIFACT_NOT_IN_SHOT_REVIEW" || code.startsWith("ACCEPTED_CLIP_"));
 }
 
-function projectSummaryFromRow(project: Project, row: ProjectRow, operational: ProjectOperationalSummary): WorkbenchProjectSummary {
+function projectSummaryFromRow(db: M0Database, project: Project, row: ProjectRow, operational: ProjectOperationalSummary): WorkbenchProjectSummary {
   const meta = projectMetaFromRow(row);
+  const durableDeliveryState = requireWorkbenchDeliveryState(db, project.project_id);
   const assemblyReadiness: SummaryAssemblyReadiness = operational.shot_count > 0
     && operational.accepted_count === operational.shot_count
     && !project.exports.final_video_artifact_id
     ? "unverified"
     : "not_applicable";
-  const derived = deriveNextAction(project, operational, assemblyReadiness);
+  const derived = deriveNextAction(project, operational, assemblyReadiness, durableDeliveryState.workflow_state);
   const overrideValid = Boolean(
     assemblyReadiness !== "unverified"
     && !hasAcceptedClipIntegrityBlocker(operational)
@@ -410,11 +416,7 @@ function projectSummaryFromRow(project: Project, row: ProjectRow, operational: P
     expires_at: meta.next_action_expires_at,
     derived
   } : { source: "derived", ...derived, expires_at: null, derived };
-  const deliveryState = project.status === "final_approved"
-    ? "delivered"
-    : project.exports.final_video_artifact_id
-      ? "final_review"
-      : "not_ready";
+  const deliveryState = projectWorkbenchDeliverySummaryState(durableDeliveryState.workflow_state);
   const blockerParts = operational.blocker_codes.map((code) => `${operational.blocker_code_counts[code] ?? 0} 个${blockerLabel(code)}`);
   const risk: "blocked" | "attention" | "clear" = operational.blocker_count > 0 || operational.latest_failed_count > 0
     ? "blocked"
@@ -438,10 +440,18 @@ function projectSummaryFromRow(project: Project, row: ProjectRow, operational: P
   };
 }
 
-function deriveNextAction(project: Project, state: ProjectOperationalSummary, assemblyReadiness: SummaryAssemblyReadiness = "not_applicable"): WorkbenchNextAction["derived"] {
+function deriveNextAction(
+  project: Project,
+  state: ProjectOperationalSummary,
+  assemblyReadiness: SummaryAssemblyReadiness = "not_applicable",
+  deliveryWorkflowState?: WorkbenchDeliveryWorkflowState
+): WorkbenchNextAction["derived"] {
   if (state.latest_failed_count > 0) return { label: "处理生成失败", reason_code: "generation_failed", priority: "urgent" };
   if (state.blocker_codes.includes("PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION")) {
     return { label: "修复项目运行数据", reason_code: "operational_data_integrity", priority: "urgent" };
+  }
+  if (deliveryWorkflowState === "legacy_review_required") {
+    return { label: "最终审查", reason_code: "final_review", priority: "high" };
   }
   if (state.shot_count === 0) return { label: "创建第一个 SHOT", reason_code: "no_shots", priority: "high" };
   if (state.blocker_codes.some((code) => code === "STORYBOARD_IMAGE_MISSING" || code === "VIDEO_PROMPT_MISSING")) {

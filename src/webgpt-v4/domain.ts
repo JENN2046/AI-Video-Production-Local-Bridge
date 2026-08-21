@@ -6,6 +6,7 @@ import { listProjectShots, type Project, type Shot } from "../tools/projects.js"
 import { collectProjectOperationalBundle, OperationalStateIntegrityError } from "../tools/operationalStateFacts.js";
 import { requireShotWorkflowWriteAction } from "../tools/operationalWriteGates.js";
 import { getWorkbenchProjectSummary, getWorkbenchProjectWorkspace } from "../tools/workbenchV2.js";
+import { requireWorkbenchDeliveryState } from "../tools/workbenchDeliveryState.js";
 import { appendWorkbenchInboxEvent, getWorkbenchDraftRecord, saveWorkbenchDraftRecord, type WorkbenchDraftRecord } from "../tools/workbenchInboxStore.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, providerCapabilityErrorMessage, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "../tools/providerCapabilities.js";
 import { parseProductionProposalPayload } from "./proposals.js";
@@ -594,6 +595,7 @@ export function getProductionDeliveryStatus(input: { project_id: string }, db: M
     const row = projectRow(db, input.project_id);
     const project = parseBoundJson<Project>(row.data_json, "project_id");
     if (project.project_id !== row.project_id) dataIntegrityViolation("project_id");
+    const deliveryState = requireWorkbenchDeliveryState(db, input.project_id);
     const shots = listProjectShots(db, input.project_id);
     for (const shot of shots) {
       if (shot.project_id !== input.project_id) dataIntegrityViolation("shot_id");
@@ -605,20 +607,21 @@ export function getProductionDeliveryStatus(input: { project_id: string }, db: M
         ? { artifact: validated.artifact, check: { shot_id: shot.shot_id, artifact_id: shot.accepted_clip_artifact_id, ok: true, reason_code: "SHOT_ACCEPTED_CLIP_READY" } }
         : { artifact: null, check: { shot_id: shot.shot_id, artifact_id: shot.accepted_clip_artifact_id, ok: false, reason_code: validated.error.code } };
     });
-    const finalValidated = project.exports.final_video_artifact_id
-      ? validateActiveArtifactReference(db, { artifact_id: project.exports.final_video_artifact_id, project_id: input.project_id, shot_id: "", role: "final_video", artifact_type: "video" })
+    const finalValidated = deliveryState.current_final_artifact_id
+      ? validateActiveArtifactReference(db, { artifact_id: deliveryState.current_final_artifact_id, project_id: input.project_id, shot_id: "", role: "final_video", artifact_type: "video" })
       : null;
     const finalArtifact = finalValidated?.ok ? publicArtifact(finalValidated.artifact) : null;
     return ok(id, {
       project_id: project.project_id,
       project_status: project.status,
+      workflow_state: deliveryState.workflow_state,
       shots_total: shots.length,
       shots_accepted: accepted.filter((item) => item.artifact !== null).length,
       ready_for_assembly: shots.length > 0 && accepted.every((item) => item.check.ok),
       readiness_checks: accepted.map((item) => item.check),
       final_artifact: finalArtifact,
       final_artifact_reason_code: finalValidated?.ok ? null : finalValidated ? finalValidated.error.code : "FINAL_ARTIFACT_NOT_CREATED",
-      delivered: project.status === "final_approved" && Boolean(finalArtifact)
+      delivered: deliveryState.workflow_state === "closed" && Boolean(finalArtifact)
     });
   } catch (error) {
     return fail(id, domainErrorBody(error));

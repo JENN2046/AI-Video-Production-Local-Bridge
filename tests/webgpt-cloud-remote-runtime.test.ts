@@ -27,6 +27,7 @@ import {
 import { ReadonlySnapshotStore, signReadonlySnapshot, verifyReadonlySignedSnapshot } from "../src/webgpt-cloud/signedSnapshot.js";
 import {
   finalizeReadonlySnapshot,
+  READONLY_SNAPSHOT_PREVIOUS_SOURCE_SCHEMA,
   READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION,
   type ReadonlySnapshot
 } from "../src/webgpt-cloud/snapshot.js";
@@ -182,6 +183,7 @@ test("signed snapshot transport rejects tampering and atomically replaces only n
     const { snapshot_fingerprint: _previousFingerprint, ...previousUnsigned } = structuredClone(second.snapshot);
     const previousSnapshot = finalizeReadonlySnapshot({
       ...previousUnsigned,
+      source_schema: READONLY_SNAPSHOT_PREVIOUS_SOURCE_SCHEMA,
       source_migration: READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION
     });
     const previousEnvelope = signReadonlySnapshot(previousSnapshot, "publisher-v1", privateKey);
@@ -339,6 +341,7 @@ test("remote OAuth challenges, signed publish, six readonly tools, and readiness
     const { snapshot_fingerprint: _previousFingerprint, ...previousUnsigned } = structuredClone(fixture.snapshot);
     const previousEnvelope = signReadonlySnapshot(finalizeReadonlySnapshot({
       ...previousUnsigned,
+      source_schema: READONLY_SNAPSHOT_PREVIOUS_SOURCE_SCHEMA,
       source_migration: READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION
     }), "publisher-v1", privateKey);
     const rejectedPrevious = await fetch(runtime.snapshot_url, {

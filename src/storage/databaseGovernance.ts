@@ -195,7 +195,8 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
       ["workbench_inbox_events", "data_json"], ["workbench_governance_runs", "rule_groups_json"],
       ["webgpt_audit_events", "changed_fields_json"], ["webgpt_audit_events", "result_json"], ["generation_job_events", "data_json"],
       ["media_blobs", "provenance_json"], ["media_activation_journal", "artifact_json"],
-      ["director_proposals", "payload_json"], ["director_automation_grants", "allowed_actions_json"], ["storyboard_package_versions", "payload_json"]
+      ["director_proposals", "payload_json"], ["director_automation_grants", "allowed_actions_json"], ["storyboard_package_versions", "payload_json"],
+      ["workbench_delivery_jobs", "input_json"], ["workbench_delivery_events", "data_json"]
     ] as const;
     const invalidJsonRows = jsonColumns.reduce((sum, [table, column]) => sum + scalarCount(db, `SELECT COUNT(*) AS count FROM ${table} WHERE json_valid(${column}) = 0`, errors), 0);
     const structuredDriftRows = scalarCount(db, "SELECT COUNT(*) AS count FROM projects WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.project_id') IS NOT project_id", errors)
@@ -301,7 +302,77 @@ export function checkDatabase(sqlitePath = paths.sqlitePath, options: DatabaseCh
         LEFT JOIN shots shot ON shot.shot_id = r.shot_id AND shot.project_id = r.project_id
         LEFT JOIN media_artifacts artifact ON artifact.artifact_id = r.artifact_id
           AND artifact.project_id = r.project_id AND artifact.shot_id = r.shot_id
-        WHERE p.proposal_id IS NULL OR project.project_id IS NULL OR shot.shot_id IS NULL OR artifact.artifact_id IS NULL`
+        WHERE p.proposal_id IS NULL OR project.project_id IS NULL OR shot.shot_id IS NULL OR artifact.artifact_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM projects p
+        LEFT JOIN workbench_delivery_state state ON state.project_id = p.project_id
+        WHERE state.project_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_state state
+        LEFT JOIN media_artifacts artifact
+          ON artifact.project_id = state.project_id AND artifact.artifact_id = state.current_final_artifact_id
+        WHERE state.current_final_artifact_id IS NOT NULL
+          AND (artifact.artifact_id IS NULL OR COALESCE(artifact.shot_id, '') <> ''
+            OR artifact.role <> 'final_video' OR artifact.artifact_type <> 'video' OR artifact.status <> 'active')`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_state state
+        LEFT JOIN projects project ON project.project_id = state.project_id
+        LEFT JOIN media_artifacts artifact
+          ON artifact.project_id = state.project_id AND artifact.artifact_id = state.legacy_final_artifact_id
+        WHERE state.legacy_final_artifact_id IS NOT NULL AND (
+          state.current_final_artifact_id IS NOT state.legacy_final_artifact_id
+          OR artifact.artifact_id IS NULL OR COALESCE(artifact.shot_id, '') <> ''
+          OR artifact.role <> 'final_video' OR artifact.artifact_type <> 'video' OR artifact.status <> 'active'
+          OR CASE WHEN json_valid(project.data_json) = 1
+            THEN COALESCE(json_extract(project.data_json, '$.exports.final_video_artifact_id'), '')
+            ELSE '' END IS NOT state.legacy_final_artifact_id
+        )`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_state state
+        LEFT JOIN media_artifacts artifact
+          ON artifact.project_id = state.project_id AND artifact.artifact_id = state.approved_artifact_id
+        WHERE state.approved_artifact_id IS NOT NULL
+          AND (artifact.artifact_id IS NULL OR COALESCE(artifact.shot_id, '') <> ''
+            OR artifact.role <> 'final_video' OR artifact.artifact_type <> 'video' OR artifact.status <> 'active')`,
+      `SELECT COUNT(*) AS count FROM workbench_exports receipt
+        LEFT JOIN media_artifacts artifact
+          ON artifact.project_id = receipt.project_id AND artifact.artifact_id = receipt.artifact_id
+        WHERE artifact.artifact_id IS NULL OR COALESCE(artifact.shot_id, '') <> ''
+          OR artifact.role <> 'final_video' OR artifact.artifact_type <> 'video' OR artifact.status <> 'active'`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_jobs job
+        LEFT JOIN workbench_delivery_events event
+          ON event.project_id = job.project_id AND event.event_id = job.terminal_event_id
+        WHERE job.state IN ('succeeded','failed','interrupted')
+          AND (event.event_id IS NULL OR event.job_id IS NOT job.job_id
+            OR event.event_type IS NOT (job.job_type || '_' || job.state))`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_jobs job
+        LEFT JOIN workbench_delivery_jobs parent
+          ON parent.project_id = job.project_id AND parent.job_id = job.retry_of_job_id AND parent.job_type = job.job_type
+        WHERE job.retry_of_job_id IS NOT NULL AND parent.job_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_events event
+        LEFT JOIN workbench_delivery_jobs job
+          ON job.project_id = event.project_id AND job.job_id = event.job_id
+        WHERE event.job_id IS NOT NULL AND (
+          job.job_id IS NULL
+          OR (job.job_type = 'assembly' AND event.event_type NOT LIKE 'assembly_%')
+          OR (job.job_type = 'export' AND event.event_type NOT LIKE 'export_%')
+        )`,
+      `SELECT COUNT(*) AS count FROM (
+        SELECT job_id, event_type FROM workbench_delivery_events
+        WHERE job_id IS NOT NULL GROUP BY job_id, event_type HAVING COUNT(*) > 1
+      ) duplicates`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_jobs job
+        LEFT JOIN media_artifacts artifact
+          ON artifact.project_id = job.project_id AND artifact.artifact_id = job.output_artifact_id
+        WHERE job.output_artifact_id IS NOT NULL AND artifact.artifact_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_jobs job
+        LEFT JOIN workbench_exports receipt
+          ON receipt.project_id = job.project_id AND receipt.export_id = job.export_id
+        WHERE job.export_id IS NOT NULL AND receipt.export_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_events event
+        LEFT JOIN media_artifacts artifact
+          ON artifact.project_id = event.project_id AND artifact.artifact_id = event.artifact_id
+        WHERE event.artifact_id IS NOT NULL AND artifact.artifact_id IS NULL`,
+      `SELECT COUNT(*) AS count FROM workbench_delivery_events event
+        LEFT JOIN workbench_exports receipt
+          ON receipt.project_id = event.project_id AND receipt.export_id = event.export_id
+        WHERE event.export_id IS NOT NULL AND receipt.export_id IS NULL`
     ];
     const orphanRows = orphanQueries.reduce((sum, sql) => sum + scalarCount(db, sql, errors), 0);
     let mediaRows: Array<{ data_json: string }> = [];

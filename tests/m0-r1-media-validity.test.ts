@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -143,7 +143,7 @@ test("M0-R1 regenerated shot artifact is valid mp4", async () => {
   }
 });
 
-test("M0-R1 final assembly artifact is valid mp4", async () => {
+test("M0-R1 legacy final assembly is disabled until the durable Assembly owner is stacked", async () => {
   const db = openM0Database();
 
   try {
@@ -162,12 +162,8 @@ test("M0-R1 final assembly artifact is valid mp4", async () => {
       },
       db
     );
-    assert.equal(assembled.ok, true);
-    if (!assembled.ok) return;
-
-    const artifact = getMediaArtifact(db, assembled.final_video_artifact_id);
-    assertValidMp4Artifact(artifact);
-    assert.notEqual(readFileSync(artifact?.storage.uri ?? "", "utf8").startsWith("M0_FINAL_VIDEO"), true);
+    assert.equal(assembled.ok, false);
+    if (!assembled.ok) assert.equal(assembled.error.code, "LEGACY_ASSEMBLY_INCOMPATIBLE");
   } finally {
     db.close();
   }

@@ -9,6 +9,7 @@ import test from "node:test";
 import { bindWebGptPrincipalIssuer, bootstrapWebGptProjectOwner, registerWebGptPrincipal } from "../src/webgpt-v4/authorizationAdmin.js";
 import { actorFromFederatedSubject, type WebGptV4Result } from "../src/webgpt-v4/types.js";
 import { openM0Database, openM0DatabaseConnection, type M0Database } from "../src/storage/sqlite.js";
+import { DATABASE_MIGRATIONS, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
 import { createProject, getProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
 import {
@@ -69,6 +70,30 @@ function logicalManifest(db: M0Database): { table_count: number; row_count: numb
     return { name, rows };
   });
   return { table_count: tables.length, row_count: rowCount, sha256: createHash("sha256").update(JSON.stringify(payload)).digest("hex") };
+}
+
+function migrateThrough0011(db: DatabaseSync): void {
+  db.exec(`
+    PRAGMA foreign_keys = ON;
+    CREATE TABLE schema_migrations (
+      migration_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      checksum TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    BEGIN EXCLUSIVE;
+  `);
+  try {
+    for (const migration of DATABASE_MIGRATIONS.filter((item) => item.id <= "0011")) {
+      migration.apply(db);
+      db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)")
+        .run(migration.id, migration.name, migrationChecksum(migration));
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 function createFixture(sqlitePath: string): {
@@ -234,13 +259,13 @@ function stripMeta(result: ReturnType<SqliteReadonlyDataSource["listProductionPr
   return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
 }
 
-test("readonly projection requires migration 0011 and never upgrades an older database", () => {
+test("readonly projection requires migration 0012 and never upgrades an older database", () => {
   const root = mkdtempSync(join(tmpdir(), "readonly-projection-ledger-"));
   const sqlitePath = join(root, "app.sqlite");
   const db = openM0Database(sqlitePath);
   db.exec(`
-    DROP TABLE director_artifact_import_receipts;
-    DELETE FROM schema_migrations WHERE migration_id = '0011';
+    DROP TABLE workbench_delivery_state;
+    DELETE FROM schema_migrations WHERE migration_id = '0012';
   `);
   db.close();
   try {
@@ -254,13 +279,92 @@ test("readonly projection requires migration 0011 and never upgrades an older da
     );
     const verify = openM0DatabaseConnection(sqlitePath, { readOnly: true });
     try {
-      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0011'").get() as { count: number }).count, 0);
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0012'").get() as { count: number }).count, 0);
       assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'director_automation_grants'").get() as { count: number }).count, 1);
-      assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'director_artifact_import_receipts'").get() as { count: number }).count, 0);
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'workbench_delivery_state'").get() as { count: number }).count, 0);
     } finally {
       verify.close();
     }
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("readonly Snapshot keeps legacy review authoritative over stale final approval", () => {
+  const root = mkdtempSync(join(tmpdir(), "readonly-legacy-delivery-"));
+  const sqlitePath = join(root, "app.sqlite");
+  const db = new DatabaseSync(sqlitePath);
+  try {
+    migrateThrough0011(db);
+    const created = createProject({ title: "Legacy readonly delivery" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) throw new Error("LEGACY_READONLY_PROJECT_FIXTURE_FAILED");
+    db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?")
+      .run(created.project_id);
+    const actor = actorFromFederatedSubject(ISSUER, "readonly-legacy-owner", ["projects.read"]);
+    bootstrapWebGptProjectOwner(db, actor.principal_id, created.project_id, "READONLY_LEGACY_FIXTURE", actor.issuer_hash!);
+
+    const clip = registerMediaArtifact({
+      artifact_type: "video",
+      role: "generated_clip",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: created.project_id, shot_id: "shot_readonly_legacy" }
+    }, db);
+    const storyboard = registerMediaArtifact({
+      artifact_type: "image",
+      role: "storyboard_image",
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
+      linked_objects: { project_id: created.project_id, shot_id: "shot_readonly_legacy" }
+    }, db);
+    const finalVideo = registerMediaArtifact({
+      artifact_type: "video",
+      role: "final_video",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: created.project_id }
+    }, db);
+    assert.equal(clip.ok, true);
+    assert.equal(storyboard.ok, true);
+    assert.equal(finalVideo.ok, true);
+    if (!clip.ok || !storyboard.ok || !finalVideo.ok) throw new Error("LEGACY_READONLY_MEDIA_FIXTURE_FAILED");
+    saveShot(db, {
+      shot_id: "shot_readonly_legacy",
+      project_id: created.project_id,
+      order: 1,
+      status: "approved",
+      duration_seconds: 2,
+      description: "Legacy accepted SHOT",
+      storyboard_image_artifact_id: storyboard.artifact.artifact_id,
+      video_prompt: "Legacy readonly fixture",
+      negative_prompt: "",
+      generation_run_ids: [],
+      accepted_clip_artifact_id: clip.artifact.artifact_id,
+      clip_versions: [{ artifact_id: clip.artifact.artifact_id, run_id: "", attempt_number: 1, review_status: "approved" }],
+      review: { approval_status: "approved", rejection_reasons: [], latest_revision_instruction: null }
+    });
+    created.project.shot_ids = ["shot_readonly_legacy"];
+    created.project.status = "final_approved";
+    created.project.exports.final_video_artifact_id = finalVideo.artifact.artifact_id;
+    saveProject(db, created.project);
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0012"]);
+
+    const snapshot = exportReadonlySnapshotFromDatabase({
+      database_path: sqlitePath,
+      issuer_hash: actor.issuer_hash!,
+      resource_url: RESOURCE,
+      generated_at: new Date(Date.now() - 60_000).toISOString(),
+      ttl_seconds: 3600
+    });
+    const projected = snapshot.projects.find((project) => project.project_id === created.project_id);
+    assert.ok(projected);
+    assert.equal(projected.delivery.workflow_state, "legacy_review_required");
+    assert.equal(projected.list_item_full.project.status, "final_approved");
+    assert.equal(projected.list_item_full.summary.delivery_state, "final_review");
+    assert.equal(projected.list_item_full.summary.next_action.reason_code, "final_review");
+    const overview = projected.contexts.find((context) => context.workspace === "overview");
+    assert.ok(overview);
+    assert.equal(overview.full.summary.next_action.reason_code, "final_review");
+  } finally {
+    db.close();
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -284,6 +388,9 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
     project.status = "final_approved";
     project.exports.final_video_artifact_id = registered.artifact.artifact_id;
     saveProject(fixtureDb, project);
+    fixtureDb.prepare(`UPDATE workbench_delivery_state
+      SET workflow_state = 'closed', current_final_artifact_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE project_id = ?`).run(registered.artifact.artifact_id, fixture.project_id);
   } finally {
     fixtureDb.close();
   }
@@ -488,11 +595,12 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
   assert.equal(readonlySnapshotStatus(snapshot, new Date("2026-07-16T01:00:00.000Z")).freshness_status, "snapshot_expired");
 
   const currentSource = structuredClone(unsigned);
-  currentSource.source_schema = "workbench-v2-6";
-  currentSource.source_migration = "0011";
+  currentSource.source_schema = "workbench-v2-7";
+  currentSource.source_migration = "0012";
   assert.doesNotThrow(() => finalizeReadonlySnapshot(currentSource));
   const previousSource = structuredClone(currentSource);
-  previousSource.source_migration = "0010";
+  previousSource.source_schema = "workbench-v2-6";
+  previousSource.source_migration = "0011";
   assert.doesNotThrow(() => finalizeReadonlySnapshot(previousSource));
   const crossedSource = structuredClone(currentSource);
   crossedSource.source_migration = "0008";
@@ -897,7 +1005,9 @@ test("snapshot validation rejects nested cross-project DTO bindings", () => {
     invalidFinalProject.list_item_full.summary.delivery_state = "final_review";
     invalidFinalProject.list_item_compact.summary.delivery_state = "final_review";
     invalidFinalProject.delivery.final_artifact_reason_code = "ARTIFACT_INACCESSIBLE";
+    invalidFinalProject.delivery.workflow_state = "final_review";
     invalidFinalProject.closeout.final_artifact_reason_code = "ARTIFACT_INACCESSIBLE";
+    invalidFinalProject.closeout.workflow_state = "final_review";
     for (const context of invalidFinalProject.contexts) {
       context.full.summary.delivery_state = "final_review";
       context.compact.summary.delivery_state = "final_review";

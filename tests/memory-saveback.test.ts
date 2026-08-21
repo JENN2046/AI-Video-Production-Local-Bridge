@@ -8,16 +8,17 @@ import {
   createGenerationRunFromPackageShot,
   createMemorySavebackProposal,
   createProject,
-  executeH4FinalAssembly,
   generateMemoryRecallPack,
+  getProject,
   getShot,
   importStoryboardPackage,
   openM0Database,
   registerMediaArtifact,
+  saveProject,
   saveShot
 } from "../src/index.js";
 
-async function setupClosedProject(db: ReturnType<typeof openM0Database>) {
+async function setupLegacyFinalProjectFixture(db: ReturnType<typeof openM0Database>) {
   const project = createProject({ title: `Memory Saveback ${randomUUID().slice(0, 8)}` }, db);
   assert.equal(project.ok, true);
   if (!project.ok) throw new Error("project setup failed");
@@ -70,18 +71,27 @@ async function setupClosedProject(db: ReturnType<typeof openM0Database>) {
   assert.equal(approved.ok, true);
   if (!approved.ok) throw new Error("approval setup failed");
 
-  const finalAssembly = executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, undefined, db);
-  assert.equal(finalAssembly.ok, true);
-  if (!finalAssembly.ok) throw new Error("assembly setup failed");
+  const finalArtifact = registerMediaArtifact({
+    artifact_type: "video",
+    role: "final_video",
+    source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+    linked_objects: { project_id: project.project_id }
+  }, db);
+  assert.equal(finalArtifact.ok, true);
+  if (!finalArtifact.ok) throw new Error("final artifact fixture setup failed");
+  const storedProject = getProject(db, project.project_id);
+  assert(storedProject);
+  storedProject.exports.final_video_artifact_id = finalArtifact.artifact.artifact_id;
+  saveProject(db, storedProject);
 
-  return { project, storyboard, generation, finalAssembly };
+  return { project, storyboard, generation, final_video_artifact_id: finalArtifact.artifact.artifact_id };
 }
 
 test("R3-6 creates saveback proposal with project, shot, artifact, run, and report provenance", async () => {
   const db = openM0Database();
 
   try {
-    const { project, storyboard, generation, finalAssembly } = await setupClosedProject(db);
+    const { project, storyboard, generation, final_video_artifact_id } = await setupLegacyFinalProjectFixture(db);
     const created = createMemorySavebackProposal(
       {
         project_id: project.project_id,
@@ -97,7 +107,7 @@ test("R3-6 creates saveback proposal with project, shot, artifact, run, and repo
     assert.equal(proposal.long_term_memory_write_attempted, false);
     assert.equal(proposal.items.some((item) => item.item_type === "memory_item"), true);
     assert.equal(proposal.items.some((item) => item.item_type === "asset" && item.provenance.artifact_id === generation.generated_artifact_id), true);
-    assert.equal(proposal.items.some((item) => item.item_type === "asset" && item.provenance.artifact_id === finalAssembly.value.final_video_artifact_id), true);
+    assert.equal(proposal.items.some((item) => item.item_type === "asset" && item.provenance.artifact_id === final_video_artifact_id), true);
     assert.equal(proposal.items.some((item) => item.item_type === "reference" && item.provenance.storyboard_package_id === storyboard.storyboard_package_id), true);
     assert.equal(proposal.items.every((item) => item.provenance.project_id === project.project_id), true);
     assert.equal(proposal.items.some((item) => item.provenance.shot_id === storyboard.shots[0].shot_id), true);
@@ -112,7 +122,7 @@ test("R3-6 materializes only approved items after human confirmation and builds 
   const db = openM0Database();
 
   try {
-    const { project } = await setupClosedProject(db);
+    const { project } = await setupLegacyFinalProjectFixture(db);
     const created = createMemorySavebackProposal({ project_id: project.project_id, write_report: false }, db);
     assert.equal(created.ok, true);
     if (!created.ok) return;
@@ -198,7 +208,7 @@ test("R3-6 rejects invalid or unknown saveback decisions instead of materializin
   const db = openM0Database();
 
   try {
-    const { project } = await setupClosedProject(db);
+    const { project } = await setupLegacyFinalProjectFixture(db);
     const created = createMemorySavebackProposal({ project_id: project.project_id, write_report: false }, db);
     assert.equal(created.ok, true);
     if (!created.ok) return;
@@ -236,7 +246,7 @@ test("R3-6 refuses saveback proposals with stale accepted clip references", asyn
   const db = openM0Database();
 
   try {
-    const { project, storyboard } = await setupClosedProject(db);
+    const { project, storyboard } = await setupLegacyFinalProjectFixture(db);
     const shot = getShot(db, storyboard.shots[0].shot_id);
     assert.ok(shot);
     if (!shot) return;

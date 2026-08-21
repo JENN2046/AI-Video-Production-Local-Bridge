@@ -90,7 +90,7 @@ export const REQUIRED_DIRECTOR_SUITES: ReadonlyArray<DirectorSuite> = [
 ];
 
 export const REQUIRED_READONLY_APP_SUITES: ReadonlyArray<ReadonlyAppSuite> = [
-  { id: "readonly-projection-ledger-gate", path: "tests/webgpt-cloud-projection.test.ts", npm_script: "test:webgpt:cloud", ci_step: "WebGPT cloud projection tests", case_name: "readonly projection requires migration 0011 and never upgrades an older database" },
+  { id: "readonly-projection-ledger-gate", path: "tests/webgpt-cloud-projection.test.ts", npm_script: "test:webgpt:cloud", ci_step: "WebGPT cloud projection tests", case_name: "readonly projection requires migration 0012 and never upgrades an older database" },
   { id: "readonly-projection-dto-parity", path: "tests/webgpt-cloud-projection.test.ts", npm_script: "test:webgpt:cloud", ci_step: "WebGPT cloud projection tests", case_name: "SQLite and Snapshot readonly adapters preserve six-tool DTO parity and database zero-write manifest" },
   { id: "readonly-snapshot-fingerprint", path: "tests/webgpt-cloud-projection.test.ts", npm_script: "test:webgpt:cloud", ci_step: "WebGPT cloud projection tests", case_name: "snapshot fingerprint uses deterministic JCS input and server time remains authoritative" },
   { id: "readonly-signed-snapshot-transport", path: "tests/webgpt-cloud-remote-runtime.test.ts", npm_script: "test:webgpt:cloud", ci_step: "WebGPT cloud projection tests", case_name: "signed snapshot transport rejects tampering and atomically replaces only newer snapshots" },

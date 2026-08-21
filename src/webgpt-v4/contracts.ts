@@ -183,7 +183,8 @@ export const WEBGPT_V4_REVIEW_PACKAGE_DATA_SCHEMA = z.discriminatedUnion("detail
   z.object({ detail: z.literal("compact"), package_state: z.enum(["not_available", "available"]), reviewable: z.boolean(), reason_code: z.enum(["NO_GENERATED_CLIP", "REVIEW_STATE_INCONSISTENT"]).nullable(), shot: WEBGPT_V4_COMPACT_SHOT_SCHEMA, versions: z.array(compactVersionSchema), notes: z.array(WEBGPT_V4_REVIEW_NOTE_SCHEMA), notes_total: z.number().int(), selected_artifact_id: z.string().nullable() }).strict(),
   z.object({ detail: z.literal("full"), package_state: z.enum(["not_available", "available"]), reviewable: z.boolean(), reason_code: z.enum(["NO_GENERATED_CLIP", "REVIEW_STATE_INCONSISTENT"]).nullable(), shot: WEBGPT_V4_SHOT_SCHEMA, versions: z.array(clipVersionSchema.extend({ artifact: WEBGPT_V4_ARTIFACT_SCHEMA }).strict()), notes: z.array(WEBGPT_V4_REVIEW_NOTE_SCHEMA), notes_total: z.number().int(), selected_artifact_id: z.string().nullable() }).strict()
 ]);
-export const WEBGPT_V4_DELIVERY_DATA_SCHEMA = z.object({ project_id: z.string(), project_status: projectStatusSchema, shots_total: z.number().int(), shots_accepted: z.number().int(), ready_for_assembly: z.boolean(), readiness_checks: z.array(readinessCheckSchema), final_artifact: WEBGPT_V4_ARTIFACT_SCHEMA.nullable(), final_artifact_reason_code: z.string().nullable(), delivered: z.boolean() }).strict();
+const deliveryWorkflowStateSchema = z.enum(["not_ready", "ready_to_assemble", "assembling", "final_review", "revision_requested", "approved", "exported", "closed", "legacy_review_required"]);
+export const WEBGPT_V4_DELIVERY_DATA_SCHEMA = z.object({ project_id: z.string(), project_status: projectStatusSchema, workflow_state: deliveryWorkflowStateSchema.optional(), shots_total: z.number().int(), shots_accepted: z.number().int(), ready_for_assembly: z.boolean(), readiness_checks: z.array(readinessCheckSchema), final_artifact: WEBGPT_V4_ARTIFACT_SCHEMA.nullable(), final_artifact_reason_code: z.string().nullable(), delivered: z.boolean() }).strict();
 export const WEBGPT_V4_CLOSEOUT_DATA_SCHEMA = WEBGPT_V4_DELIVERY_DATA_SCHEMA.extend({ evidence: z.object({ source: z.literal("sqlite_structured_summary"), webgpt_audit_events: z.number().int(), raw_reports_exposed: z.literal(false) }).strict() }).strict();
 
 export const WEBGPT_V4_READ_OUTPUT_SCHEMAS = {
@@ -440,7 +441,8 @@ export function readDelivery(result: WebGptV4Result<unknown>, closeout = false):
   if (!result.ok) return validateContract(schema, result, undefined);
   const data = record(result.data);
   return validateContract(schema, result, {
-    project_id: data.project_id, project_status: data.project_status, shots_total: data.shots_total, shots_accepted: data.shots_accepted,
+    project_id: data.project_id, project_status: data.project_status, workflow_state: data.workflow_state,
+    shots_total: data.shots_total, shots_accepted: data.shots_accepted,
     ready_for_assembly: data.ready_for_assembly,
     readiness_checks: records(data.readiness_checks).map((item) => ({ ...item, artifact_id: nullableId(item.artifact_id) })),
     final_artifact: data.final_artifact ? publicArtifact(data.final_artifact) : null,
