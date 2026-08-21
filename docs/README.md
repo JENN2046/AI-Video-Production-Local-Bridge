@@ -32,6 +32,7 @@ blocked and unauthorized.
 | Need | Document |
 |---|---|
 | Understand current status and open gates | [Current State](../CURRENT_STATE.md) |
+| Audit the accepted Delivery State Foundation source/runtime boundary | [Delivery State Foundation Closeout](DELIVERY_STATE_FOUNDATION_CLOSEOUT_2026-08-21.md) |
 | Understand the active product scope and frozen surfaces | [Product Scope Freeze](PRODUCT_SCOPE_FREEZE.md) |
 | See the current Workbench core-loop gaps and S3 boundary | [Current Core Production Loop Gap Audit](CORE_PRODUCTION_LOOP_GAP_AUDIT.md) |
 | See the completed S3 readiness findings and exact follow-up gates | [Current Workbench Canary Readiness](../ops/reports/2026-07-30-current-workbench-canary-readiness.md) |

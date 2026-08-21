@@ -11,7 +11,7 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 | Remote App service | `readonly-remote-v1.0.0` |
 | Media Gateway code | `readonly-media-gateway-v1.0.0`（隔离 MP4 fixture 的公网播放已通过；byte-range 与广泛外部门禁仍未完成） |
 | Snapshot contract | `readonly-snapshot-v4`（已支持上述有界 fixture 验收；不得据此宣称完整公网媒体可用） |
-| Database | Active activity database: `workbench-v2-6` / ledger `0011`; `0010`→`0011` 已完成有界迁移、只读 `db:check`、恢复演练和逻辑 manifest 比较。运行时仍不自动迁移或回退。 |
+| Database | Canonical source: `workbench-v2-7` / ledger `0012`. The activity database's last explicitly accepted runtime boundary remains `workbench-v2-6` / ledger `0011`; current-main runtime acceptance is not established. Runtime startup still does not automatically migrate or roll back. |
 | ChatGPT Director | 单 Owner Focus → Context → advisory Proposal → Human Workbench 决定 → controlled import receipt 已在活动库通过；Provider、Grant 启动与 Memory 写入仍关闭。 |
 | Unified ChatGPT Workspace | 单一 `/workspace/mcp` Connector 已完成独立 OAuth、Bridge、Render 与活动库黄金路径验收；旧 `/mcp` 仍保留为回滚面。 |
 | Product status | `JENN_SINGLE_USER_MCP_APP_PASS` |
@@ -22,17 +22,17 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 
 `ChatGPT Director` 现已完成单 Owner 的活动库受控验收：ChatGPT Connector 只能读取有界讨论上下文并提出不可变 Proposal，Workbench 保留人类批准与一次性 receipt 记录。Local Orchestrator 只在未来获授权的 Grant 内执行；`REAL_PROVIDER_ENABLED=false`、Memory 插件未接线，且不得把该验收扩大为自动生成、自动采纳、自动交付或自动 Memory 写入。
 
-## 当前 main 数据库兼容性
+## 当前 source / activity runtime 边界
 
-当前代码的 Workbench、Snapshot exporter 与 Director receipt path 要求 `workbench-v2-6` / ledger `0011`。活动库已在单独授权下完成 `0010`→`0011` 的备份、隔离迁移、只读 `db:check`、恢复演练和逻辑 manifest 比较，并完成一次活动库 Director 黄金路径。该结果不改变运行时不自动迁移、不自动回退、不自动发布 Snapshot 的边界。
+当前 canonical source 的 Workbench 与新 Snapshot export path 要求 `workbench-v2-7` / ledger `0012`。活动库最后明确接受的 runtime boundary 仍是 `workbench-v2-6` / ledger `0011`，其 `0010`→`0011` 备份、隔离迁移、只读 `db:check`、恢复演练、逻辑 manifest 比较与 Director 黄金路径证据继续作为历史验收保留。该证据不自动转移到 current main；current-main activity runtime acceptance 尚未建立。运行时不会自动迁移、回退或发布 Snapshot，针对活动库的 `0012` admission/migration 与 runtime acceptance 需要单独授权。
 
-完整状态见 [CURRENT_STATE.md](CURRENT_STATE.md)，文档入口见 [docs/README.md](docs/README.md)。
+更广泛的历史状态见 [CURRENT_STATE.md](CURRENT_STATE.md)，文档入口见 [docs/README.md](docs/README.md)。`CURRENT_STATE.md` 尚待单独全量 reconciliation，不得覆盖本节冻结的 Foundation source/runtime boundary。
 
 ## 三个日常入口
 
 ### 1. 本地 Workbench（Unified activity path 已通过有界验收）
 
-活动库已满足当前 `0011` schema gate；一次有界 Unified activity path 已验证本地启动、Focus/Proposal/人工决定与受控 receipt。它是可复用的验收基线，不是持续运行或自动发布声明；每次日常启动仍须遵循最小配置、只读检查与人工发布边界。仓库不会自动迁移、回退、发布 Snapshot 或启动 Provider。
+活动库的 `0011` 有界 Unified activity path 已验证本地启动、Focus/Proposal、人工决定与受控 receipt；该结果是历史 runtime 验收基线，不是 current-main `0012` runtime acceptance。不要把拉取 current main 解释为现有活动库已可直接使用；在单独完成 `0012` activity-database admission/migration 与 runtime acceptance 前，不应以已接受组合启动。仓库不会自动迁移、回退、发布 Snapshot 或启动 Provider。
 
 ### 2. ChatGPT Readonly MCP App
 
