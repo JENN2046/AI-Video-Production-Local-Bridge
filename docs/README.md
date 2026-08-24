@@ -4,34 +4,34 @@ This index separates current operating truth from historical implementation evid
 
 ## Current reconciliation
 
-The current repository baseline is
-`main@bc3fa5a0baab81551bcef5dafc6fbc2f710d31f7`. PR #104 and PR #105 are
-merged, and both Windows CI jobs passed on that main commit. This is a code/CI
-fact, not a new external acceptance.
+This reconciliation is based on
+`origin/main@9a63376ef46078e0cdb33f4dce807c6a14f4083f`, the merge result of PR #128.
+That is a source and Git-history fact, not a new database, runtime, Snapshot,
+Provider or delivery acceptance.
 
 The current production priority is the real Workbench generation, review,
 regeneration, assembly, export and closeout path. Media Gateway, Memory,
 multi-user, automatic Snapshot, Windows logon startup and new OAuth experiments
-are not S3/S4 blockers. Use
-[Current State](../CURRENT_STATE.md) for the exact Bridge, Provider, assembly
-and commit-scoped acceptance boundaries.
+are not blockers for the Delivery State Foundation. Use the repository
+[README](../README.md) and [Delivery State Foundation Closeout](DELIVERY_STATE_FOUNDATION_CLOSEOUT_2026-08-21.md)
+for the current source/runtime boundary. [Historical State Snapshot](../CURRENT_STATE.md)
+is retained only as dated evidence and is not current-main operator authority.
 
 S1 is now complete. [Product Scope Freeze](PRODUCT_SCOPE_FREEZE.md) is the
 single current statement of component classification, stage dependencies,
 Provider MVP boundaries, route ownership and future removal conditions.
 [Current Core Production Loop Gap Audit](CORE_PRODUCTION_LOOP_GAP_AUDIT.md)
-records the S2 implementation/acceptance split and the first hard break.
-[Current Workbench Canary Readiness](../ops/reports/2026-07-30-current-workbench-canary-readiness.md)
-records the completed S3 readiness check and its three terminal blockers.
-Polling and manual-reconciliation consistency candidate fixes are in Draft PR
-#107 awaiting review. There is currently no `READY` execution task, and S4 is
-blocked and unauthorized.
+and [Current Workbench Canary Readiness](../ops/reports/2026-07-30-current-workbench-canary-readiness.md)
+remain dated gap evidence. Their PR and execution-state statements must not be
+used as current authority after PR #128.
 
 ## Start here
 
 | Need | Document |
 |---|---|
-| Understand current status and open gates | [Current State](../CURRENT_STATE.md) |
+| Understand current status and open gates | [Repository README](../README.md) and [Delivery State Foundation Closeout](DELIVERY_STATE_FOUNDATION_CLOSEOUT_2026-08-21.md) |
+| Audit the pre-Foundation historical snapshot | [Historical State Snapshot](../CURRENT_STATE.md) |
+| Audit the accepted Delivery State Foundation source/runtime boundary | [Delivery State Foundation Closeout](DELIVERY_STATE_FOUNDATION_CLOSEOUT_2026-08-21.md) |
 | Understand the active product scope and frozen surfaces | [Product Scope Freeze](PRODUCT_SCOPE_FREEZE.md) |
 | See the current Workbench core-loop gaps and S3 boundary | [Current Core Production Loop Gap Audit](CORE_PRODUCTION_LOOP_GAP_AUDIT.md) |
 | See the completed S3 readiness findings and exact follow-up gates | [Current Workbench Canary Readiness](../ops/reports/2026-07-30-current-workbench-canary-readiness.md) |
@@ -41,15 +41,18 @@ blocked and unauthorized.
 | Understand trust and data boundaries | [Architecture](ARCHITECTURE.md) |
 | Learn why the system is built this way | [Project Lessons](PROJECT_LESSONS.md) |
 
-## Current operator runbooks
+## Operator and historical runbooks
 
-- [Readonly MCP App Delivery](webgpt/READONLY_MCP_APP_DELIVERY_RUNBOOK.md)
-- [Unified ChatGPT Workspace Transport](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md) — candidate single-Connector preflight, wiring and rollback boundary
+- [Readonly MCP App Delivery](webgpt/READONLY_MCP_APP_DELIVERY_RUNBOOK.md) — historical acceptance and future revalidation boundary; current-main execution requires `0012` admission
+- [Unified ChatGPT Workspace Transport](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md) — historical transport/activity evidence and future revalidation boundary; current-main execution requires `0012` admission
 - [Readonly Local Media Gateway](webgpt/READONLY_LOCAL_MEDIA_GATEWAY_RUNBOOK.md)
 - [WebGPT V4 legacy rollback reference](webgpt/WEBGPT_V4_RUNBOOK.md)
 - [Federated OAuth portability](READONLY_FEDERATED_OAUTH_PORTABILITY.md)
 
-Current runbooks describe commands and boundaries. They do not grant authorization for database writes, secrets, external configuration, deployment, Scheduled Tasks or paid Provider calls.
+Runbooks describe historical commands and future boundaries. They do not prove
+current-main runtime compatibility or grant authorization for database writes,
+secrets, external configuration, deployment, Scheduled Tasks or paid Provider
+calls.
 
 ## Candidate implementation contracts
 
@@ -96,4 +99,7 @@ The following explain how earlier releases were designed. Keep them for audit an
 - `HISTORICAL`: retained planning or evidence; not an operator source of truth.
 - `LOCAL-ONLY`: evidence exists only on Jenn's machine and must not be claimed as independently auditable in Git.
 
-When documents conflict, use this order: `CURRENT_STATE.md` → current operator runbook → accepted report for the exact commit → historical taskbook.
+When documents conflict, use this order: checked-out source and migration
+registry → repository `README.md` and Delivery State Foundation Closeout → an
+accepted report for the exact commit and operation → a runbook explicitly
+admitted for that source → historical snapshots and taskbooks.

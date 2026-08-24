@@ -1,10 +1,10 @@
 # User Guide
 
-Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`. The owner-only `0.1.0-beta.5` / ledger `0008` workflow remains historical evidence; the active database has now completed `0011`, and the bounded Unified Director owner path has passed. An isolated Media Gateway MP4 fixture playback path has also passed; byte-range plus broader Media, Provider, Memory and multi-user gates remain separate.
+Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS` remains historical, commit-scoped evidence. Canonical source now has `FOUNDATION_SOURCE_ACCEPTED` status and requires `workbench-v2-7` / ledger `0012`; the activity database's last explicitly accepted runtime boundary remains `workbench-v2-6` / ledger `0011`, and current-main activity runtime acceptance is not established. The owner-only `0.1.0-beta.5` / ledger `0008`, bounded Unified Director and isolated Media Gateway MP4 fixture results remain historical evidence; byte-range plus broader Media, Provider, Memory and multi-user gates remain separate.
 
-## Current-main database compatibility
+## Current-main source / activity database boundary
 
-Current code requires `workbench-v2-6` / ledger `0011`, and the active database has passed that migration and bounded runtime acceptance. Runtime startup still never migrates a database automatically. The accepted path does not authorize Provider execution, automatic Snapshot publishing, Memory saveback or production delivery.
+Canonical source requires `workbench-v2-7` / ledger `0012`. The activity database has passed only its last explicitly accepted `workbench-v2-6` / `0011` migration and bounded runtime acceptance; that evidence does not transfer to current main. Runtime startup never migrates a database automatically. A separately authorized `0012` activity-database admission/migration and runtime acceptance are required before using the current source/runtime combination. This boundary does not authorize Provider execution, automatic Snapshot publishing, Memory saveback or production delivery.
 
 ## What Jenn can do today
 
@@ -12,7 +12,7 @@ Current code requires `workbench-v2-6` / ledger `0011`, and the active database 
 
 The Workbench is the human production surface for projects, SHOTs, Storyboard, Generation, Review, Delivery and system operations. It is also the only surface allowed to confirm paid Provider work or adopt production decisions.
 
-The following is the accepted local startup sequence. Use it only with the verified activity database and keep `REAL_PROVIDER_ENABLED=false` unless a separate Provider authorization exists:
+The following is the historically accepted `0011` local startup sequence. Do not run it from current main against the activity database until the separate `0012` admission/migration and runtime-acceptance gate has passed. In any later authorized use, verify the activity database and keep `REAL_PROVIDER_ENABLED=false` unless a separate Provider authorization exists:
 
 ```powershell
 Set-Location "<verified repository root that owns the accepted data\app.sqlite>"
@@ -51,7 +51,7 @@ Allowed actions are view, refresh, select project, expand SHOT, switch detail an
 
 ## Snapshot operations (Unified profile only; manual confirmation required)
 
-The accepted current-schema flow uses the dedicated Unified publisher profile and Unified Snapshot store. The remote has no persistent Snapshot storage: do not invoke a Unified publish, renewal or recovery action without the separate human confirmation required for that one operation. The default `系统 → 只读 App 发布` Workbench surface and its `data/webgpt/publisher/profile.json` are legacy `/mcp` to `/snapshot` controls; they remain unavailable on the active database pending their own ledger-`0011` acceptance.
+New Snapshot exports from canonical source require `workbench-v2-7` / ledger `0012`. Previously published signed Snapshot v4 data may retain explicit previous-source compatibility with `workbench-v2-6` / `0011`, but that compatibility is not authorization to publish from or run current main against the activity database. The dedicated Unified publisher profile and Unified Snapshot store remain manual boundaries: do not invoke publish, renewal or recovery without the separate human confirmation required for that one operation. The default `系统 → 只读 App 发布` Workbench surface and its `data/webgpt/publisher/profile.json` remain legacy `/mcp` to `/snapshot` controls pending their own bounded acceptance.
 
 Unified currently has no low-disclosure remote freshness or `renewal_due` status command/UI. Do not reuse the legacy `fresh`, `renewal_due`, `no_snapshot`, `snapshot_expired` or `service_unavailable` labels for Unified decisions, and do not infer the existing remote Snapshot's lifetime from a local preflight result.
 
@@ -63,7 +63,7 @@ Accepted Unified flow:
 4. If preflight passes and the one recovery/manual-refresh operation is explicitly confirmed, publish once.
 5. Reopen or refresh the ChatGPT App and confirm the readonly tools share the candidate fingerprint. If they do not, stop with the stable error code; do not retry indefinitely.
 
-Do not use the legacy Workbench control or legacy default-profile CLI commands as a fallback. Their separate ledger-`0011` preflight/publish/recovery acceptance is still pending.
+Do not use the legacy Workbench control or legacy default-profile CLI commands as a fallback. Their separate historical preflight/publish/recovery acceptance remains pending, and `0011` must not be treated as the current-source export requirement.
 
 Never loop Unified publish attempts. On failure, keep the receipt and stable error code; do not print the response body or DPAPI material.
 
