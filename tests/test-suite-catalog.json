@@ -66,6 +66,7 @@
       "npm_script": "test:db",
       "ci_step": "Database and authorization governance tests",
       "paths": [
+        "tests/activity-db-0012-foundation-rehearsal.test.ts",
         "tests/database-governance.test.ts",
         "tests/webgpt-authorization-admin.test.ts"
       ]
