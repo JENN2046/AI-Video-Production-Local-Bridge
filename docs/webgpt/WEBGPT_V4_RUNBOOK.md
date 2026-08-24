@@ -94,7 +94,7 @@ GET http://127.0.0.1:2092/healthz
 - 旧 Descope 配置固定为 `cimd` legacy adapter；vendor-specific metadata 只能提供诊断，不能声明 portability-compatible
 - ChatGPT connector 只申请 `projects.read`
 - principal 由 issuer 与 subject 派生为不可逆 SHA-256；不保存原始 subject 或邮箱
-- 历史 Descope 验收发生在 migration `0010`；其 principal、issuer binding、membership 与 append-only events 保留，但不参与当前 Auth0 issuer readiness。当前活动库已在 ledger `0011`，不得把此历史记录解释为需要重复迁移或当前 schema 不兼容。
+- 历史 Descope 验收发生在 migration `0010`；其 principal、issuer binding、membership 与 append-only events 保留，但不参与当前 Auth0 issuer readiness。活动库最后接受的 runtime boundary 是 ledger `0011`，不得仅因这段历史记录重复迁移或回退；但 current-main Workbench 与新 Snapshot export 明确要求 ledger `0012`，所以 `0011` 不能作为当前源码的启动或新发布前置条件。
 - 回滚：停止 connector/Tunnel，撤销 membership 或禁用 principal；不删除 authorization event
 
 ### Full/Auth0（独立后续 gate）

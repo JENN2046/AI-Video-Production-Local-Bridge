@@ -12,15 +12,15 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 | Media Gateway code | `readonly-media-gateway-v1.0.0`（隔离 MP4 fixture 的公网播放已通过；byte-range 与广泛外部门禁仍未完成） |
 | Snapshot contract | `readonly-snapshot-v4`（已支持上述有界 fixture 验收；不得据此宣称完整公网媒体可用） |
 | Database | Canonical source: `workbench-v2-7` / ledger `0012`. The activity database's last explicitly accepted runtime boundary remains `workbench-v2-6` / ledger `0011`; current-main runtime acceptance is not established. Runtime startup still does not automatically migrate or roll back. |
-| ChatGPT Director | 单 Owner Focus → Context → advisory Proposal → Human Workbench 决定 → controlled import receipt 已在活动库通过；Provider、Grant 启动与 Memory 写入仍关闭。 |
-| Unified ChatGPT Workspace | 单一 `/workspace/mcp` Connector 已完成独立 OAuth、Bridge、Render 与活动库黄金路径验收；旧 `/mcp` 仍保留为回滚面。 |
-| Product status | `JENN_SINGLE_USER_MCP_APP_PASS` |
-| Operations status | `MANUAL_PUBLISH_OPERATIONAL_READY`; 活动库已在 `0011`，仍需每次有界人工发布/恢复 |
+| ChatGPT Director | Historical, commit-scoped evidence covers 单 Owner Focus → Context → advisory Proposal → Human Workbench 决定 → controlled import receipt；Provider、Grant 启动与 Memory 写入仍关闭。 |
+| Unified ChatGPT Workspace | Historical, commit-scoped evidence covers the bounded `/workspace/mcp` OAuth、Bridge、Render 与活动库黄金路径；旧 `/mcp` 仍保留为回滚面。 |
+| Product status | Historical, commit-scoped `JENN_SINGLE_USER_MCP_APP_PASS`; not current-main runtime or full-product acceptance |
+| Operations status | Historical `MANUAL_PUBLISH_OPERATIONAL_READY` evidence is commit-scoped to an earlier schema. Current-main publish/recovery is `BLOCKED_PENDING_0012_ADMISSION_AND_RUNTIME_ACCEPTANCE`. |
 | Multi-user status | `PARTIAL_MULTI_USER_GATE` |
 
 当前 `main` 已包含 Workbench V2、WebGPT V4、Auth0 Federated Readonly、签名 Snapshot、ChatGPT MCP App、共享派生状态、Human Workbench 人工发布、已接线的 Unified Workspace Remote，以及 Local Media Gateway 的代码和 Windows 运维入口。Unified Workspace 保留旧 `/mcp` 为回滚面。Cloudflare 媒体链路已通过一次隔离 MP4 fixture 的端到端 Widget 播放；实际 byte-range 响应、Windows 登录任务、自动 Snapshot 发布、剩余媒体恢复/撤权案例、真实 Provider canary、稳定 Memory 插件和多用户黄金路径仍是独立 gate。
 
-`ChatGPT Director` 现已完成单 Owner 的活动库受控验收：ChatGPT Connector 只能读取有界讨论上下文并提出不可变 Proposal，Workbench 保留人类批准与一次性 receipt 记录。Local Orchestrator 只在未来获授权的 Grant 内执行；`REAL_PROVIDER_ENABLED=false`、Memory 插件未接线，且不得把该验收扩大为自动生成、自动采纳、自动交付或自动 Memory 写入。
+`ChatGPT Director` 保留单 Owner 活动库受控验收的历史、commit-scoped 证据：ChatGPT Connector 只能读取有界讨论上下文并提出不可变 Proposal，Workbench 保留人类批准与一次性 receipt 记录。Local Orchestrator 只在未来获授权的 Grant 内执行；`REAL_PROVIDER_ENABLED=false`、Memory 插件未接线，且不得把该历史验收扩大为 current-main runtime、自动生成、自动采纳、自动交付或自动 Memory 写入。
 
 ## 当前 source / activity runtime 边界
 
@@ -30,7 +30,7 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 
 ## 三个日常入口
 
-### 1. 本地 Workbench（Unified activity path 已通过有界验收）
+### 1. 本地 Workbench（历史 `0011` path accepted；current-main pending）
 
 活动库的 `0011` 有界 Unified activity path 已验证本地启动、Focus/Proposal、人工决定与受控 receipt；该结果是历史 runtime 验收基线，不是 current-main `0012` runtime acceptance。不要把拉取 current main 解释为现有活动库已可直接使用；在单独完成 `0012` activity-database admission/migration 与 runtime acceptance 前，不应以已接受组合启动。仓库不会自动迁移、回退、发布 Snapshot 或启动 Provider。
 

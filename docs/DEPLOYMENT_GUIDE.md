@@ -18,7 +18,7 @@ Layer 4  Windows automatic startup (frozen)
 Layer 5  Real Provider canary (frozen)
 ```
 
-## Layer 1 — local Workbench (bounded Unified activity path accepted)
+## Layer 1 — local Workbench (historical `0011` bounded path accepted; current-main pending)
 
 Prerequisites:
 
@@ -45,7 +45,7 @@ Database upgrade is not part of normal startup. The activity database remains ac
 
 ## Layer 2A — historical Remote Readonly MCP App
 
-The accepted Auth0/ChatGPT/Render wiring is retained as historical legacy-Readonly evidence. The Layer 1 `0010` migration gate is historical and the active database is now at `0011`; a new legacy Snapshot export, renewal or recovery still needs its own bounded acceptance and must not weaken the Unified rollback boundary.
+The accepted Auth0/ChatGPT/Render wiring is retained as historical legacy-Readonly evidence. The Layer 1 `0010` migration gate is historical, and the activity runtime's last accepted boundary is `0011`; a new legacy Snapshot export, renewal or recovery still needs its own bounded acceptance and must not weaken the Unified rollback boundary.
 
 The accepted topology is:
 

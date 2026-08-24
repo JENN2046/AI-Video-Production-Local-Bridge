@@ -24,6 +24,9 @@ migration: "0011"
 current_main_runtime_acceptance: NOT_ESTABLISHED
 ```
 
+Evidence: [Unified Director activity acceptance](../ops/reports/2026-07-27-unified-director-activity-acceptance.md)
+and the earlier [Director activity-database migration acceptance](../ops/reports/2026-07-22-director-active-database-migration-acceptance.md).
+
 ## Scope
 
 The accepted Foundation proves:
@@ -32,7 +35,8 @@ The accepted Foundation proves:
 - the Delivery State and Job/Event/Export structural ledgers;
 - structural FK, CHECK, uniqueness and immutability authority;
 - safe legacy backfill and canonical new-project `not_ready` initialization;
-- structural `db:check` authority and readonly/Snapshot compatibility; and
+- structural `db:check` authority and fixture-level readonly projection/schema
+  compatibility; and
 - fail-closed rejection of the legacy placeholder Assembly path with
   `LEGACY_ASSEMBLY_INCOMPATIBLE`.
 

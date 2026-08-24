@@ -1,17 +1,17 @@
 # Unified ChatGPT Workspace Transport Runbook
 
-Status: `EXTERNAL_TRANSPORT_AND_ACTIVITY_GOLDEN_PATH_PASS — retain this runbook for recovery and future gates; an isolated Media Gateway MP4 fixture playback gate has passed, while byte-range and broader Media, Provider, Memory and multi-user acceptance remain separate.`
+Status: `HISTORICAL_EXTERNAL_TRANSPORT_AND_ACTIVITY_GOLDEN_PATH_PASS — retain this runbook as commit-scoped evidence and a future revalidation boundary. Current-main execution requires separate ledger 0012 admission and runtime acceptance.`
 
 This is the operational companion to the [Unified Workspace contract](../UNIFIED_CHATGPT_WORKSPACE_MCP.md). The bounded Auth0, Render, ChatGPT App, Bridge and activity-database stages described here have passed once. It remains the recovery and revalidation boundary; it does **not** authorize a new Auth0, Render, ChatGPT, DNS, database or Provider change.
 
-Current-state override: repository code and CI are green at
-`main@bc3fa5a0`, but earlier external PASS results remain bounded to their
-recorded commits. A managed Bridge process was detected at source `3a142bb` and
-is `RESTART_REQUIRED` relative to current main; configuration identity,
-heartbeat and authenticated Remote contact were not revalidated. The Bridge
-lifecycle narrative below is historical and must not be read as current
-runtime status. S3/S4 do not require Bridge, Snapshot, Media Gateway, Memory or
-multi-user. S5 requires Bridge only when ChatGPT frame review is selected.
+Current-state override: this reconciliation is based on
+`origin/main@9a63376ef46078e0cdb33f4dce807c6a14f4083f`. Canonical source requires
+`workbench-v2-7` / ledger `0012`; the activity runtime's last accepted boundary
+remains `workbench-v2-6` / ledger `0011`. Earlier external PASS results remain
+bounded to their recorded commits, and the Bridge lifecycle narrative below is
+historical rather than current runtime status. Do not start or recover a Bridge
+against current main until the target database has separate `0012` admission
+and the exact source/runtime combination is accepted.
 
 ## Target and rollback topology
 
@@ -57,7 +57,7 @@ Complete this stage before creating anything. Record only a sanitized result; ne
 3. Confirm legacy `/mcp` health, PRMD, challenge and Readonly login are unchanged.
 4. Confirm Render can host the additional path without replacing the legacy runtime during the acceptance window.
 5. Confirm ChatGPT can install one test App and that any callback it generates can be added as exactly one allowlist entry.
-6. Historical precondition: the activity database was ledger `0010` before its separately authorized `0011` migration. The current activity database is now at ledger `0011`; do not rerun, downgrade or treat the historical precondition as a current readiness check.
+6. Historical precondition: the activity database was ledger `0010` before its separately authorized `0011` migration. The activity runtime's last accepted boundary is ledger `0011`; do not rerun, downgrade or treat the historical precondition as a current readiness check.
 
 Any mismatch is a stop condition. Do not reuse the legacy resource, broaden callbacks, enable M2M, share a key or change database schema to make preflight pass.
 
@@ -89,7 +89,7 @@ AI_VIDEO_WORKSPACE_DB_PATH
 
 The dedicated `WEBGPT_DIRECTOR_BRIDGE_KEY_B64` is a secret, not ordinary runtime configuration: retain it only as a local DPAPI-protected value and a Render secret. The Remote runtime rejects a DPAPI pointer and receives the Base64 value only as a Render secret; the local Bridge rejects the Base64 value and receives only `WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH` to decrypt under DPAPI `CurrentUser`. Never place the Base64 value in a preflight, receipt, status command, log, process arguments, or repository file.
 
-All-or-nothing configuration is intentional. A partial OAuth, publisher or bridge group fails closed. `WEBGPT_DIRECTOR_REMOTE_ORIGIN` is the exact unified public HTTPS origin for the outbound local bridge, not a filesystem path or local listener. `AI_VIDEO_WORKSPACE_DB_PATH` is injected only into the local Bridge process; it must refer to the authorized isolated or activity database already at `workbench-v2-6` / ledger `0011`. Do not place its value in receipts, logs, process arguments, or repository files.
+All-or-nothing configuration is intentional. A partial OAuth, publisher or bridge group fails closed. `WEBGPT_DIRECTOR_REMOTE_ORIGIN` is the exact unified public HTTPS origin for the outbound local bridge, not a filesystem path or local listener. `AI_VIDEO_WORKSPACE_DB_PATH` is injected only into the local Bridge process. Historical acceptance used `workbench-v2-6` / ledger `0011`; any current-main revalidation must instead use an authorized isolated or activity database separately admitted at `workbench-v2-7` / ledger `0012`. Do not place its value in receipts, logs, process arguments, or repository files.
 
 ## Stage 1 smoke acceptance
 
@@ -194,7 +194,7 @@ If the Widget reports the bridge as unavailable, preserve the low-disclosure sta
 
 ## Stage 2 — isolated owner golden path
 
-Use an isolated database already at ledger `0011`. The Stage 1 deployed HTTPS Unified Remote must remain available at the exact configured `WEBGPT_DIRECTOR_REMOTE_ORIGIN`; do not start `npm run start:webgpt:workspace` locally for this step, because that local test host is HTTP and is not a valid Bridge origin. Start the local Bridge only for this bounded test:
+The recorded historical Stage 2 used an isolated database at ledger `0011`. Do not repeat that instruction against current main. A future revalidation must use an independently admitted `workbench-v2-7` / ledger `0012` database. The Stage 1 deployed HTTPS Unified Remote must remain available at the exact configured `WEBGPT_DIRECTOR_REMOTE_ORIGIN`; do not start `npm run start:webgpt:workspace` locally for this step, because that local test host is HTTP and is not a valid Bridge origin. Start the local Bridge only for an explicitly authorized bounded test:
 
 ```powershell
 npm run start:director:bridge
@@ -213,7 +213,7 @@ Verify immutable Proposal/Grant events, project/issuer/Focus/base-state binding 
 
 ## Stage 3 — activity database acceptance
 
-This historical stage was separately authorized and started with the `0010` → `0011` migration gate: stop relevant processes, backup, logical manifest, isolated migration, `npm run db:check -- --read-only`, restore rehearsal, manifest comparison and only then the authorized activity migration. The current activity database already completed this gate; do not rerun it, and no automatic down migration is allowed.
+This historical stage was separately authorized and started with the `0010` → `0011` migration gate: stop relevant processes, backup, logical manifest, isolated migration, `npm run db:check -- --read-only`, restore rehearsal, manifest comparison and only then the authorized activity migration. The recorded activity-database operation completed this gate; do not rerun it, and no automatic down migration is allowed.
 
 After migration, run one single-owner golden path:
 

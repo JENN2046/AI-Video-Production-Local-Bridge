@@ -1,6 +1,20 @@
-# Current State
+# Historical State Snapshot
 
 Date (Asia/Shanghai, UTC+08:00): 2026-08-05
+
+Status: `HISTORICAL`. This file preserves the repository and operating snapshot
+recorded on 2026-08-05. References below to "current", `0011`, PR state,
+runtime state, Provider state or Assembly behavior apply only to that recorded
+snapshot. They are not current-main operator authority.
+
+For the current source/runtime boundary, use the repository [README](README.md)
+and the [Delivery State Foundation Closeout](docs/DELIVERY_STATE_FOUNDATION_CLOSEOUT_2026-08-21.md).
+Canonical source requires `workbench-v2-7` / ledger `0012`; the activity
+runtime's last explicitly accepted boundary remains `workbench-v2-6` / ledger
+`0011`, so current-main activity runtime acceptance is not established. The
+active Assembly entry point now fails closed with
+`LEGACY_ASSEMBLY_INCOMPATIBLE`; the historical `placeholder_copy` description
+below is no longer a current code fact.
 
 ```yaml
 repository_baseline_policy:
