@@ -1,12 +1,19 @@
 import { randomUUID } from "node:crypto";
 
 import type { M0Database } from "../storage/sqlite.js";
+import { withWorkbenchProductionMutationAuthority } from "../storage/productionMutationAuthority.js";
 import { ArtifactStructuredDriftError, validateAcceptedClipReference, validateActiveArtifactReference, type ArtifactRole, type ArtifactType, type MediaArtifact } from "../tools/mediaArtifacts.js";
 import { listProjectShots, type Project, type Shot } from "../tools/projects.js";
 import { collectProjectOperationalBundle, OperationalStateIntegrityError } from "../tools/operationalStateFacts.js";
 import { requireShotWorkflowWriteAction } from "../tools/operationalWriteGates.js";
 import { getWorkbenchProjectSummary, getWorkbenchProjectWorkspace } from "../tools/workbenchV2.js";
-import { requireWorkbenchDeliveryState } from "../tools/workbenchDeliveryState.js";
+import {
+  assertWorkbenchContentMutationAllowed,
+  assertWorkbenchProductionWriteAllowed,
+  requireWorkbenchDeliveryState,
+  WorkbenchProductionMutationError,
+  workbenchProductionMutationError
+} from "../tools/workbenchDeliveryState.js";
 import { appendWorkbenchInboxEvent, getWorkbenchDraftRecord, saveWorkbenchDraftRecord, type WorkbenchDraftRecord } from "../tools/workbenchInboxStore.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, providerCapabilityErrorMessage, RUNNINGHUB_IMAGE_TO_VIDEO_CAPABILITY } from "../tools/providerCapabilities.js";
 import { parseProductionProposalPayload } from "./proposals.js";
@@ -78,6 +85,10 @@ function domainErrorBody(error: unknown) {
       message: "Stored production data does not match its Artifact binding.",
       field: "artifact_id"
     };
+  }
+  if (error instanceof WorkbenchProductionMutationError) {
+    const mapped = workbenchProductionMutationError(error);
+    return { code: mapped.code, message: mapped.message, field: "project_id", ...(mapped.code === "PRODUCTION_MUTATION_CONFLICT" ? { retryable: true } : {}) };
   }
   return errorBody(error);
 }
@@ -230,7 +241,10 @@ function projectRow(db: M0Database, projectId: string, write = false): ProjectRo
   if (!row) throw new WebGptV4Error("PROJECT_NOT_FOUND", "Production project was not found.", "project_id");
   const project = parseBoundJson<Project>(row.data_json, "project_id");
   if (project.project_id !== row.project_id) dataIntegrityViolation("project_id");
-  if (write && row.lifecycle !== "active") throw new WebGptV4Error("PROJECT_ARCHIVED", "Archived production projects are read-only.", "project_id");
+  if (write) {
+    const boundary = assertWorkbenchProductionWriteAllowed(db, row.project_id);
+    if (!boundary.ok) throw new WebGptV4Error(boundary.error.code, boundary.error.message, "project_id");
+  }
   return row;
 }
 
@@ -397,8 +411,8 @@ function mutation<T>(db: M0Database, tool: string, context: MutationContext, inp
   const hash = requestHash(input);
   const prior = replay<T>(db, tool, key, hash, id);
   if (prior) return prior;
-  db.exec("BEGIN IMMEDIATE");
   try {
+    db.exec("BEGIN IMMEDIATE");
     const outcome = operation();
     const result = ok(id, outcome.data, outcome.updated_at);
     audit(db, {
@@ -418,8 +432,11 @@ function mutation<T>(db: M0Database, tool: string, context: MutationContext, inp
     db.exec("COMMIT");
     return result;
   } catch (error) {
-    db.exec("ROLLBACK");
-    const result = fail<T>(id, domainErrorBody(error));
+    if ((db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+    const mapped = workbenchProductionMutationError(error);
+    const result = fail<T>(id, mapped.code === "PRODUCTION_MUTATION_CONFLICT"
+      ? { code: mapped.code, message: mapped.message, retryable: true }
+      : domainErrorBody(error));
     try {
       audit(db, { request_id: id, idempotency_key: key, request_hash: hash, actor_hash: context.actor.actor_hash, tool, result });
     } catch {
@@ -642,6 +659,8 @@ export function updateProductionShotCopy(
 ): WebGptV4Result<{ shot: Shot & { operational_state: ProjectShotOperationalState }; updated_at: string }> {
   return mutation(db, "update_shot_copy", context, input, () => {
     projectRow(db, input.project_id, true);
+    const contentBoundary = assertWorkbenchContentMutationAllowed(db, input.project_id);
+    if (!contentBoundary.ok) throw new WebGptV4Error(contentBoundary.error.code, contentBoundary.error.message, "project_id");
     const current = requireShot(db, input.project_id, input.shot_id);
     if (!input.expected_updated_at || current.updated_at !== input.expected_updated_at) {
       throw new WebGptV4Error("CONFLICT_STALE_VERSION", "SHOT changed after it was read. Reload before writing.", "expected_updated_at");
@@ -666,8 +685,10 @@ export function updateProductionShotCopy(
     const updatedAt = new Date().toISOString();
     const beforeHash = requestHash(current.shot);
     const afterHash = requestHash(next);
-    db.prepare("UPDATE shots SET data_json = ?, updated_at = ? WHERE shot_id = ? AND project_id = ?")
-      .run(JSON.stringify(next), updatedAt, next.shot_id, next.project_id);
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "shot", project_id: next.project_id, object_id: next.shot_id
+    }, () => db.prepare("UPDATE shots SET data_json = ?, updated_at = ? WHERE shot_id = ? AND project_id = ?")
+      .run(JSON.stringify(next), updatedAt, next.shot_id, next.project_id));
     const operationalState = operationalStateForShot(db, input.project_id, next.shot_id);
     return { data: { shot: { ...next, operational_state: operationalState }, updated_at: updatedAt }, project_id: input.project_id, object_type: "shot", object_id: next.shot_id, changed_fields: changed, before_hash: beforeHash, after_hash: afterHash, updated_at: updatedAt };
   });

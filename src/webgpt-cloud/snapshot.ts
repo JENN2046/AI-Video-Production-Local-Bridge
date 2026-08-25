@@ -20,14 +20,16 @@ import {
 } from "../webgpt-v4/contracts.js";
 
 export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v4";
-export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-7";
-export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0012";
-// Snapshot v4 retains the immediately preceding source ledger as a
-// verification-only input so a
-// remote can keep serving an already signed v4 snapshot while its publisher
-// is upgraded. New exports always require the current ledger above.
+export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-8";
+export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0013";
+// Snapshot v4 retains the last accepted activity-runtime source ledger and the
+// intervening foundation ledger as verification-only inputs. A remote may
+// therefore keep serving an already signed v4 snapshot while its publisher is
+// upgraded. New exports always require the current ledger above.
 export const READONLY_SNAPSHOT_PREVIOUS_SOURCE_SCHEMA = "workbench-v2-6";
 export const READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION = "0011";
+export const READONLY_SNAPSHOT_FOUNDATION_SOURCE_SCHEMA = "workbench-v2-7";
+export const READONLY_SNAPSHOT_FOUNDATION_SOURCE_MIGRATION = "0012";
 export const READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA = "workbench-v2-5";
 export const READONLY_SNAPSHOT_LEGACY_SOURCE_MIGRATION = "0008";
 export const READONLY_SNAPSHOT_MAX_TTL_SECONDS = 24 * 60 * 60;
@@ -724,10 +726,16 @@ export function readonlySnapshotReviewPendingCount(shots: Array<{
 
 const readonlySnapshotShape = {
   schema_version: z.literal(READONLY_SNAPSHOT_SCHEMA_VERSION),
-  source_schema: z.enum([READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA, READONLY_SNAPSHOT_PREVIOUS_SOURCE_SCHEMA, READONLY_SNAPSHOT_REQUIRED_SCHEMA]),
+  source_schema: z.enum([
+    READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA,
+    READONLY_SNAPSHOT_PREVIOUS_SOURCE_SCHEMA,
+    READONLY_SNAPSHOT_FOUNDATION_SOURCE_SCHEMA,
+    READONLY_SNAPSHOT_REQUIRED_SCHEMA
+  ]),
   source_migration: z.enum([
     READONLY_SNAPSHOT_LEGACY_SOURCE_MIGRATION,
     READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION,
+    READONLY_SNAPSHOT_FOUNDATION_SOURCE_MIGRATION,
     READONLY_SNAPSHOT_REQUIRED_MIGRATION
   ]),
   source_version: z.string().min(1).max(100),
@@ -749,9 +757,11 @@ function validateSnapshotBindings(value: {
     && value.source_migration === READONLY_SNAPSHOT_REQUIRED_MIGRATION;
   const sourcePairIsPrevious = value.source_schema === READONLY_SNAPSHOT_PREVIOUS_SOURCE_SCHEMA
     && value.source_migration === READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION;
+  const sourcePairIsFoundation = value.source_schema === READONLY_SNAPSHOT_FOUNDATION_SOURCE_SCHEMA
+    && value.source_migration === READONLY_SNAPSHOT_FOUNDATION_SOURCE_MIGRATION;
   const sourcePairIsLegacy = value.source_schema === READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA
     && value.source_migration === READONLY_SNAPSHOT_LEGACY_SOURCE_MIGRATION;
-  if (!sourcePairIsCurrent && !sourcePairIsPrevious && !sourcePairIsLegacy) {
+  if (!sourcePairIsCurrent && !sourcePairIsPrevious && !sourcePairIsFoundation && !sourcePairIsLegacy) {
     context.addIssue({ code: "custom", message: "Snapshot source schema and migration do not form a supported pair.", path: ["source_schema"] });
   }
   if (sourcePairIsCurrent && value.projects.some((project) => project.delivery.workflow_state === undefined)) {

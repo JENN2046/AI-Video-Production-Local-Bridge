@@ -4,6 +4,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 
 import { ensureM0Directories, paths } from "../paths.js";
 import { assertSchemaCurrent, runDatabaseMigrations } from "./migrations.js";
+import { installWorkbenchProductionMutationAuthority } from "./productionMutationAuthority.js";
 
 export type M0Database = DatabaseSync;
 
@@ -24,6 +25,7 @@ export function openM0DatabaseConnection(sqlitePath = paths.sqlitePath, options:
   options.assertPathCurrent?.();
   const db = new DatabaseSync(sqlitePath, { readOnly });
   try {
+    installWorkbenchProductionMutationAuthority(db);
     options.assertPathCurrent?.();
     db.exec("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;");
     if (readOnly) db.exec("PRAGMA query_only = ON;");

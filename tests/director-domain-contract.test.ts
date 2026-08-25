@@ -23,11 +23,23 @@ import { directorMinorToProviderAmount, directorProviderAmountToMinor } from "..
 import { deriveDirectorOperationalState } from "../src/packages/domain/operationalState.js";
 import { checkDatabase } from "../src/storage/databaseGovernance.js";
 import { assertSchemaCurrent, DATABASE_MIGRATIONS, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
+import {
+  installWorkbenchProductionMutationAuthority,
+  withWorkbenchProductionMutationAuthority
+} from "../src/storage/productionMutationAuthority.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
 
 const principalId = "a".repeat(64);
 const hash = (value: string): string => directorContentHash(value);
 const HISTORICAL_MIGRATION_0009_CHECKSUM = "7ccfa5f3302bbb3a35d6c9a21846bcaf2f1cf904dcb6ad1344d8f03999e1d0d7";
+
+function insertGovernedProject(db: DatabaseSync, projectId: string): void {
+  installWorkbenchProductionMutationAuthority(db);
+  withWorkbenchProductionMutationAuthority(db, {
+    kind: "project_content", project_id: projectId, object_id: projectId
+  }, () => db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+    .run(projectId, JSON.stringify({ project_id: projectId })));
+}
 
 function targetState(): DirectorTargetStateV1 {
   return {
@@ -312,10 +324,10 @@ test("migrations 0009 through 0011 upgrade a real 0008 shape and make Director e
       insertMigration.run(migration.id, migration.name, migrationChecksum(migration));
     }
 
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0009", "0010", "0011", "0012"]);
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0009", "0010", "0011", "0012", "0013"]);
     assert.equal((db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, WORKBENCH_V2_SCHEMA_VERSION);
 
-    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run("project_director", JSON.stringify({ project_id: "project_director" }));
+    insertGovernedProject(db, "project_director");
     db.prepare("INSERT INTO webgpt_auth_principals (workspace_id, principal_id) VALUES ('jenn-ai-video-workspace', ?)").run(principalId);
     db.prepare(`INSERT INTO director_focuses
       (focus_id, workspace_id, principal_id, project_id, target_type, target_id, generation, created_at, expires_at)
@@ -349,7 +361,7 @@ test("migrations 0009 through 0011 upgrade a real 0008 shape and make Director e
       (event_id, grant_id, event_type, reservation_id, amount_minor, currency, reason_code, created_at)
       VALUES ('grant_event_unsupported_currency', 'grant_director_001', 'reserve', 'reservation_unsupported', 1, 'USD', 'GENERATION_APPROVED', '2026-07-22T00:01:00.000Z')`).run(), /CHECK constraint failed/);
 
-    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run("project_other", JSON.stringify({ project_id: "project_other" }));
+    insertGovernedProject(db, "project_other");
     assert.throws(() => db.prepare(`INSERT INTO director_proposals
       (proposal_id, workspace_id, principal_id, project_id, target_type, target_id, focus_id, focus_generation,
        schema_version, kind, base_state_hash, payload_json, payload_hash, idempotency_key, source, created_at)
@@ -392,7 +404,7 @@ test("migrations 0010 and 0011 upgrade an already-ledgered 0009 Grant database w
       (event_id, grant_id, event_type, reservation_id, amount_minor, currency, reason_code, created_at)
       VALUES ('grant_event_0009', 'grant_director_0009', 'reserve', 'reservation_0009', 500, 'CNY', 'GENERATION_APPROVED', '2026-07-22T00:01:00.000Z')`).run();
 
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0010", "0011", "0012"]);
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0010", "0011", "0012", "0013"]);
     assert.doesNotThrow(() => assertSchemaCurrent(db));
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[8]), HISTORICAL_MIGRATION_0009_CHECKSUM);
     assert.equal((db.prepare("SELECT checksum FROM schema_migrations WHERE migration_id = '0009'").get() as { checksum: string }).checksum, HISTORICAL_MIGRATION_0009_CHECKSUM);
@@ -445,8 +457,7 @@ test("db check detects Director payload hash drift without repairing evidence", 
   const db = new DatabaseSync(sqlitePath);
   try {
     runDatabaseMigrations(db);
-    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
-      .run("project_director_check", JSON.stringify({ project_id: "project_director_check" }));
+    insertGovernedProject(db, "project_director_check");
     db.prepare("INSERT INTO webgpt_auth_principals (workspace_id, principal_id, status) VALUES ('jenn-ai-video-workspace', ?, 'disabled')")
       .run(principalId);
     db.prepare(`INSERT INTO director_focuses

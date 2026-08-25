@@ -8,6 +8,10 @@ import test from "node:test";
 import { backupDatabase, checkDatabase, databaseLogicalManifest, migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { assertSchemaCurrent, DATABASE_MIGRATIONS, M0_BASE_SCHEMA_SQL, migrationChecksum, runDatabaseMigrations, SchemaMigrationRequiredError } from "../src/storage/migrations.js";
 import { openM0Database } from "../src/storage/sqlite.js";
+import {
+  installWorkbenchProductionMutationAuthority,
+  withWorkbenchProductionMutationAuthority
+} from "../src/storage/productionMutationAuthority.js";
 import { initializeWorkbenchV2Schema } from "../src/storage/workbenchV2Schema.js";
 import { paths } from "../src/paths.js";
 import { persistMediaArtifact, transitionMediaArtifactStatus, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
@@ -40,6 +44,7 @@ function insertUnverifiedArtifact(
   db: DatabaseSync,
   input: { artifact_id: string; project_id?: string; shot_id?: string; uri: string }
 ): void {
+  installWorkbenchProductionMutationAuthority(db);
   const blobId = `blob_${input.artifact_id}`;
   db.prepare(`INSERT INTO media_blobs
     (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
@@ -55,11 +60,25 @@ function insertUnverifiedArtifact(
     linked_objects: { project_id: input.project_id ?? "", shot_id: input.shot_id ?? "" },
     source: { kind: "accessible_uri", provider: "", provider_job_id: "", sha256: "", external_url_host: "media.example.test" }
   };
-  db.prepare(`INSERT INTO media_artifacts
-    (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
-    VALUES (?, ?, ?, 'storyboard_image', 'image', 'inaccessible', ?)`)
-    .run(input.artifact_id, input.project_id || null, input.shot_id || null, JSON.stringify(artifact));
-  db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(input.artifact_id, blobId);
+  const insert = (): void => {
+    db.prepare(`INSERT INTO media_artifacts
+      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+      VALUES (?, ?, ?, 'storyboard_image', 'image', 'inaccessible', ?)`)
+      .run(input.artifact_id, input.project_id || null, input.shot_id || null, JSON.stringify(artifact));
+    db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(input.artifact_id, blobId);
+  };
+  if (input.project_id) {
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "artifact", project_id: input.project_id, object_id: input.artifact_id
+    }, insert);
+  } else insert();
+}
+
+function insertGovernedProject(db: DatabaseSync, projectId: string, data: Record<string, unknown>): void {
+  installWorkbenchProductionMutationAuthority(db);
+  withWorkbenchProductionMutationAuthority(db, {
+    kind: "project_content", project_id: projectId, object_id: projectId
+  }, () => db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run(projectId, JSON.stringify(data)));
 }
 
 test("fresh database migrates explicitly and remains idempotent", () => {
@@ -366,7 +385,7 @@ test("database migrated through 0003 keeps its historical checksums and upgrades
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[1]), "52dc1311414cd88468542159d215adce443717b087e65d73d3f60859e5727c75");
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[2]), "161aa27dec915827c0ab6d46bc768ca2734c2efdf4bc45ae2fa1b2f4b564fef8");
     const result = runDatabaseMigrations(db);
-    assert.deepEqual(result.applied, ["0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012"]);
+    assert.deepEqual(result.applied, ["0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013"]);
     const event = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = 'job_intent_legacy'").get() as { to_state: string; reason_code: string };
     assert.deepEqual({ ...event }, { to_state: "polling", reason_code: "MIGRATION_BACKFILL" });
     assertSchemaCurrent(db);
@@ -415,7 +434,7 @@ test("migration 0006 backfills active legacy Artifact facts from the verified Bl
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[4]), HISTORICAL_MIGRATION_0005_CHECKSUM);
     insertLedger.run(DATABASE_MIGRATIONS[4].id, DATABASE_MIGRATIONS[4].name, HISTORICAL_MIGRATION_0005_CHECKSUM);
     const migrated = runDatabaseMigrations(db);
-    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011", "0012"]);
+    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013"]);
 
     const after = JSON.parse((db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(artifact.artifact_id) as { data_json: string }).data_json) as typeof artifact;
     assert.equal(after.metadata.sha256, before.sha256);
@@ -460,7 +479,7 @@ test("migration accepts and canonicalizes the interim 0005 ledger checksum", () 
         && /Database schema version is workbench-v2-5|Missing database migration 0006/.test(error.message)
     );
     const migrated = runDatabaseMigrations(connection);
-    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011", "0012"]);
+    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013"]);
     const normalized = connection.prepare("SELECT checksum FROM schema_migrations WHERE migration_id = '0005'").get() as { checksum: string };
     assert.equal(normalized.checksum, HISTORICAL_MIGRATION_0005_CHECKSUM);
     assertSchemaCurrent(connection);
@@ -535,6 +554,7 @@ test("database check detects missing structured identifiers and accepts external
     const sqlitePath = join(root, "app.sqlite");
     migrateDatabase(sqlitePath);
     const db = new DatabaseSync(sqlitePath);
+    db.exec("DROP TRIGGER workbench_projects_insert_owner");
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_missing_json_id', ?)")
       .run(JSON.stringify({ title: "Missing JSON identifier" }));
     insertUnverifiedArtifact(db, { artifact_id: "artifact_external", uri: "https://example.test/media/storyboard.png" });
@@ -556,7 +576,7 @@ test("database check returns a structured failure for malformed JSON and missing
     migrateDatabase(malformedPath);
     const malformed = new DatabaseSync(malformedPath);
     malformed.exec("DROP INDEX idx_projects_status_updated");
-    malformed.exec("DROP TRIGGER workbench_projects_validate_initial_delivery");
+    malformed.exec("DROP TRIGGER workbench_projects_validate_initial_delivery; DROP TRIGGER workbench_projects_insert_owner");
     malformed.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_bad_json', '{')").run();
     malformed.close();
     const malformedResult = checkDatabase(malformedPath);
@@ -583,8 +603,17 @@ test("database check reports orphan rows", () => {
     const sqlitePath = join(root, "app.sqlite");
     migrateDatabase(sqlitePath);
     const db = new DatabaseSync(sqlitePath);
-    db.prepare("INSERT INTO shots (shot_id, project_id, data_json) VALUES ('shot_orphan', 'project_missing', ?)")
-      .run(JSON.stringify({ shot_id: "shot_orphan", project_id: "project_missing" }));
+    db.prepare(`INSERT INTO generation_runs
+      (run_id, batch_id, project_id, shot_id, run_type, status, data_json)
+      VALUES ('run_orphan', '', 'project_missing', '', 'image_to_video', 'queued', ?)`)
+      .run(JSON.stringify({
+        run_id: "run_orphan",
+        batch_id: "",
+        project_id: "project_missing",
+        shot_id: "",
+        run_type: "image_to_video",
+        status: "queued"
+      }));
     db.close();
     const checked = checkDatabase(sqlitePath);
     assert.equal(checked.result, "FAIL");
@@ -601,8 +630,7 @@ test("database check reports delivery ledger evidence drift left by a foreign-ke
     migrateDatabase(sqlitePath);
     const db = new DatabaseSync(sqlitePath);
     db.exec("PRAGMA foreign_keys = OFF");
-    db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_delivery_drift', ?)")
-      .run(JSON.stringify({ project_id: "project_delivery_drift", status: "draft", exports: { final_video_artifact_id: "" } }));
+    insertGovernedProject(db, "project_delivery_drift", { project_id: "project_delivery_drift", status: "draft", exports: { final_video_artifact_id: "" } });
     db.prepare(`INSERT INTO workbench_delivery_jobs
       (job_id, project_id, job_type, state, terminal_event_id)
       VALUES ('job_delivery_drift', 'project_delivery_drift', 'assembly', 'failed', 'event_missing')`).run();
@@ -653,8 +681,8 @@ test("database check detects package and batch drift plus missing batch links", 
     const sqlitePath = join(root, "links.sqlite");
     migrateDatabase(sqlitePath);
     const db = new DatabaseSync(sqlitePath);
-    db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_links', ?)")
-      .run(JSON.stringify({ project_id: "project_links" }));
+    db.exec("DROP TRIGGER workbench_storyboard_packages_insert_authority");
+    insertGovernedProject(db, "project_links", { project_id: "project_links" });
     db.prepare("INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json) VALUES ('package_drift', 'project_links', ?)")
       .run(JSON.stringify({ storyboard_package_id: "package_other", project_id: "project_links" }));
     db.prepare("INSERT INTO generation_batches (batch_id, project_id, storyboard_package_id, data_json) VALUES ('batch_orphan_package', 'project_links', 'package_missing', ?)")
@@ -678,15 +706,17 @@ test("database check detects run and artifact link drift", () => {
     const sqlitePath = join(root, "link-drift.sqlite");
     migrateDatabase(sqlitePath);
     const db = new DatabaseSync(sqlitePath);
-    db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_link_drift', ?)")
-      .run(JSON.stringify({ project_id: "project_link_drift" }));
+    installWorkbenchProductionMutationAuthority(db);
+    insertGovernedProject(db, "project_link_drift", { project_id: "project_link_drift" });
     db.prepare("INSERT INTO generation_runs (run_id, batch_id, project_id, shot_id, run_type, status, data_json) VALUES ('run_link_drift', '', 'project_link_drift', '', 'image_to_video', 'queued', ?)")
       .run(JSON.stringify({ run_id: "run_link_drift", batch_id: "batch_wrong", project_id: "project_link_drift", shot_id: "shot_wrong" }));
     insertUnverifiedArtifact(db, { artifact_id: "artifact_link_drift", project_id: "project_link_drift", uri: "https://media.example.test/artifact_link_drift.png" });
     const driftedArtifact = db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = 'artifact_link_drift'").get() as { data_json: string };
     const driftedJson = JSON.parse(driftedArtifact.data_json) as { linked_objects: { project_id: string; shot_id: string } };
     driftedJson.linked_objects = { project_id: "project_wrong", shot_id: "shot_wrong" };
-    db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = 'artifact_link_drift'").run(JSON.stringify(driftedJson));
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "artifact", project_id: "project_link_drift", object_id: "artifact_link_drift"
+    }, () => db.prepare("UPDATE media_artifacts SET data_json = ? WHERE artifact_id = 'artifact_link_drift'").run(JSON.stringify(driftedJson)));
     db.close();
 
     const checked = checkDatabase(sqlitePath);
@@ -703,10 +733,12 @@ test("database check detects every regeneration request mirror-field drift", () 
     const sqlitePath = join(root, "regeneration-request-drift.sqlite");
     migrateDatabase(sqlitePath);
     const db = new DatabaseSync(sqlitePath);
-    db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_regen_drift', ?)")
-      .run(JSON.stringify({ project_id: "project_regen_drift" }));
-    db.prepare("INSERT INTO shots (shot_id, project_id, data_json) VALUES ('shot_regen_drift', 'project_regen_drift', ?)")
-      .run(JSON.stringify({ shot_id: "shot_regen_drift", project_id: "project_regen_drift" }));
+    installWorkbenchProductionMutationAuthority(db);
+    insertGovernedProject(db, "project_regen_drift", { project_id: "project_regen_drift" });
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "shot", project_id: "project_regen_drift", object_id: "shot_regen_drift"
+    }, () => db.prepare("INSERT INTO shots (shot_id, project_id, data_json) VALUES ('shot_regen_drift', 'project_regen_drift', ?)")
+      .run(JSON.stringify({ shot_id: "shot_regen_drift", project_id: "project_regen_drift" })));
     insertUnverifiedArtifact(db, {
       artifact_id: "artifact_regen_drift",
       project_id: "project_regen_drift",
@@ -715,6 +747,7 @@ test("database check detects every regeneration request mirror-field drift", () 
     });
 
     const mirroredFields = ["request_id", "project_id", "shot_id", "artifact_id", "previous_run_id", "status"] as const;
+    db.exec("DROP TRIGGER workbench_regeneration_requests_insert_authority");
     const insertRequest = db.prepare("INSERT INTO regeneration_requests (request_id, project_id, shot_id, artifact_id, previous_run_id, status, data_json) VALUES (?, 'project_regen_drift', 'shot_regen_drift', 'artifact_regen_drift', 'run_regen_drift', 'draft', ?)");
     for (const field of mirroredFields) {
       const requestId = `request_${field}_drift`;
@@ -747,6 +780,7 @@ test("provider task IDs are unique per provider at the database boundary", () =>
     const sqlitePath = join(root, "app.sqlite");
     migrateDatabase(sqlitePath);
     const db = new DatabaseSync(sqlitePath);
+    installWorkbenchProductionMutationAuthority(db);
     const artifact = (artifactId: string) => JSON.stringify({ artifact_id: artifactId, source: { provider: "runninghub", provider_job_id: "task_unique" } });
     db.prepare("INSERT INTO media_artifacts (artifact_id, role, artifact_type, status, data_json) VALUES (?, 'generated_clip', 'video', 'active', ?)")
       .run("artifact_unique_1", artifact("artifact_unique_1"));

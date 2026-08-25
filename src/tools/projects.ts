@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
+import { withWorkbenchProductionMutationAuthority } from "../storage/productionMutationAuthority.js";
 import { validateAcceptedClipReference } from "./mediaArtifacts.js";
+import {
+  assertWorkbenchContentMutationAllowed,
+  throwWorkbenchProductionMutationError,
+  WorkbenchProductionMutationError
+} from "./workbenchDeliveryState.js";
 
 export type ProjectStatus = "draft" | "storyboard_approved" | "video_generation_in_progress" | "video_review" | "final_approved";
 export type ShotStatus = "draft" | "storyboard_approved" | "video_pending" | "video_generated" | "video_review" | "approved" | "revision_needed";
@@ -97,13 +103,38 @@ export function createProject(
 }
 
 export function saveProject(db: M0Database, project: Project): void {
-  db.prepare(`
-    INSERT INTO projects (project_id, data_json, updated_at)
-    VALUES (?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(project_id) DO UPDATE SET
-      data_json = excluded.data_json,
-      updated_at = CURRENT_TIMESTAMP
-  `).run(project.project_id, JSON.stringify(project));
+  const ownsTransaction = !(db as unknown as { isTransaction?: boolean }).isTransaction;
+  try {
+    if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
+    const existing = db.prepare("SELECT data_json FROM projects WHERE project_id = ?")
+      .get(project.project_id) as { data_json: string } | undefined;
+    if (!existing) {
+      if (project.status !== "draft" || project.exports?.final_video_artifact_id !== "") {
+        throw new WorkbenchProductionMutationError("PRODUCTION_MUTATION_REJECTED");
+      }
+    } else {
+      const writable = assertWorkbenchContentMutationAllowed(db, project.project_id);
+      if (!writable.ok) throw new WorkbenchProductionMutationError(writable.error.code);
+      const persisted = JSON.parse(existing.data_json) as Project;
+      if ((persisted.status === "final_approved") !== (project.status === "final_approved")
+        || persisted.exports.final_video_artifact_id !== project.exports.final_video_artifact_id) {
+        throw new WorkbenchProductionMutationError("PRODUCTION_MUTATION_REJECTED");
+      }
+    }
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "project_content", project_id: project.project_id, object_id: project.project_id
+    }, () => db.prepare(`
+        INSERT INTO projects (project_id, data_json, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(project_id) DO UPDATE SET
+          data_json = excluded.data_json,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(project.project_id, JSON.stringify(project)));
+    if (ownsTransaction) db.exec("COMMIT");
+  } catch (error) {
+    if (ownsTransaction && (db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+    throwWorkbenchProductionMutationError(error);
+  }
 }
 
 export function getProject(db: M0Database, projectId: string): Project | null {
@@ -112,10 +143,26 @@ export function getProject(db: M0Database, projectId: string): Project | null {
 }
 
 export function saveShot(db: M0Database, shot: Shot): void {
-  db.prepare(`
-    INSERT OR REPLACE INTO shots (shot_id, project_id, data_json, updated_at)
-    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-  `).run(shot.shot_id, shot.project_id, JSON.stringify(shot));
+  const ownsTransaction = !(db as unknown as { isTransaction?: boolean }).isTransaction;
+  try {
+    if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
+    const writable = assertWorkbenchContentMutationAllowed(db, shot.project_id);
+    if (!writable.ok) throw new WorkbenchProductionMutationError(writable.error.code);
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "shot", project_id: shot.project_id, object_id: shot.shot_id
+    }, () => db.prepare(`
+        INSERT INTO shots (shot_id, project_id, data_json, updated_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(shot_id) DO UPDATE SET
+          project_id = excluded.project_id,
+          data_json = excluded.data_json,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(shot.shot_id, shot.project_id, JSON.stringify(shot)));
+    if (ownsTransaction) db.exec("COMMIT");
+  } catch (error) {
+    if (ownsTransaction && (db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+    throwWorkbenchProductionMutationError(error);
+  }
 }
 
 export function getShot(db: M0Database, shotId: string): Shot | null {

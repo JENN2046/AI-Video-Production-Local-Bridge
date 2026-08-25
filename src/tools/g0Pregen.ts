@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { assertInsideWorkspace, paths } from "../paths.js";
@@ -7,6 +8,10 @@ import { getMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js"
 import { getProject, saveProject, type Project, type Shot, type ToolError } from "./projects.js";
 import { importStoryboardPackage, type ImportStoryboardPackageInput } from "./storyboardPackages.js";
 import { isNineSixteenAspectRatio } from "./importClassifier.js";
+import {
+  assertWorkbenchContentMutationAllowed,
+  workbenchProductionMutationError
+} from "./workbenchDeliveryState.js";
 
 export type G0ArtifactKind =
   | "creative_brief"
@@ -110,6 +115,90 @@ function ensureG0ProjectRoot(projectId: string): string {
   return root;
 }
 
+export interface PreparedG0ArtifactWrite {
+  saved: G0SavedArtifact;
+  place(): void;
+  commit(): void;
+  rollback(): boolean;
+}
+
+export function rollbackOwnedDatabaseTransaction(
+  db: M0Database,
+  commitAttempted: boolean
+): boolean {
+  if (!(db as unknown as { isTransaction?: boolean }).isTransaction) {
+    return !commitAttempted;
+  }
+  try {
+    db.exec("ROLLBACK");
+    return !(db as unknown as { isTransaction?: boolean }).isTransaction;
+  } catch {
+    return false;
+  }
+}
+
+export function prepareG0ArtifactWrite(
+  input: { project_id: string; kind: G0ArtifactKind; payload: unknown },
+  db: M0Database
+): PreparedG0ArtifactWrite {
+  const filename = G0_ARTIFACT_FILENAMES[input.kind];
+  if (!filename) throw new Error("G0_UNSUPPORTED_ARTIFACT_KIND");
+  if (!(db as unknown as { isTransaction?: boolean }).isTransaction) {
+    throw new Error("G0_TRANSACTION_UNSAFE");
+  }
+  const writable = assertWorkbenchContentMutationAllowed(db, input.project_id);
+  if (!writable.ok) throw new Error(writable.error.code);
+  const root = ensureG0ProjectRoot(input.project_id);
+  const target = assertInsideWorkspace(join(root, filename), root);
+  const nonce = randomUUID();
+  const temporary = assertInsideWorkspace(join(root, `.${filename}.${nonce}.part`), root);
+  const backup = assertInsideWorkspace(join(root, `.${filename}.${nonce}.backup`), root);
+  const savedAt = new Date().toISOString();
+  const envelope: G0SavedArtifactEnvelope = {
+    project_id: input.project_id,
+    kind: input.kind,
+    saved_at: savedAt,
+    payload: input.payload
+  };
+  writeFileSync(temporary, `${JSON.stringify(envelope, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+  let placed = false;
+  let settled = false;
+  return {
+    saved: { project_id: input.project_id, kind: input.kind, filename, path: target, saved_at: savedAt },
+    place(): void {
+      if (settled || placed) throw new Error("G0_ARTIFACT_WRITE_STATE_INVALID");
+      if (existsSync(target)) renameSync(target, backup);
+      renameSync(temporary, target);
+      placed = true;
+    },
+    commit(): void {
+      if (settled || !placed) throw new Error("G0_ARTIFACT_WRITE_STATE_INVALID");
+      settled = true;
+      try {
+        if (existsSync(backup)) rmSync(backup, { force: true });
+      } catch {
+        // The committed target is authoritative. A retained backup is safer
+        // than undoing a database commit after the transaction boundary.
+      }
+    },
+    rollback(): boolean {
+      if (settled) return true;
+      let complete = true;
+      if (placed && existsSync(target)) {
+        try { rmSync(target, { force: true }); } catch { complete = false; }
+      }
+      if (existsSync(backup) && !existsSync(target)) {
+        try { renameSync(backup, target); } catch { complete = false; }
+      }
+      if (existsSync(temporary)) {
+        try { rmSync(temporary, { force: true }); } catch { complete = false; }
+      }
+      settled = complete;
+      return complete;
+    }
+  };
+}
+
 function projectOrError(projectId: string, db: M0Database): Project | ToolError {
   const project = getProject(db, projectId);
   if (!project) return { code: "PROJECT_NOT_FOUND", message: `Project not found: ${projectId}` };
@@ -120,39 +209,60 @@ export function saveG0Artifact(
   input: { project_id: string; kind: G0ArtifactKind; payload: unknown },
   db = openM0Database()
 ): G0SaveResult {
-  const project = projectOrError(input.project_id, db);
-  if ("code" in project) return { ok: false, error: project };
-
   const filename = G0_ARTIFACT_FILENAMES[input.kind];
   if (!filename) return { ok: false, error: { code: "G0_UNSUPPORTED_ARTIFACT_KIND", message: `Unsupported G0 artifact kind: ${input.kind}` } };
-
-  const root = ensureG0ProjectRoot(input.project_id);
-  const target = assertInsideWorkspace(join(root, filename), root);
-  const savedAt = new Date().toISOString();
-  const envelope: G0SavedArtifactEnvelope = {
-    project_id: input.project_id,
-    kind: input.kind,
-    saved_at: savedAt,
-    payload: input.payload
-  };
-
-  writeFileSync(target, `${JSON.stringify(envelope, null, 2)}\n`, "utf8");
-
-  if (input.kind === "creative_brief" && input.payload && typeof input.payload === "object" && !Array.isArray(input.payload)) {
-    project.brief = input.payload as Record<string, unknown>;
-    saveProject(db, project);
+  if ((db as unknown as { isTransaction?: boolean }).isTransaction) {
+    return { ok: false, error: { code: "G0_TRANSACTION_UNSAFE", message: "G0 file writes require an owned synchronous transaction." } };
   }
 
-  return {
-    ok: true,
-    saved: {
-      project_id: input.project_id,
-      kind: input.kind,
-      filename,
-      path: target,
-      saved_at: savedAt
+  let prepared: PreparedG0ArtifactWrite | null = null;
+  let commitAttempted = false;
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    const writable = assertWorkbenchContentMutationAllowed(db, input.project_id);
+    if (!writable.ok) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: writable.error };
     }
-  };
+    const project = projectOrError(input.project_id, db);
+    if ("code" in project) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: project };
+    }
+
+    prepared = prepareG0ArtifactWrite(input, db);
+
+    if (input.kind === "creative_brief" && input.payload && typeof input.payload === "object" && !Array.isArray(input.payload)) {
+      project.brief = input.payload as Record<string, unknown>;
+      saveProject(db, project);
+    }
+    const finalBoundary = assertWorkbenchContentMutationAllowed(db, input.project_id);
+    if (!finalBoundary.ok) throw new Error(finalBoundary.error.code);
+    prepared.place();
+    commitAttempted = true;
+    db.exec("COMMIT");
+    prepared.commit();
+    return { ok: true, saved: prepared.saved };
+  } catch (error) {
+    const databaseRollbackComplete = rollbackOwnedDatabaseTransaction(db, commitAttempted);
+    if (!databaseRollbackComplete) {
+      return { ok: false, error: {
+        code: "G0_ARTIFACT_RECOVERY_REQUIRED",
+        message: "G0 artifact recovery evidence was retained for manual reconciliation."
+      } };
+    }
+    const fileRollbackComplete = prepared?.rollback() ?? true;
+    if (!fileRollbackComplete) {
+      return { ok: false, error: {
+        code: "G0_ARTIFACT_RECOVERY_REQUIRED",
+        message: "G0 artifact recovery evidence was retained for manual reconciliation."
+      } };
+    }
+    const mapped = workbenchProductionMutationError(error);
+    return { ok: false, error: mapped.code === "PRODUCTION_MUTATION_REJECTED"
+      ? { code: "G0_ARTIFACT_SAVE_FAILED", message: "G0 artifact and Project changes were not committed." }
+      : mapped };
+  }
 }
 
 export function readG0Artifact(projectId: string, kind: G0ArtifactKind): G0SavedArtifactEnvelope | null {
@@ -257,33 +367,70 @@ export function validateG0StoryboardPackage(input: G0StoryboardPackageInput, db 
 }
 
 export function importG0AppReadyStoryboardPackage(input: G0StoryboardPackageInput, db = openM0Database()): G0ImportResult {
-  const validation = validateG0StoryboardPackage(input, db);
-  if (!validation.ok) return validation;
-  if (!validation.app_ready || !validation.import_input) {
-    return { ok: false, error: { code: "DRAFT_PACKAGE_NOT_APP_READY", message: "Draft packages cannot start video generation." } };
+  if ((db as unknown as { isTransaction?: boolean }).isTransaction) {
+    return { ok: false, error: { code: "G0_TRANSACTION_UNSAFE", message: "G0 import requires an owned synchronous transaction." } };
   }
+  let prepared: PreparedG0ArtifactWrite | null = null;
+  let transactionOpen = false;
+  let commitAttempted = false;
+  let operationError: ToolError | null = null;
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    transactionOpen = true;
+    const validation = validateG0StoryboardPackage(input, db);
+    if (!validation.ok) {
+      operationError = validation.error;
+      throw new Error("G0_OPERATION_REJECTED");
+    }
+    if (!validation.app_ready || !validation.import_input) {
+      operationError = { code: "DRAFT_PACKAGE_NOT_APP_READY", message: "Draft packages cannot start video generation." };
+      throw new Error("G0_OPERATION_REJECTED");
+    }
 
-  const imported = importStoryboardPackage(validation.import_input, db);
-  if (!imported.ok) return imported;
-
-  const saved = saveG0Artifact(
-    {
+    const imported = importStoryboardPackage(validation.import_input, db);
+    if (!imported.ok) {
+      operationError = imported.error;
+      throw new Error("G0_OPERATION_REJECTED");
+    }
+    prepared = prepareG0ArtifactWrite({
       project_id: input.project_id,
       kind: "storyboard_package",
-      payload: {
-        ...input,
-        storyboard_package_id: imported.storyboard_package_id
-      }
-    },
-    db
-  );
-  if (!saved.ok) return saved;
-
-  return {
-    ok: true,
-    storyboard_package_id: imported.storyboard_package_id,
-    project: imported.project,
-    shots: imported.shots,
-    saved_package: saved.saved
-  };
+      payload: { ...input, storyboard_package_id: imported.storyboard_package_id }
+    }, db);
+    prepared.place();
+    commitAttempted = true;
+    db.exec("COMMIT");
+    transactionOpen = false;
+    prepared.commit();
+    return {
+      ok: true,
+      storyboard_package_id: imported.storyboard_package_id,
+      project: imported.project,
+      shots: imported.shots,
+      saved_package: prepared.saved
+    };
+  } catch (error) {
+    const databaseRollbackComplete = !transactionOpen
+      ? !commitAttempted
+      : rollbackOwnedDatabaseTransaction(db, commitAttempted);
+    if (!databaseRollbackComplete) {
+      return { ok: false, error: {
+        code: "G0_ARTIFACT_RECOVERY_REQUIRED",
+        message: "G0 import recovery evidence was retained for manual reconciliation."
+      } };
+    }
+    transactionOpen = false;
+    const fileRollbackComplete = prepared?.rollback() ?? true;
+    if (!fileRollbackComplete) {
+      return { ok: false, error: {
+        code: "G0_ARTIFACT_RECOVERY_REQUIRED",
+        message: "G0 import recovery evidence was retained for manual reconciliation."
+      } };
+    }
+    if (operationError) return { ok: false, error: operationError };
+    const mapped = workbenchProductionMutationError(error);
+    return { ok: false, error: mapped.code === "PRODUCTION_MUTATION_REJECTED"
+      ? { code: "G0_STORYBOARD_IMPORT_FAILED", message: "G0 Storyboard Package was not committed." }
+      : mapped };
+  }
 }

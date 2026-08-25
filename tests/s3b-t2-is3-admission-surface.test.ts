@@ -7,6 +7,8 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { migrateDatabase } from "../src/storage/databaseGovernance.js";
+import { withWorkbenchProductionMutationAuthority } from "../src/storage/productionMutationAuthority.js";
+import { openM0DatabaseConnection } from "../src/storage/sqlite.js";
 import { saveProject, saveShot, type Project, type Shot } from "../src/tools/projects.js";
 import { readGenerationAdmissionCandidateFacts } from "../src/tools/s3bT2AdmissionFacts.js";
 import {
@@ -69,7 +71,7 @@ function addEligibleCandidate(fixture: Fixture, ids: CandidateIds, filename: str
     generation_batch_ids: [],
     exports: { final_video_artifact_id: "" }
   };
-  saveProject(fixture.db, project);
+  saveProject(fixture.db, { ...project, status: "draft", shot_ids: [], active_storyboard_package_id: "" });
   fixture.db.prepare("UPDATE workbench_project_meta SET classification = 'production', lifecycle = 'active' WHERE project_id = ?")
     .run(ids.project_id);
 
@@ -95,25 +97,31 @@ function addEligibleCandidate(fixture: Fixture, ids: CandidateIds, filename: str
     (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
     VALUES (?, ?, ?, 'image/png', ?, 'verified', ?)`)
     .run(ids.blob_id, sha256, bytes.length, imagePath, JSON.stringify({ media_root: fixture.mediaRoot }));
-  fixture.db.prepare(`INSERT INTO media_artifacts
-    (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
-    VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)`)
-    .run(ids.artifact_id, ids.project_id, ids.shot_id, JSON.stringify({
-      artifact_id: ids.artifact_id,
-      blob_id: ids.blob_id,
-      artifact_type: "image",
-      role: "storyboard_image",
-      status: "active",
-      storage: { uri: imagePath, mime_type: "image/png", filename },
-      metadata: { width: 1, height: 1, duration_seconds: null, aspect_ratio: "9:16", sha256 },
-      linked_objects: { project_id: ids.project_id, shot_id: ids.shot_id },
-      source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256, external_url_host: "" }
-    }));
-  fixture.db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)")
-    .run(ids.artifact_id, ids.blob_id);
+  withWorkbenchProductionMutationAuthority(fixture.db, {
+    kind: "artifact", project_id: ids.project_id, object_id: ids.artifact_id
+  }, () => {
+    fixture.db.prepare(`INSERT INTO media_artifacts
+      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+      VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)`)
+      .run(ids.artifact_id, ids.project_id, ids.shot_id, JSON.stringify({
+        artifact_id: ids.artifact_id,
+        blob_id: ids.blob_id,
+        artifact_type: "image",
+        role: "storyboard_image",
+        status: "active",
+        storage: { uri: imagePath, mime_type: "image/png", filename },
+        metadata: { width: 1, height: 1, duration_seconds: null, aspect_ratio: "9:16", sha256 },
+        linked_objects: { project_id: ids.project_id, shot_id: ids.shot_id },
+        source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256, external_url_host: "" }
+      }));
+    fixture.db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)")
+      .run(ids.artifact_id, ids.blob_id);
+  });
 
-  fixture.db.prepare(`INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json)
-    VALUES (?, ?, ?)`)
+  withWorkbenchProductionMutationAuthority(fixture.db, {
+    kind: "storyboard_package", project_id: ids.project_id, object_id: ids.package_id
+  }, () => fixture.db.prepare(`INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json)
+      VALUES (?, ?, ?)`)
     .run(ids.package_id, ids.project_id, JSON.stringify({
       storyboard_package_id: ids.package_id,
       project_id: ids.project_id,
@@ -128,7 +136,8 @@ function addEligibleCandidate(fixture: Fixture, ids: CandidateIds, filename: str
         negative_prompt: shot.negative_prompt
       }],
       user_approval: { storyboard_approved: true }
-    }));
+    })));
+  saveProject(fixture.db, project);
   return imagePath;
 }
 
@@ -139,8 +148,7 @@ function createFixture(): Fixture {
   mkdirSync(mediaRoot, { recursive: true });
   const sqlitePath = join(dataRoot, "app.sqlite");
   migrateDatabase(sqlitePath);
-  const db = new DatabaseSync(sqlitePath);
-  db.exec("PRAGMA foreign_keys = ON");
+  const db = openM0DatabaseConnection(sqlitePath);
   const fixture = { root, sqlitePath, mediaRoot, imagePath: join(mediaRoot, "storyboard.png"), db };
   addEligibleCandidate(fixture, BASE, "storyboard.png");
   return fixture;
@@ -159,6 +167,20 @@ function totalChanges(db: DatabaseSync): number {
   return Number((db.prepare("SELECT total_changes() AS changes").get() as { changes: number }).changes);
 }
 
+function withoutFixtureTriggers(db: DatabaseSync, names: string[], action: () => void): void {
+  const triggers = names.map((name) => {
+    const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?").get(name) as { sql: string } | undefined;
+    if (!row?.sql) throw new Error(`FIXTURE_TRIGGER_MISSING:${name}`);
+    return { name, sql: row.sql };
+  });
+  for (const trigger of triggers) db.exec(`DROP TRIGGER ${trigger.name}`);
+  try {
+    action();
+  } finally {
+    for (const trigger of triggers) db.exec(trigger.sql);
+  }
+}
+
 function rewritePayloadIdentity(
   fixture: Fixture,
   table: "projects" | "shots",
@@ -169,7 +191,12 @@ function rewritePayloadIdentity(
   const row = fixture.db.prepare(`SELECT data_json FROM ${table} WHERE ${idColumn} = ?`).get(relationalId) as { data_json: string };
   const payload = JSON.parse(row.data_json) as Record<string, unknown>;
   mutate(payload);
-  fixture.db.prepare(`UPDATE ${table} SET data_json = ? WHERE ${idColumn} = ?`).run(JSON.stringify(payload), relationalId);
+  const triggerNames = table === "projects"
+    ? ["workbench_projects_data_binding_guard", "workbench_projects_update_owner"]
+    : ["workbench_shots_update_authority"];
+  withoutFixtureTriggers(fixture.db, triggerNames, () => {
+    fixture.db.prepare(`UPDATE ${table} SET data_json = ? WHERE ${idColumn} = ?`).run(JSON.stringify(payload), relationalId);
+  });
 }
 
 function assertFactsUnavailable(result: ReturnType<typeof prepareGenerationAdmission>): void {
@@ -274,8 +301,10 @@ test("IS3 project and global enumeration failures return one canonical low-discl
     // it in this isolated fixture models a legacy/corrupted persisted row so
     // the read boundary itself can be exercised.
     fixture.db.exec("DROP INDEX idx_shots_project_order");
-    fixture.db.prepare("INSERT INTO shots (shot_id, project_id, data_json) VALUES (?, ?, ?)")
-      .run("shot_is3_malformed", BASE.project_id, "{malformed-shot-json");
+    withoutFixtureTriggers(fixture.db, ["workbench_shots_insert_authority"], () => {
+      fixture.db.prepare("INSERT INTO shots (shot_id, project_id, data_json) VALUES (?, ?, ?)")
+        .run("shot_is3_malformed", BASE.project_id, "{malformed-shot-json");
+    });
     const before = totalChanges(fixture.db);
     for (const input of [{ project_id: BASE.project_id }, {}]) {
       const prepared = prepareGenerationAdmission(input, fixture.db);
@@ -689,8 +718,7 @@ test("IS3 stale plan returns GENERATION_PLAN_STALE without gaining a new generat
     const row = fixture.db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(BASE.shot_id) as { data_json: string };
     const shot = JSON.parse(row.data_json) as Shot;
     shot.video_prompt = "A changed prompt after prepare.";
-    fixture.db.prepare("UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE shot_id = ?")
-      .run(JSON.stringify(shot), BASE.shot_id);
+    saveShot(fixture.db, shot);
     const confirmed = confirmGenerationAdmission(prepared.plan, fixture.db);
     assert.equal(confirmed.result, "GENERATION_PLAN_STALE");
     assert.equal(intentCount(fixture.db), 0);

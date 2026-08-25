@@ -3,11 +3,17 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 
 import { createHash, randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
+import { withWorkbenchProductionMutationAuthority } from "../storage/productionMutationAuthority.js";
 import { ensureM0Directories, paths } from "../paths.js";
 import { validateImageBuffer, validateImageFile, type ImageValidationResult } from "./imageValidity.js";
 import { validateMp4File } from "./mediaValidity.js";
 import { resolvedPathsEquivalent } from "./pathEquivalence.js";
 import { getProject, getShot, type Shot } from "./projects.js";
+import {
+  assertWorkbenchContentMutationAllowed,
+  WorkbenchProductionMutationError,
+  workbenchProductionMutationError
+} from "./workbenchDeliveryState.js";
 
 export type ArtifactType = "image" | "video";
 export type ArtifactRole = "storyboard_image" | "generated_clip" | "final_video";
@@ -339,8 +345,16 @@ function persistBlob(db: M0Database, blob: MediaBlob): MediaBlob {
 
 function persistMediaArtifactInternal(db: M0Database, artifact: MediaArtifact, allowStatusTransition: boolean, mediaRoot = paths.mediaRoot): void {
   const manageTransaction = !databaseIsInTransaction(db);
-  if (manageTransaction) db.exec("BEGIN IMMEDIATE");
   try {
+    if (manageTransaction) db.exec("BEGIN IMMEDIATE");
+    const projectId = artifact.linked_objects.project_id;
+    const governedProject = projectId
+      ? db.prepare("SELECT 1 AS present FROM workbench_delivery_state WHERE project_id = ?").get(projectId)
+      : undefined;
+    if (projectId && governedProject) {
+      const writable = assertWorkbenchContentMutationAllowed(db, projectId);
+      if (!writable.ok) throw new WorkbenchProductionMutationError(writable.error.code);
+    }
     const existing = db.prepare(`
       SELECT project_id, shot_id, role, artifact_type, status FROM media_artifacts WHERE artifact_id = ?
     `).get(artifact.artifact_id) as { project_id: string | null; shot_id: string | null; role: string; artifact_type: string; status: ArtifactStatus } | undefined;
@@ -381,30 +395,44 @@ function persistMediaArtifactInternal(db: M0Database, artifact: MediaArtifact, a
       throw new Error("ACTIVE_ARTIFACT_REQUIRES_VERIFIED_BLOB");
     }
 
-    db.prepare(`
-      INSERT INTO media_artifacts (
-        artifact_id, project_id, shot_id, role, artifact_type, status, data_json, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(artifact_id) DO UPDATE SET
-        status = excluded.status,
-        data_json = excluded.data_json,
-        updated_at = CURRENT_TIMESTAMP
-    `).run(
-      artifact.artifact_id,
-      artifact.linked_objects.project_id || null,
-      artifact.linked_objects.shot_id || null,
-      artifact.role,
-      artifact.artifact_type,
-      artifact.status,
-      JSON.stringify(artifact)
-    );
-    db.prepare(`
-      INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)
-      ON CONFLICT(artifact_id) DO UPDATE SET blob_id = excluded.blob_id
-    `).run(artifact.artifact_id, artifact.blob_id);
+    const persist = (): void => {
+      db.prepare(`
+        INSERT INTO media_artifacts (
+          artifact_id, project_id, shot_id, role, artifact_type, status, data_json, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(artifact_id) DO UPDATE SET
+          status = excluded.status,
+          data_json = excluded.data_json,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(
+        artifact.artifact_id,
+        artifact.linked_objects.project_id || null,
+        artifact.linked_objects.shot_id || null,
+        artifact.role,
+        artifact.artifact_type,
+        artifact.status,
+        JSON.stringify(artifact)
+      );
+      db.prepare(`
+        INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)
+        ON CONFLICT(artifact_id) DO UPDATE SET blob_id = excluded.blob_id
+      `).run(artifact.artifact_id, artifact.blob_id);
+    };
+    if (projectId && governedProject) {
+      withWorkbenchProductionMutationAuthority(db, {
+        kind: "artifact", project_id: projectId, object_id: artifact.artifact_id
+      }, persist);
+    } else persist();
     if (manageTransaction) db.exec("COMMIT");
   } catch (error) {
-    if (manageTransaction) db.exec("ROLLBACK");
+    if (manageTransaction && databaseIsInTransaction(db)) db.exec("ROLLBACK");
+    const projectId = artifact.linked_objects.project_id;
+    if (projectId) {
+      const mapped = workbenchProductionMutationError(error);
+      if (error instanceof WorkbenchProductionMutationError || mapped.code !== "PRODUCTION_MUTATION_REJECTED") {
+        throw new WorkbenchProductionMutationError(mapped.code);
+      }
+    }
     throw error;
   }
 }
@@ -437,7 +465,10 @@ export function transitionMediaArtifactStatus(
     persistMediaArtifactInternal(db, artifact, true);
     return { ok: true, artifact };
   } catch (error) {
-    return { ok: false, error: { code: "ARTIFACT_STATUS_TRANSITION_FAILED", message: error instanceof Error ? error.message : "Artifact status transition failed." } };
+    const mapped = workbenchProductionMutationError(error);
+    return { ok: false, error: mapped.code === "PRODUCTION_MUTATION_REJECTED"
+      ? { code: "ARTIFACT_STATUS_TRANSITION_FAILED", message: "Artifact status transition failed." }
+      : mapped };
   }
 }
 
@@ -1293,6 +1324,11 @@ export function activateLocalMediaArtifact(
   input: { artifact: MediaArtifact; source_path: string; media_root?: string; allow_status_transition?: boolean; after_staging_written?: (stagingPath: string) => void; after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; remove_post_commit_file?: (finalPath: string) => void },
   db = openM0Database()
 ): RegisterMediaArtifactResult {
+  const projectId = input.artifact.linked_objects.project_id;
+  if (projectId) {
+    const writable = assertWorkbenchContentMutationAllowed(db, projectId);
+    if (!writable.ok) return { ok: false, error: writable.error };
+  }
   ensureM0Directories();
   const sourcePath = resolve(input.source_path);
   if (!existsSync(sourcePath) || lstatSync(sourcePath).isSymbolicLink() || !statSync(sourcePath).isFile()) {
@@ -1736,13 +1772,17 @@ export function validateActiveArtifactReference(
 
 export function validateAcceptedClipReference(
   db: M0Database,
-  shot: Pick<Shot, "project_id" | "shot_id" | "accepted_clip_artifact_id" | "clip_versions">
+  shot: Pick<Shot, "project_id" | "shot_id" | "status" | "review" | "accepted_clip_artifact_id" | "clip_versions">
 ): ActiveArtifactReferenceResult {
   if (!shot.accepted_clip_artifact_id) {
     return { ok: false, error: { code: "SHOT_ACCEPTED_CLIP_MISSING", message: "SHOT has no accepted clip reference." } };
   }
-  if (!shot.clip_versions.some((version) => version.artifact_id === shot.accepted_clip_artifact_id)) {
+  const acceptedVersion = shot.clip_versions.find((version) => version.artifact_id === shot.accepted_clip_artifact_id);
+  if (!acceptedVersion) {
     return { ok: false, error: { code: "ARTIFACT_NOT_IN_SHOT_REVIEW", message: "Accepted clip is not a reviewed version of the SHOT." } };
+  }
+  if (acceptedVersion.review_status !== "approved" || shot.status !== "approved" || shot.review.approval_status !== "approved") {
+    return { ok: false, error: { code: "SHOT_ACCEPTED_CLIP_NOT_APPROVED", message: "Accepted clip is not the currently approved SHOT version." } };
   }
   return validateActiveArtifactReference(db, {
     artifact_id: shot.accepted_clip_artifact_id,
@@ -2101,6 +2141,11 @@ function registerAccessibleUriReference(input: RegisterMediaArtifactInput): Regi
 export function registerMediaArtifact(input: RegisterMediaArtifactInput, db = openM0Database()): RegisterMediaArtifactResult {
   const roleError = validateRole(input.artifact_type, input.role);
   if (roleError) return { ok: false, error: roleError };
+  const projectId = input.linked_objects?.project_id ?? "";
+  if (projectId) {
+    const writable = assertWorkbenchContentMutationAllowed(db, projectId);
+    if (!writable.ok) return { ok: false, error: writable.error };
+  }
 
   let result: RegisterMediaArtifactResult;
 
@@ -2158,6 +2203,10 @@ export function activatePendingMediaArtifact(input: ActivatePendingMediaArtifact
 
   if (existing.status !== "pending_upload") {
     return { ok: false, error: { code: "ARTIFACT_NOT_PENDING_UPLOAD", message: `Artifact is not pending_upload: ${existing.status}` } };
+  }
+  if (existing.linked_objects.project_id) {
+    const writable = assertWorkbenchContentMutationAllowed(db, existing.linked_objects.project_id);
+    if (!writable.ok) return { ok: false, error: writable.error };
   }
 
   if (existing.artifact_type !== "image" || existing.role !== "storyboard_image") {
@@ -2322,8 +2371,13 @@ export function attachArtifactToShot(
   db = openM0Database()
 ): AttachArtifactResult {
   const manageTransaction = !databaseIsInTransaction(db);
-  if (manageTransaction) db.exec("BEGIN IMMEDIATE");
   try {
+    if (manageTransaction) db.exec("BEGIN IMMEDIATE");
+    const writable = assertWorkbenchContentMutationAllowed(db, input.project_id);
+    if (!writable.ok) {
+      if (manageTransaction) db.exec("ROLLBACK");
+      return { ok: false, error: writable.error };
+    }
     if (!getProject(db, input.project_id)) {
       if (manageTransaction) db.exec("ROLLBACK");
       return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: "Target project was not found." } };
@@ -2356,16 +2410,21 @@ export function attachArtifactToShot(
       return { ok: false, error: { code: "CONFLICT_STALE_ARTIFACT_REFERENCE", message: "SHOT Artifact reference changed before attach." } };
     }
     const nextShot = { ...shot, [input.reference]: artifact.artifact_id } as Shot;
-    const result = db.prepare(`
-      UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE shot_id = ? AND project_id = ? AND json_extract(data_json, ?) IS ?
-    `).run(JSON.stringify(nextShot), input.shot_id, input.project_id, `$.${input.reference}`, current) as { changes: number | bigint };
+    const result = withWorkbenchProductionMutationAuthority(db, {
+      kind: "shot", project_id: input.project_id, object_id: input.shot_id
+    }, () => db.prepare(`
+        UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE shot_id = ? AND project_id = ? AND json_extract(data_json, ?) IS ?
+      `).run(JSON.stringify(nextShot), input.shot_id, input.project_id, `$.${input.reference}`, current)) as { changes: number | bigint };
     if (Number(result.changes) !== 1) throw new Error("CONFLICT_STALE_ARTIFACT_REFERENCE");
     if (manageTransaction) db.exec("COMMIT");
     return { ok: true, shot: nextShot, artifact };
   } catch (error) {
     if (manageTransaction && databaseIsInTransaction(db)) db.exec("ROLLBACK");
-    return { ok: false, error: { code: error instanceof Error ? error.message : "ARTIFACT_ATTACH_FAILED", message: "Artifact attach transaction failed." } };
+    const mapped = workbenchProductionMutationError(error);
+    return { ok: false, error: mapped.code === "PRODUCTION_MUTATION_REJECTED"
+      ? { code: "ARTIFACT_ATTACH_FAILED", message: "Artifact attach transaction failed." }
+      : mapped };
   }
 }
 

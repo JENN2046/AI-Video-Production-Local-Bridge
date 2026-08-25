@@ -10,6 +10,10 @@ import { DATABASE_MIGRATIONS, assertSchemaCurrent, migrationChecksum, runDatabas
 import { checkDatabase } from "../src/storage/databaseGovernance.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import {
+  installWorkbenchProductionMutationAuthority,
+  withWorkbenchProductionMutationAuthority
+} from "../src/storage/productionMutationAuthority.js";
+import {
   assertWebGptOwnerBootstrapTarget,
   assertWebGptOwnerBootstrapWritable,
   bindWebGptPrincipalIssuer,
@@ -32,7 +36,10 @@ const ISSUER_HASH = issuerHash(ISSUER);
 
 function createProductionProject(db: DatabaseSync, id = "project_auth_fixture"): void {
   const data = JSON.stringify({ project_id: id, title: "Authorization fixture", status: "draft", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
-  db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run(id, data);
+  installWorkbenchProductionMutationAuthority(db);
+  withWorkbenchProductionMutationAuthority(db, {
+    kind: "project_content", project_id: id, object_id: id
+  }, () => db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run(id, data));
   db.prepare("UPDATE workbench_project_meta SET classification = 'production' WHERE project_id = ?").run(id);
 }
 
@@ -41,7 +48,7 @@ test("migration 0008 creates immutable issuer bindings and preserves append-only
   try {
     const result = runDatabaseMigrations(db);
     assert.ok(result.applied.includes("0008"));
-    assert.equal(result.applied.at(-1), "0012");
+    assert.equal(result.applied.at(-1), "0013");
     assertSchemaCurrent(db);
     createProductionProject(db);
     registerWebGptPrincipal(db, PRINCIPAL, "TEST_BOOTSTRAP");
@@ -118,7 +125,7 @@ test("an existing 0007 database applies 0008 through 0011 without guessing issue
       db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)")
         .run(migration.id, migration.name, migrationChecksum(migration));
     }
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0008", "0009", "0010", "0011", "0012"]);
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0008", "0009", "0010", "0011", "0012", "0013"]);
     assertSchemaCurrent(db);
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM webgpt_auth_principal_bindings").get() as { count: number }).count, 0);
   } finally {
@@ -175,8 +182,7 @@ test("registration, grant and revoke are transactional, idempotent and productio
   const db = openM0Database(":memory:");
   try {
     createProductionProject(db);
-    const testData = JSON.stringify({ project_id: "project_test", title: "Test", status: "draft", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" });
-    db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('project_test', ?)").run(testData);
+    createProductionProject(db, "project_test");
     db.prepare("UPDATE workbench_project_meta SET classification = 'test' WHERE project_id = 'project_test'").run();
 
     assert.deepEqual(registerWebGptPrincipal(db, PRINCIPAL, "TEST_REGISTER"), { created: true });

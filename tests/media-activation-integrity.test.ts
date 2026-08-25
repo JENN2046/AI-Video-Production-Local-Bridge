@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 
 import { checkDatabase, migrateDatabase } from "../src/storage/databaseGovernance.js";
+import { withWorkbenchProductionMutationAuthority } from "../src/storage/productionMutationAuthority.js";
 import { openM0Database, type M0Database } from "../src/storage/sqlite.js";
 import { paths } from "../src/paths.js";
 import {
@@ -155,12 +156,16 @@ function insertUnsafeRecoveryFixture(
       immutable: true,
       media_root: resolve(registeredRoot)
     }));
-  db.prepare(`INSERT INTO media_artifacts
-    (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
-    VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?)`)
-    .run(artifactId, scope.project_id, scope.shot_id, JSON.stringify(artifact));
-  db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)")
-    .run(artifactId, blobId);
+  withWorkbenchProductionMutationAuthority(db, {
+    kind: "artifact", project_id: scope.project_id, object_id: artifactId
+  }, () => {
+    db.prepare(`INSERT INTO media_artifacts
+      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+      VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?)`)
+      .run(artifactId, scope.project_id, scope.shot_id, JSON.stringify(artifact));
+    db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)")
+      .run(artifactId, blobId);
+  });
   return { artifact, source_path: sourcePath };
 }
 
@@ -945,12 +950,16 @@ test("verified Blob recovery restores missing bytes without changing immutable r
         provider_job_id: ""
       }
     };
-    db.prepare(`INSERT INTO media_artifacts
-      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
-      VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?)`)
-      .run(sharedArtifact.artifact_id, fixture.project_id, fixture.shot_id, JSON.stringify(sharedArtifact));
-    db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)")
-      .run(sharedArtifact.artifact_id, sharedArtifact.blob_id);
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "artifact", project_id: fixture.project_id, object_id: sharedArtifact.artifact_id
+    }, () => {
+      db.prepare(`INSERT INTO media_artifacts
+        (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+        VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?)`)
+        .run(sharedArtifact.artifact_id, fixture.project_id, fixture.shot_id, JSON.stringify(sharedArtifact));
+      db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)")
+        .run(sharedArtifact.artifact_id, sharedArtifact.blob_id);
+    });
     const before = immutableBlobSnapshot(db, fixture.artifact.artifact_id);
     const blobCountBefore = (db.prepare("SELECT COUNT(*) AS count FROM media_blobs").get() as { count: number }).count;
 

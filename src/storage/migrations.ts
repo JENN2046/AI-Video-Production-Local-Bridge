@@ -4,6 +4,7 @@ import { basename, dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import type { M0Database } from "./sqlite.js";
+import { installWorkbenchProductionMutationAuthority } from "./productionMutationAuthority.js";
 import {
   applyWorkbenchV24Baseline,
   WORKBENCH_V2_4_SCHEMA_VERSION,
@@ -1550,6 +1551,722 @@ function applyDeliveryStateFoundationMigration(db: M0Database): void {
   db.exec(DELIVERY_STATE_FOUNDATION_SQL);
 }
 
+function assertProductionMutationFoundationConsistent(db: M0Database): void {
+  const invalid = db.prepare(`
+    SELECT 1 AS invalid
+    WHERE EXISTS (
+      SELECT 1 FROM projects
+      WHERE json_valid(data_json) = 0
+        OR json_type(data_json) <> 'object'
+        OR json_extract(data_json, '$.project_id') IS NOT project_id
+    ) OR EXISTS (
+      SELECT 1 FROM shots shot
+      LEFT JOIN projects project ON project.project_id = shot.project_id
+      WHERE project.project_id IS NULL
+        OR json_valid(shot.data_json) = 0
+        OR json_type(shot.data_json) <> 'object'
+        OR json_extract(shot.data_json, '$.shot_id') IS NOT shot.shot_id
+        OR json_extract(shot.data_json, '$.project_id') IS NOT shot.project_id
+    ) OR EXISTS (
+      SELECT 1 FROM storyboard_packages package
+      LEFT JOIN projects project ON project.project_id = package.project_id
+      WHERE project.project_id IS NULL
+        OR json_valid(package.data_json) = 0
+        OR json_type(package.data_json) <> 'object'
+        OR json_extract(package.data_json, '$.storyboard_package_id') IS NOT package.storyboard_package_id
+        OR json_extract(package.data_json, '$.project_id') IS NOT package.project_id
+    ) OR EXISTS (
+      SELECT 1 FROM projects project
+      WHERE COALESCE(json_extract(project.data_json, '$.active_storyboard_package_id'), '') <> ''
+        AND NOT EXISTS (
+          SELECT 1 FROM storyboard_packages package
+          WHERE package.storyboard_package_id = json_extract(project.data_json, '$.active_storyboard_package_id')
+            AND package.project_id = project.project_id
+        )
+    ) OR EXISTS (
+      SELECT 1 FROM media_artifacts artifact
+      LEFT JOIN projects project ON project.project_id = artifact.project_id
+      LEFT JOIN shots shot ON shot.shot_id = artifact.shot_id AND shot.project_id = artifact.project_id
+      LEFT JOIN media_artifact_blobs binding ON binding.artifact_id = artifact.artifact_id
+      LEFT JOIN media_blobs blob ON blob.blob_id = binding.blob_id
+      WHERE json_valid(artifact.data_json) = 0
+        OR json_type(artifact.data_json) <> 'object'
+        OR json_extract(artifact.data_json, '$.artifact_id') IS NOT artifact.artifact_id
+        OR json_extract(artifact.data_json, '$.linked_objects.project_id') IS NOT COALESCE(artifact.project_id, '')
+        OR json_extract(artifact.data_json, '$.linked_objects.shot_id') IS NOT COALESCE(artifact.shot_id, '')
+        OR json_extract(artifact.data_json, '$.role') IS NOT artifact.role
+        OR json_extract(artifact.data_json, '$.artifact_type') IS NOT artifact.artifact_type
+        OR json_extract(artifact.data_json, '$.status') IS NOT artifact.status
+        OR json_extract(artifact.data_json, '$.blob_id') IS NOT binding.blob_id
+        OR binding.blob_id IS NULL
+        OR blob.blob_id IS NULL
+        OR (COALESCE(artifact.project_id, '') <> '' AND project.project_id IS NULL)
+        OR (COALESCE(artifact.shot_id, '') <> '' AND shot.shot_id IS NULL)
+    ) OR EXISTS (
+      SELECT 1 FROM projects project
+      LEFT JOIN workbench_project_meta meta ON meta.project_id = project.project_id
+      LEFT JOIN workbench_delivery_state delivery ON delivery.project_id = project.project_id
+      WHERE meta.project_id IS NULL OR delivery.project_id IS NULL
+    ) OR EXISTS (
+      SELECT 1 FROM workbench_project_meta meta
+      LEFT JOIN projects project ON project.project_id = meta.project_id
+      WHERE project.project_id IS NULL
+    ) OR EXISTS (
+      SELECT 1 FROM workbench_delivery_state delivery
+      LEFT JOIN projects project ON project.project_id = delivery.project_id
+      WHERE project.project_id IS NULL
+    ) OR EXISTS (
+      SELECT 1 FROM shots shot
+      WHERE COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') <> ''
+        AND NOT EXISTS (
+          SELECT 1 FROM media_artifacts artifact
+          JOIN media_artifact_blobs binding ON binding.artifact_id = artifact.artifact_id
+          JOIN media_blobs blob ON blob.blob_id = binding.blob_id
+          WHERE artifact.artifact_id = json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+            AND artifact.project_id = shot.project_id
+            AND artifact.shot_id = shot.shot_id
+            AND artifact.role = 'generated_clip'
+            AND artifact.artifact_type = 'video'
+            AND artifact.status = 'active'
+            AND blob.integrity_state = 'verified'
+        )
+    ) OR EXISTS (
+      SELECT 1 FROM workbench_delivery_state delivery
+      WHERE delivery.workflow_state = 'ready_to_assemble'
+        AND (
+          NOT EXISTS (SELECT 1 FROM shots WHERE project_id = delivery.project_id)
+          OR EXISTS (
+            SELECT 1 FROM shots shot
+            WHERE shot.project_id = delivery.project_id
+              AND (
+                COALESCE(json_extract(shot.data_json, '$.status'), '') <> 'approved'
+                OR COALESCE(json_extract(shot.data_json, '$.review.approval_status'), '') <> 'approved'
+                OR COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') = ''
+                OR NOT EXISTS (
+                  SELECT 1 FROM json_each(shot.data_json, '$.clip_versions') version
+                  WHERE json_extract(version.value, '$.artifact_id') = json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+                    AND json_extract(version.value, '$.review_status') = 'approved'
+                )
+              )
+          )
+        )
+    ) OR EXISTS (
+      SELECT 1 FROM regeneration_requests request
+      LEFT JOIN projects project ON project.project_id = request.project_id
+      LEFT JOIN shots shot ON shot.shot_id = request.shot_id AND shot.project_id = request.project_id
+      LEFT JOIN media_artifacts artifact ON artifact.artifact_id = request.artifact_id
+        AND artifact.project_id = request.project_id AND artifact.shot_id = request.shot_id
+      WHERE project.project_id IS NULL OR shot.shot_id IS NULL OR artifact.artifact_id IS NULL
+        OR json_valid(request.data_json) = 0
+        OR json_type(request.data_json) <> 'object'
+        OR json_extract(request.data_json, '$.request_id') IS NOT request.request_id
+        OR json_extract(request.data_json, '$.project_id') IS NOT request.project_id
+        OR json_extract(request.data_json, '$.shot_id') IS NOT request.shot_id
+        OR json_extract(request.data_json, '$.artifact_id') IS NOT request.artifact_id
+        OR json_extract(request.data_json, '$.previous_run_id') IS NOT request.previous_run_id
+        OR json_extract(request.data_json, '$.status') IS NOT request.status
+    )
+    LIMIT 1
+  `).get() as { invalid: number } | undefined;
+  if (invalid) throw new Error("WORKBENCH_0013_FOUNDATION_INVALID");
+}
+
+const PRODUCTION_MUTATION_AUTHORITY_SQL = `
+  UPDATE workbench_delivery_state
+  SET assembly_input_fingerprint = NULL, updated_at = CURRENT_TIMESTAMP
+  WHERE workflow_state = 'not_ready' AND assembly_input_fingerprint IS NOT NULL;
+
+  CREATE TRIGGER workbench_delivery_state_closed_immutable
+  BEFORE UPDATE ON workbench_delivery_state
+  WHEN OLD.workflow_state = 'closed'
+  BEGIN
+    SELECT RAISE(ABORT, 'PROJECT_CLOSED');
+  END;
+
+  CREATE TRIGGER workbench_delivery_state_production_owner
+  BEFORE UPDATE ON workbench_delivery_state
+  WHEN OLD.project_id IS NOT NEW.project_id
+    OR OLD.created_at IS NOT NEW.created_at
+    OR (NEW.workflow_state = 'not_ready' AND NEW.assembly_input_fingerprint IS NOT NULL)
+    OR OLD.current_final_artifact_id IS NOT NEW.current_final_artifact_id
+    OR OLD.legacy_final_artifact_id IS NOT NEW.legacy_final_artifact_id
+    OR (
+      OLD.assembly_input_fingerprint IS NOT NEW.assembly_input_fingerprint
+      AND NOT (
+        OLD.workflow_state = 'ready_to_assemble'
+        AND NEW.workflow_state = 'not_ready'
+        AND NEW.assembly_input_fingerprint IS NULL
+      )
+    )
+    OR OLD.approved_artifact_id IS NOT NEW.approved_artifact_id
+    OR OLD.latest_export_id IS NOT NEW.latest_export_id
+    OR OLD.last_assembled_at IS NOT NEW.last_assembled_at
+    OR OLD.latest_exported_at IS NOT NEW.latest_exported_at
+    OR OLD.closed_at IS NOT NEW.closed_at
+    OR NOT (
+      OLD.workflow_state IS NEW.workflow_state
+      OR (OLD.workflow_state = 'ready_to_assemble' AND NEW.workflow_state = 'not_ready')
+      OR (
+        OLD.workflow_state = 'not_ready'
+        AND NEW.workflow_state = 'ready_to_assemble'
+        AND workbench_production_mutation_authorized('readiness_refresh', OLD.project_id, OLD.project_id) = 1
+      )
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_PROJECTION_OWNER_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_delivery_state_ready_truth
+  BEFORE UPDATE OF workflow_state ON workbench_delivery_state
+  WHEN NEW.workflow_state = 'ready_to_assemble'
+    AND (
+      NOT EXISTS (SELECT 1 FROM shots WHERE project_id = NEW.project_id)
+      OR EXISTS (
+        SELECT 1 FROM shots shot
+        WHERE shot.project_id = NEW.project_id
+          AND (
+            json_valid(shot.data_json) = 0
+            OR json_extract(shot.data_json, '$.shot_id') IS NOT shot.shot_id
+            OR json_extract(shot.data_json, '$.project_id') IS NOT shot.project_id
+            OR COALESCE(json_extract(shot.data_json, '$.status'), '') <> 'approved'
+            OR COALESCE(json_extract(shot.data_json, '$.review.approval_status'), '') <> 'approved'
+            OR COALESCE(json_extract(shot.data_json, '$.accepted_clip_artifact_id'), '') = ''
+            OR NOT EXISTS (
+              SELECT 1
+              FROM media_artifacts artifact
+              JOIN media_artifact_blobs binding ON binding.artifact_id = artifact.artifact_id
+              JOIN media_blobs blob ON blob.blob_id = binding.blob_id
+              WHERE artifact.artifact_id = json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+                AND artifact.project_id = shot.project_id
+                AND artifact.shot_id = shot.shot_id
+                AND artifact.role = 'generated_clip'
+                AND artifact.artifact_type = 'video'
+                AND artifact.status = 'active'
+                AND blob.integrity_state = 'verified'
+            )
+            OR NOT EXISTS (
+              SELECT 1 FROM json_each(shot.data_json, '$.clip_versions') version
+              WHERE json_extract(version.value, '$.artifact_id') = json_extract(shot.data_json, '$.accepted_clip_artifact_id')
+                AND json_extract(version.value, '$.review_status') = 'approved'
+            )
+          )
+      )
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_READINESS_INVALID');
+  END;
+
+  CREATE TRIGGER workbench_projects_insert_owner
+  BEFORE INSERT ON projects
+  WHEN workbench_production_mutation_authorized('project_content', NEW.project_id, NEW.project_id) <> 1
+    OR json_valid(NEW.data_json) = 0
+    OR json_type(NEW.data_json) <> 'object'
+    OR json_extract(NEW.data_json, '$.project_id') IS NOT NEW.project_id
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_PRODUCTION_OWNER_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_projects_identity_immutable
+  BEFORE UPDATE OF project_id, created_at ON projects
+  WHEN OLD.project_id IS NOT NEW.project_id OR OLD.created_at IS NOT NEW.created_at
+  BEGIN
+    SELECT CASE WHEN EXISTS (
+      SELECT 1 FROM workbench_delivery_state state
+      WHERE state.project_id = OLD.project_id AND state.workflow_state = 'closed'
+    ) THEN RAISE(ABORT, 'PROJECT_CLOSED')
+      ELSE RAISE(ABORT, 'WORKBENCH_PROJECT_IDENTITY_IMMUTABLE') END;
+  END;
+
+  CREATE TRIGGER workbench_projects_no_delete
+  BEFORE DELETE ON projects
+  BEGIN
+    SELECT CASE WHEN EXISTS (
+      SELECT 1 FROM workbench_delivery_state state
+      WHERE state.project_id = OLD.project_id AND state.workflow_state = 'closed'
+    ) THEN RAISE(ABORT, 'PROJECT_CLOSED')
+      ELSE RAISE(ABORT, 'WORKBENCH_PROJECT_IMMUTABLE') END;
+  END;
+
+  CREATE TRIGGER workbench_projects_data_binding_guard
+  BEFORE UPDATE OF data_json ON projects
+  WHEN json_valid(NEW.data_json) = 0
+    OR json_type(NEW.data_json) <> 'object'
+    OR json_extract(NEW.data_json, '$.project_id') IS NOT NEW.project_id
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_PROJECT_BINDING_INVALID');
+  END;
+
+  CREATE TRIGGER workbench_projects_update_owner
+  BEFORE UPDATE OF data_json ON projects
+  WHEN (
+    json_remove(OLD.data_json, '$.title') IS json_remove(NEW.data_json, '$.title')
+    AND workbench_production_mutation_authorized('project_title', OLD.project_id, OLD.project_id) <> 1
+    AND workbench_production_mutation_authorized('project_content', OLD.project_id, OLD.project_id) <> 1
+  ) OR (
+    json_remove(OLD.data_json, '$.title') IS NOT json_remove(NEW.data_json, '$.title')
+    AND workbench_production_mutation_authorized('project_content', OLD.project_id, OLD.project_id) <> 1
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_PRODUCTION_OWNER_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_projects_delivery_projection_guard
+  BEFORE UPDATE OF data_json ON projects
+  WHEN COALESCE(json_extract(OLD.data_json, '$.exports.final_video_artifact_id'), '')
+      IS NOT COALESCE(json_extract(NEW.data_json, '$.exports.final_video_artifact_id'), '')
+    OR (COALESCE(json_extract(OLD.data_json, '$.status'), '') = 'final_approved')
+      IS NOT (COALESCE(json_extract(NEW.data_json, '$.status'), '') = 'final_approved')
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_PROJECTION_OWNER_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_projects_active_job_guard
+  BEFORE UPDATE OF data_json ON projects
+  WHEN EXISTS (
+    SELECT 1 FROM workbench_delivery_jobs job
+    WHERE job.project_id = OLD.project_id AND job.state IN ('queued','running')
+  ) OR EXISTS (
+    SELECT 1 FROM workbench_delivery_state state
+    WHERE state.project_id = OLD.project_id AND state.workflow_state = 'assembling'
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'DELIVERY_JOB_ACTIVE');
+  END;
+
+  CREATE TRIGGER workbench_projects_closed_guard
+  BEFORE UPDATE OF data_json ON projects
+  WHEN EXISTS (
+    SELECT 1 FROM workbench_delivery_state state
+    WHERE state.project_id = OLD.project_id AND state.workflow_state = 'closed'
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'PROJECT_CLOSED');
+  END;
+
+  CREATE TRIGGER workbench_projects_final_content_guard
+  BEFORE UPDATE OF data_json ON projects
+  WHEN EXISTS (
+    SELECT 1 FROM workbench_delivery_state state
+    WHERE state.project_id = OLD.project_id
+      AND state.workflow_state IN ('final_review','approved','exported','legacy_review_required')
+  ) AND json_remove(OLD.data_json, '$.title') IS NOT json_remove(NEW.data_json, '$.title')
+  BEGIN
+    SELECT RAISE(ABORT, 'DELIVERY_REWORK_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_projects_ready_drift
+  AFTER UPDATE OF data_json ON projects
+  WHEN json_remove(OLD.data_json, '$.title') IS NOT json_remove(NEW.data_json, '$.title')
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = 'not_ready', assembly_input_fingerprint = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE project_id = NEW.project_id AND workflow_state = 'ready_to_assemble';
+  END;
+
+  CREATE TRIGGER workbench_shots_insert_authority
+  BEFORE INSERT ON shots
+  WHEN workbench_production_mutation_authorized('shot', NEW.project_id, NEW.shot_id) <> 1
+    OR json_valid(NEW.data_json) = 0
+    OR json_type(NEW.data_json) <> 'object'
+    OR json_extract(NEW.data_json, '$.shot_id') IS NOT NEW.shot_id
+    OR json_extract(NEW.data_json, '$.project_id') IS NOT NEW.project_id
+    OR NOT EXISTS (SELECT 1 FROM projects project WHERE project.project_id = NEW.project_id)
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_jobs job
+      WHERE job.project_id = NEW.project_id AND job.state IN ('queued','running')
+    )
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_state state
+      WHERE state.project_id = NEW.project_id
+        AND state.workflow_state IN ('assembling','final_review','approved','exported','closed','legacy_review_required')
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_SHOT_PRODUCTION_AUTHORITY_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_shots_update_authority
+  BEFORE UPDATE ON shots
+  WHEN workbench_production_mutation_authorized('shot', OLD.project_id, OLD.shot_id) <> 1
+    OR OLD.shot_id IS NOT NEW.shot_id
+    OR OLD.project_id IS NOT NEW.project_id
+    OR json_valid(NEW.data_json) = 0
+    OR json_type(NEW.data_json) <> 'object'
+    OR json_extract(NEW.data_json, '$.shot_id') IS NOT NEW.shot_id
+    OR json_extract(NEW.data_json, '$.project_id') IS NOT NEW.project_id
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_jobs job
+      WHERE job.project_id = OLD.project_id AND job.state IN ('queued','running')
+    )
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_state state
+      WHERE state.project_id = OLD.project_id
+        AND state.workflow_state IN ('assembling','final_review','approved','exported','closed','legacy_review_required')
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_SHOT_PRODUCTION_AUTHORITY_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_shots_delete_authority
+  BEFORE DELETE ON shots
+  WHEN workbench_production_mutation_authorized('shot', OLD.project_id, OLD.shot_id) <> 1
+    OR EXISTS (
+    SELECT 1 FROM workbench_delivery_jobs job
+    WHERE job.project_id = OLD.project_id AND job.state IN ('queued','running')
+  ) OR EXISTS (
+    SELECT 1 FROM workbench_delivery_state state
+    WHERE state.project_id = OLD.project_id
+      AND state.workflow_state IN ('assembling','final_review','approved','exported','closed','legacy_review_required')
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_SHOT_PRODUCTION_AUTHORITY_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_shots_ready_drift_after_insert
+  AFTER INSERT ON shots
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = 'not_ready', assembly_input_fingerprint = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE project_id = NEW.project_id AND workflow_state = 'ready_to_assemble';
+  END;
+  CREATE TRIGGER workbench_shots_ready_drift_after_update
+  AFTER UPDATE ON shots
+  WHEN OLD.data_json IS NOT NEW.data_json OR OLD.project_id IS NOT NEW.project_id
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = 'not_ready', assembly_input_fingerprint = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE project_id IN (OLD.project_id, NEW.project_id) AND workflow_state = 'ready_to_assemble';
+  END;
+  CREATE TRIGGER workbench_shots_ready_drift_after_delete
+  AFTER DELETE ON shots
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = 'not_ready', assembly_input_fingerprint = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE project_id = OLD.project_id AND workflow_state = 'ready_to_assemble';
+  END;
+
+  CREATE TRIGGER workbench_storyboard_packages_insert_authority
+  BEFORE INSERT ON storyboard_packages
+  WHEN workbench_production_mutation_authorized('storyboard_package', NEW.project_id, NEW.storyboard_package_id) <> 1
+    OR json_valid(NEW.data_json) = 0
+    OR json_type(NEW.data_json) <> 'object'
+    OR json_extract(NEW.data_json, '$.storyboard_package_id') IS NOT NEW.storyboard_package_id
+    OR json_extract(NEW.data_json, '$.project_id') IS NOT NEW.project_id
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_jobs job
+      WHERE job.project_id = NEW.project_id AND job.state IN ('queued','running')
+    )
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_state state
+      WHERE state.project_id = NEW.project_id
+        AND state.workflow_state IN ('assembling','final_review','approved','exported','closed','legacy_review_required')
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_STORYBOARD_PACKAGE_AUTHORITY_REQUIRED');
+  END;
+  CREATE TRIGGER workbench_storyboard_packages_no_update
+  BEFORE UPDATE ON storyboard_packages
+  BEGIN
+    SELECT RAISE(ABORT, 'STORYBOARD_PACKAGE_IMMUTABLE');
+  END;
+  CREATE TRIGGER workbench_storyboard_packages_no_delete
+  BEFORE DELETE ON storyboard_packages
+  BEGIN
+    SELECT RAISE(ABORT, 'STORYBOARD_PACKAGE_IMMUTABLE');
+  END;
+
+  CREATE TRIGGER workbench_regeneration_requests_insert_authority
+  BEFORE INSERT ON regeneration_requests
+  WHEN workbench_production_mutation_authorized('regeneration_request', NEW.project_id, NEW.request_id) <> 1
+    OR json_valid(NEW.data_json) = 0
+    OR json_type(NEW.data_json) <> 'object'
+    OR json_extract(NEW.data_json, '$.request_id') IS NOT NEW.request_id
+    OR json_extract(NEW.data_json, '$.project_id') IS NOT NEW.project_id
+    OR json_extract(NEW.data_json, '$.shot_id') IS NOT NEW.shot_id
+    OR json_extract(NEW.data_json, '$.artifact_id') IS NOT NEW.artifact_id
+    OR json_extract(NEW.data_json, '$.previous_run_id') IS NOT NEW.previous_run_id
+    OR json_extract(NEW.data_json, '$.status') IS NOT NEW.status
+    OR NOT EXISTS (SELECT 1 FROM shots shot WHERE shot.shot_id = NEW.shot_id AND shot.project_id = NEW.project_id)
+    OR NOT EXISTS (
+      SELECT 1 FROM media_artifacts artifact
+      WHERE artifact.artifact_id = NEW.artifact_id
+        AND artifact.project_id = NEW.project_id
+        AND artifact.shot_id = NEW.shot_id
+    )
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_jobs job
+      WHERE job.project_id = NEW.project_id AND job.state IN ('queued','running')
+    )
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_state state
+      WHERE state.project_id = NEW.project_id
+        AND state.workflow_state IN ('assembling','final_review','approved','exported','closed','legacy_review_required')
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_REGENERATION_AUTHORITY_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_regeneration_requests_update_authority
+  BEFORE UPDATE ON regeneration_requests
+  WHEN workbench_production_mutation_authorized('regeneration_request', OLD.project_id, OLD.request_id) <> 1
+    OR OLD.project_id IS NOT NEW.project_id
+    OR OLD.shot_id IS NOT NEW.shot_id
+    OR OLD.artifact_id IS NOT NEW.artifact_id
+    OR OLD.previous_run_id IS NOT NEW.previous_run_id
+    OR json_valid(NEW.data_json) = 0
+    OR json_extract(NEW.data_json, '$.request_id') IS NOT NEW.request_id
+    OR json_extract(NEW.data_json, '$.project_id') IS NOT NEW.project_id
+    OR json_extract(NEW.data_json, '$.shot_id') IS NOT NEW.shot_id
+    OR json_extract(NEW.data_json, '$.artifact_id') IS NOT NEW.artifact_id
+    OR json_extract(NEW.data_json, '$.previous_run_id') IS NOT NEW.previous_run_id
+    OR json_extract(NEW.data_json, '$.status') IS NOT NEW.status
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_jobs job
+      WHERE job.project_id = OLD.project_id AND job.state IN ('queued','running')
+    )
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_state state
+      WHERE state.project_id = OLD.project_id
+        AND state.workflow_state IN ('assembling','final_review','approved','exported','closed','legacy_review_required')
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_REGENERATION_AUTHORITY_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_regeneration_requests_delete_authority
+  BEFORE DELETE ON regeneration_requests
+  WHEN workbench_production_mutation_authorized('regeneration_request', OLD.project_id, OLD.request_id) <> 1
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_jobs job
+      WHERE job.project_id = OLD.project_id AND job.state IN ('queued','running')
+    )
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_state state
+      WHERE state.project_id = OLD.project_id
+        AND state.workflow_state IN ('assembling','final_review','approved','exported','closed','legacy_review_required')
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_REGENERATION_AUTHORITY_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_media_artifacts_production_guard
+  BEFORE UPDATE OF status, data_json ON media_artifacts
+  WHEN COALESCE(OLD.project_id, '') <> ''
+    AND EXISTS (SELECT 1 FROM workbench_delivery_state governed WHERE governed.project_id = OLD.project_id)
+    AND (
+    workbench_production_mutation_authorized('artifact', OLD.project_id, OLD.artifact_id) <> 1
+    OR
+    EXISTS (
+      SELECT 1 FROM workbench_delivery_jobs job
+      WHERE job.project_id = OLD.project_id AND job.state IN ('queued','running')
+        AND EXISTS (
+          SELECT 1 FROM shots shot
+          WHERE shot.project_id = OLD.project_id
+            AND json_extract(shot.data_json, '$.accepted_clip_artifact_id') = OLD.artifact_id
+        )
+    )
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_state state
+      WHERE state.project_id = OLD.project_id
+        AND (
+          state.workflow_state IN ('final_review','approved','exported','closed','legacy_review_required')
+          OR (
+            state.workflow_state = 'assembling'
+            AND EXISTS (
+              SELECT 1 FROM shots shot
+              WHERE shot.project_id = OLD.project_id
+                AND json_extract(shot.data_json, '$.accepted_clip_artifact_id') = OLD.artifact_id
+            )
+          )
+        )
+    )
+    OR EXISTS (
+      SELECT 1 FROM workbench_delivery_state state
+      WHERE state.current_final_artifact_id = OLD.artifact_id
+        OR state.legacy_final_artifact_id = OLD.artifact_id
+        OR state.approved_artifact_id = OLD.artifact_id
+    )
+    OR EXISTS (SELECT 1 FROM workbench_exports exported WHERE exported.artifact_id = OLD.artifact_id)
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE');
+  END;
+
+  CREATE TRIGGER workbench_media_artifacts_insert_authority
+  BEFORE INSERT ON media_artifacts
+  WHEN COALESCE(NEW.project_id, '') <> ''
+    AND EXISTS (SELECT 1 FROM workbench_delivery_state governed WHERE governed.project_id = NEW.project_id)
+    AND (
+      workbench_production_mutation_authorized('artifact', NEW.project_id, NEW.artifact_id) <> 1
+      OR EXISTS (
+        SELECT 1 FROM workbench_delivery_jobs job
+        WHERE job.project_id = NEW.project_id AND job.state IN ('queued','running')
+          AND EXISTS (
+            SELECT 1 FROM shots shot
+            WHERE shot.project_id = NEW.project_id
+              AND json_extract(shot.data_json, '$.accepted_clip_artifact_id') = NEW.artifact_id
+          )
+      )
+      OR EXISTS (
+        SELECT 1 FROM workbench_delivery_state state
+        WHERE state.project_id = NEW.project_id
+          AND state.workflow_state IN ('final_review','approved','exported','closed','legacy_review_required')
+      )
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE');
+  END;
+
+  CREATE TRIGGER workbench_media_artifacts_ready_drift
+  AFTER UPDATE OF status, data_json ON media_artifacts
+  WHEN OLD.status IS NOT NEW.status OR OLD.data_json IS NOT NEW.data_json
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = 'not_ready', assembly_input_fingerprint = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE project_id = OLD.project_id
+      AND workflow_state = 'ready_to_assemble'
+      AND EXISTS (
+        SELECT 1 FROM shots shot
+        WHERE shot.project_id = OLD.project_id
+          AND (
+            json_extract(shot.data_json, '$.accepted_clip_artifact_id') = OLD.artifact_id
+            OR json_extract(shot.data_json, '$.storyboard_image_artifact_id') = OLD.artifact_id
+          )
+      );
+  END;
+
+  CREATE TRIGGER workbench_media_artifact_blobs_insert_guard
+  BEFORE INSERT ON media_artifact_blobs
+  WHEN EXISTS (
+    SELECT 1 FROM media_artifacts artifact
+    WHERE artifact.artifact_id = NEW.artifact_id
+      AND COALESCE(artifact.project_id, '') <> ''
+      AND EXISTS (SELECT 1 FROM workbench_delivery_state governed WHERE governed.project_id = artifact.project_id)
+      AND (
+        workbench_production_mutation_authorized('artifact', artifact.project_id, artifact.artifact_id) <> 1
+        OR
+        EXISTS (
+          SELECT 1 FROM workbench_delivery_jobs job
+          WHERE job.project_id = artifact.project_id AND job.state IN ('queued','running')
+            AND EXISTS (
+              SELECT 1 FROM shots shot
+              WHERE shot.project_id = artifact.project_id
+                AND json_extract(shot.data_json, '$.accepted_clip_artifact_id') = artifact.artifact_id
+            )
+        )
+        OR EXISTS (
+          SELECT 1 FROM workbench_delivery_state state
+          WHERE state.project_id = artifact.project_id
+            AND (
+              state.workflow_state IN ('final_review','approved','exported','closed','legacy_review_required')
+              OR (
+                state.workflow_state = 'assembling'
+                AND EXISTS (
+                  SELECT 1 FROM shots shot
+                  WHERE shot.project_id = artifact.project_id
+                    AND json_extract(shot.data_json, '$.accepted_clip_artifact_id') = artifact.artifact_id
+                )
+              )
+            )
+        )
+        OR EXISTS (
+          SELECT 1 FROM workbench_delivery_state state
+          WHERE state.current_final_artifact_id = artifact.artifact_id
+            OR state.legacy_final_artifact_id = artifact.artifact_id
+            OR state.approved_artifact_id = artifact.artifact_id
+        )
+        OR EXISTS (SELECT 1 FROM workbench_exports exported WHERE exported.artifact_id = artifact.artifact_id)
+      )
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE');
+  END;
+
+  CREATE TRIGGER workbench_media_artifact_blobs_production_guard
+  BEFORE UPDATE OF artifact_id, blob_id ON media_artifact_blobs
+  WHEN EXISTS (
+    SELECT 1 FROM media_artifacts artifact
+    WHERE artifact.artifact_id IN (OLD.artifact_id, NEW.artifact_id)
+      AND COALESCE(artifact.project_id, '') <> ''
+      AND EXISTS (SELECT 1 FROM workbench_delivery_state governed WHERE governed.project_id = artifact.project_id)
+      AND (
+        workbench_production_mutation_authorized('artifact', artifact.project_id, artifact.artifact_id) <> 1
+        OR
+        EXISTS (
+          SELECT 1 FROM workbench_delivery_jobs job
+          WHERE job.project_id = artifact.project_id AND job.state IN ('queued','running')
+            AND EXISTS (
+              SELECT 1 FROM shots shot
+              WHERE shot.project_id = artifact.project_id
+                AND json_extract(shot.data_json, '$.accepted_clip_artifact_id') = artifact.artifact_id
+            )
+        )
+        OR EXISTS (
+          SELECT 1 FROM workbench_delivery_state state
+          WHERE state.project_id = artifact.project_id
+            AND (
+              state.workflow_state IN ('final_review','approved','exported','closed','legacy_review_required')
+              OR (
+                state.workflow_state = 'assembling'
+                AND EXISTS (
+                  SELECT 1 FROM shots shot
+                  WHERE shot.project_id = artifact.project_id
+                    AND json_extract(shot.data_json, '$.accepted_clip_artifact_id') = artifact.artifact_id
+                )
+              )
+            )
+        )
+        OR EXISTS (
+          SELECT 1 FROM workbench_delivery_state state
+          WHERE state.current_final_artifact_id = artifact.artifact_id
+            OR state.legacy_final_artifact_id = artifact.artifact_id
+            OR state.approved_artifact_id = artifact.artifact_id
+        )
+        OR EXISTS (SELECT 1 FROM workbench_exports exported WHERE exported.artifact_id = artifact.artifact_id)
+      )
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE');
+  END;
+
+  CREATE TRIGGER workbench_media_artifact_blobs_ready_drift_after_insert
+  AFTER INSERT ON media_artifact_blobs
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = 'not_ready', assembly_input_fingerprint = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE workflow_state = 'ready_to_assemble'
+      AND EXISTS (
+        SELECT 1 FROM media_artifacts artifact
+        JOIN shots shot ON shot.project_id = artifact.project_id
+        WHERE artifact.artifact_id = NEW.artifact_id
+          AND workbench_delivery_state.project_id = artifact.project_id
+          AND (
+            json_extract(shot.data_json, '$.accepted_clip_artifact_id') = artifact.artifact_id
+            OR json_extract(shot.data_json, '$.storyboard_image_artifact_id') = artifact.artifact_id
+          )
+      );
+  END;
+
+  CREATE TRIGGER workbench_media_artifact_blobs_ready_drift
+  AFTER UPDATE OF artifact_id, blob_id ON media_artifact_blobs
+  BEGIN
+    UPDATE workbench_delivery_state
+    SET workflow_state = 'not_ready', assembly_input_fingerprint = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE workflow_state = 'ready_to_assemble'
+      AND EXISTS (
+        SELECT 1 FROM media_artifacts artifact
+        JOIN shots shot ON shot.project_id = artifact.project_id
+        WHERE artifact.artifact_id IN (OLD.artifact_id, NEW.artifact_id)
+          AND workbench_delivery_state.project_id = artifact.project_id
+          AND (
+            json_extract(shot.data_json, '$.accepted_clip_artifact_id') = artifact.artifact_id
+            OR json_extract(shot.data_json, '$.storyboard_image_artifact_id') = artifact.artifact_id
+          )
+      );
+  END;
+
+  UPDATE m0_meta SET value = 'workbench-v2-8', updated_at = CURRENT_TIMESTAMP WHERE key = 'schema_version';
+`;
+
 export const DATABASE_MIGRATIONS: readonly Migration[] = [
   {
     id: "0001",
@@ -1625,6 +2342,16 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
     name: "delivery_state_foundation",
     canonical: `${DELIVERY_STATE_FOUNDATION_SQL}\nBACKFILL safe_legacy_delivery_projection_v1\nLEDGER structural_terminal_evidence_v1`,
     apply: applyDeliveryStateFoundationMigration
+  },
+  {
+    id: "0013",
+    name: "production_mutation_authority",
+    canonical: `${PRODUCTION_MUTATION_AUTHORITY_SQL}\nPRECONDITION production_foundation_consistency_v1\nAUTHORITY production_owner_v1\nLEDGER pr123_production_mutation_threads_v1`,
+    apply: (db) => {
+      assertProductionMutationFoundationConsistent(db);
+      installWorkbenchProductionMutationAuthority(db);
+      db.exec(PRODUCTION_MUTATION_AUTHORITY_SQL);
+    }
   }
 ];
 
@@ -1812,6 +2539,8 @@ function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record
       applyDirectorCurrencyContractMigration(reference);
       applyDirectorArtifactImportReceiptMigration(reference);
       applyDeliveryStateFoundationMigration(reference);
+      installWorkbenchProductionMutationAuthority(reference);
+      reference.exec(PRODUCTION_MUTATION_AUTHORITY_SQL);
     }
     const columns = new Map<string, Map<string, string>>();
     const checks = new Map<string, string[]>();
@@ -1947,7 +2676,39 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_state_no_delete",
         "workbench_projects_legacy_final_artifact_immutable",
         "workbench_projects_validate_initial_delivery",
-        "workbench_delivery_state_after_project_insert"
+        "workbench_delivery_state_after_project_insert",
+        "workbench_delivery_state_closed_immutable",
+        "workbench_delivery_state_production_owner",
+        "workbench_delivery_state_ready_truth",
+        "workbench_projects_insert_owner",
+        "workbench_projects_identity_immutable",
+        "workbench_projects_no_delete",
+        "workbench_projects_data_binding_guard",
+        "workbench_projects_update_owner",
+        "workbench_projects_delivery_projection_guard",
+        "workbench_projects_active_job_guard",
+        "workbench_projects_closed_guard",
+        "workbench_projects_final_content_guard",
+        "workbench_projects_ready_drift",
+        "workbench_shots_insert_authority",
+        "workbench_shots_update_authority",
+        "workbench_shots_delete_authority",
+        "workbench_shots_ready_drift_after_insert",
+        "workbench_shots_ready_drift_after_update",
+        "workbench_shots_ready_drift_after_delete",
+        "workbench_storyboard_packages_insert_authority",
+        "workbench_storyboard_packages_no_update",
+        "workbench_storyboard_packages_no_delete",
+        "workbench_regeneration_requests_insert_authority",
+        "workbench_regeneration_requests_update_authority",
+        "workbench_regeneration_requests_delete_authority",
+        "workbench_media_artifacts_insert_authority",
+        "workbench_media_artifacts_production_guard",
+        "workbench_media_artifacts_ready_drift",
+        "workbench_media_artifact_blobs_insert_guard",
+        "workbench_media_artifact_blobs_production_guard",
+        "workbench_media_artifact_blobs_ready_drift_after_insert",
+        "workbench_media_artifact_blobs_ready_drift"
       ]
     : ["trg_workbench_project_meta_after_insert"];
   const definitions = expectedSchemaDefinitions(includeJobs, expectedColumns, [...expectedIndexes, ...expectedTriggers]);
@@ -2024,6 +2785,7 @@ export function assertSchemaCurrent(db: M0Database): void {
 }
 
 export function runDatabaseMigrations(db: M0Database): { applied: string[]; baselined: boolean } {
+  installWorkbenchProductionMutationAuthority(db);
   db.exec("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
   let baselined = false;
   const appliedIds: string[] = [];

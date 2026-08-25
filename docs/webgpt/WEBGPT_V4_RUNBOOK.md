@@ -1,6 +1,6 @@
 # WebGPT V4 本地运行与外部接线手册
 
-状态：`LEGACY_ROLLBACK_REFERENCE`。provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 的 owner-only 路径在 ledger `0008`/`0010` 上的验收保留为历史证据，`MANUAL_PUBLISH_OPERATIONAL_READY` 是其中一项。活动库最后明确接受的 runtime boundary 是 `workbench-v2-6` / ledger `0011`，包含单独授权的迁移、只读 `db:check`、恢复演练和 manifest 比较；canonical source 与新的 Snapshot export gate 现要求 `workbench-v2-7` / ledger `0012`，current-main activity runtime acceptance 尚未建立。历史 Unified Workspace transport、单 Owner Director path 与 Local Media Gateway 隔离 MP4 fixture 验收继续按其记录 commit 保留，但实际 byte-range、恢复、撤权、格式覆盖、Windows 自动启动和自动同步仍未验收。本文件是 legacy `/mcp` 回滚参考，不是当前 Unified 日常操作入口；日常操作优先阅读 [User Guide](../USER_GUIDE.md)，部署边界见 [Deployment Guide](../DEPLOYMENT_GUIDE.md)。
+状态：`LEGACY_ROLLBACK_REFERENCE`。provider-neutral Federated OAuth、issuer binding、Auth0 predefined public-client 与 Readonly ChatGPT MCP App 的 owner-only 路径在 ledger `0008`/`0010` 上的验收保留为历史证据，`MANUAL_PUBLISH_OPERATIONAL_READY` 是其中一项。活动库最后明确接受的 runtime boundary 是 `workbench-v2-6` / ledger `0011`，包含单独授权的迁移、只读 `db:check`、恢复演练和 manifest 比较；canonical source 与新的 Snapshot export gate 现要求 `workbench-v2-8` / ledger `0013`，current-main activity runtime acceptance 尚未建立。历史 Unified Workspace transport、单 Owner Director path 与 Local Media Gateway 隔离 MP4 fixture 验收继续按其记录 commit 保留，但实际 byte-range、恢复、撤权、格式覆盖、Windows 自动启动和自动同步仍未验收。本文件是 legacy `/mcp` 回滚参考，不是当前 Unified 日常操作入口；日常操作优先阅读 [User Guide](../USER_GUIDE.md)，部署边界见 [Deployment Guide](../DEPLOYMENT_GUIDE.md)。
 
 ## 固定边界
 
@@ -11,7 +11,7 @@
 - Readonly：仅显式 membership 授权的 production 项目可见；owner/viewer 均只有六个 `projects.read` 工具
 - Full：保留既有 SHOT 文案、审片注记、工作台提议和未确认 generation intent；必须显式设置 `WEBGPT_V4_PROFILE=full`
 - 禁止：Provider 请求、上传、费用确认、生成提交、采纳、合成、交付、删除、任意文件读取
-- 新 Snapshot/export source gate：`workbench-v2-7` / `0012`；已发布 Snapshot 对 `workbench-v2-6` / `0011` 的 previous-source compatibility 仅用于验证和继续读取，不授权新的发布或 runtime transition
+- 新 Snapshot/export source gate：`workbench-v2-8` / `0013`；已发布 Snapshot 对 `workbench-v2-6` / `0011` 的 previous-source compatibility 仅用于验证和继续读取，不授权新的发布或 runtime transition
 
 ## 本地命令
 
@@ -29,7 +29,7 @@ npm run start:webgpt
 
 ## Owner-only 日常发布（历史 legacy 流程；非 Unified 主入口）
 
-Human Workbench 的“系统 → 只读 App 发布”曾是接受的 Jenn 日常入口。以下 legacy 步骤保留为回滚参考；活动库最后明确接受于 ledger `0011`，但 current source 与新 Snapshot export 要求 `0012`，两者的 runtime 组合尚未接受。以下步骤不能替代当前 Unified profile 的有界发布/恢复确认，不能迁移活动库，也不能绕过任何外部授权：
+Human Workbench 的“系统 → 只读 App 发布”曾是接受的 Jenn 日常入口。以下 legacy 步骤保留为回滚参考；活动库最后明确接受于 ledger `0011`，但 current source 与新 Snapshot export 要求 `0013`，两者的 runtime 组合尚未接受。以下步骤不能替代当前 Unified profile 的有界发布/恢复确认，不能迁移活动库，也不能绕过任何外部授权：
 
 1. 使用 `windows:start` 启动 Workbench，并确认 `windows:status` 为 ready。
 2. 打开“系统 → 只读 App 发布”，先读取低披露状态。
@@ -84,7 +84,7 @@ GET http://127.0.0.1:2092/healthz
 - 通用配置使用 `WEBGPT_V4_READONLY_OAUTH_ISSUER`、`WEBGPT_V4_READONLY_OAUTH_AUDIENCE`、`WEBGPT_V4_READONLY_OAUTH_JWKS_URI` 和显式 `WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION`
 - issuer 同时是 PRMD authorization server 与 JWT `iss`；audience 必须与 `WEBGPT_V4_RESOURCE_URL` 完全相同
 - IdP 只认证身份；本地 issuer-bound principal/membership 始终是 production-project 授权权威
-- Auth0 Stage 0 标准能力探针已通过；External Stage 3 又完成专用 API、predefined public client、精确 ChatGPT redirect、真实 token audience/scope、Jenn issuer-bound owner、七工具与 Workbench 验收。`JENN_SINGLE_USER_MCP_APP_PASS` 和 `MANUAL_PUBLISH_OPERATIONAL_READY` 是 ledger `0008`/`0010` 的历史 owner-only 证据；相关活动库 runtime evidence 最后接受于 `0011`，不得转移为 current-main `0012` runtime acceptance，而 Unified 运行时发布/恢复仍遵循自己的有界人工确认。
+- Auth0 Stage 0 标准能力探针已通过；External Stage 3 又完成专用 API、predefined public client、精确 ChatGPT redirect、真实 token audience/scope、Jenn issuer-bound owner、七工具与 Workbench 验收。`JENN_SINGLE_USER_MCP_APP_PASS` 和 `MANUAL_PUBLISH_OPERATIONAL_READY` 是 ledger `0008`/`0010` 的历史 owner-only 证据；相关活动库 runtime evidence 最后接受于 `0011`，不得转移为 current-main `0013` runtime acceptance，而 Unified 运行时发布/恢复仍遵循自己的有界人工确认。
 - 第二真实用户的 viewer grant、跨项目拒绝和即时 revoke 验收已由 Jenn 延期；状态保持 `PARTIAL_MULTI_USER_GATE`，不否定 beta.5 单用户与 owner-only 手动发布基线
 - 运行时保持 provider-neutral，不允许根据 Stytch/Descope 品牌绕过 issuer、audience、JWKS、scope 或 membership
 
@@ -94,7 +94,7 @@ GET http://127.0.0.1:2092/healthz
 - 旧 Descope 配置固定为 `cimd` legacy adapter；vendor-specific metadata 只能提供诊断，不能声明 portability-compatible
 - ChatGPT connector 只申请 `projects.read`
 - principal 由 issuer 与 subject 派生为不可逆 SHA-256；不保存原始 subject 或邮箱
-- 历史 Descope 验收发生在 migration `0010`；其 principal、issuer binding、membership 与 append-only events 保留，但不参与当前 Auth0 issuer readiness。活动库最后接受的 runtime boundary 是 ledger `0011`，不得仅因这段历史记录重复迁移或回退；但 current-main Workbench 与新 Snapshot export 明确要求 ledger `0012`，所以 `0011` 不能作为当前源码的启动或新发布前置条件。
+- 历史 Descope 验收发生在 migration `0010`；其 principal、issuer binding、membership 与 append-only events 保留，但不参与当前 Auth0 issuer readiness。活动库最后接受的 runtime boundary 是 ledger `0011`，不得仅因这段历史记录重复迁移或回退；但 current-main Workbench 与新 Snapshot export 明确要求 ledger `0013`，所以 `0011` 不能作为当前源码的启动或新发布前置条件。
 - 回滚：停止 connector/Tunnel，撤销 membership 或禁用 principal；不删除 authorization event
 
 ### Full/Auth0（独立后续 gate）

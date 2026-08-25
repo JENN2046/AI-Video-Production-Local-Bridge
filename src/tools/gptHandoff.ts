@@ -5,10 +5,18 @@ import { extname, isAbsolute, join, relative, resolve } from "node:path";
 import { ensureM0Directories, paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { validateImageFile, type ImageValidationResult } from "./imageValidity.js";
-import { importG0AppReadyStoryboardPackage, validateG0StoryboardPackage, type G0StoryboardPackageInput } from "./g0Pregen.js";
+import {
+  prepareG0ArtifactWrite,
+  rollbackOwnedDatabaseTransaction,
+  validateG0StoryboardPackage,
+  type G0StoryboardPackageInput,
+  type PreparedG0ArtifactWrite
+} from "./g0Pregen.js";
 import { cleanupCommittedMediaActivationMarkers, cleanupRolledBackMediaActivationFiles, registerMediaArtifact, type MediaArtifact } from "./mediaArtifacts.js";
 import { createProject, getProject, type Project } from "./projects.js";
+import { importStoryboardPackage } from "./storyboardPackages.js";
 import { classifyStoryboardImageImport, isNineSixteenDimensions, STORYBOARD_IMAGE_EXTENSIONS } from "./importClassifier.js";
+import { workbenchProductionMutationError } from "./workbenchDeliveryState.js";
 
 export const GPT_HANDOFF_FREEZE_REPORT = "data/reports/m1_5_gpt_handoff_app_freeze_report.json";
 const GPT_HANDOFF_FREEZE_REPORT_STEM = "m1_5_gpt_handoff_app_freeze_report";
@@ -340,7 +348,6 @@ export function writeFreezeReport(report: FreezeGptHandoffReport): string {
 }
 
 export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, db = openM0Database(), runtime: GptHandoffRuntime = {}): FreezeResult {
-  ensureM0Directories();
   const runId = randomUUID();
   const writeReport = input.write_report !== false;
   const prepared = prepareShots(input);
@@ -361,13 +368,21 @@ export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, 
   }
 
   let transactionOpen = false;
-  const rollback = (report: FreezeGptHandoffReport): void => {
-    if (transactionOpen) {
-      db.exec("ROLLBACK");
+  let commitAttempted = false;
+  let preparedG0Write: PreparedG0ArtifactWrite | null = null;
+  const rollback = (report: FreezeGptHandoffReport): boolean => {
+    if (transactionOpen || commitAttempted) {
+      if (!rollbackOwnedDatabaseTransaction(db, commitAttempted)) return false;
       transactionOpen = false;
     }
-    const filesRemoved = cleanupImportedArtifactFiles(report, runtime);
-    if (!filesRemoved) return;
+    let complete = preparedG0Write?.rollback() ?? true;
+    preparedG0Write = null;
+    try {
+      if (!cleanupImportedArtifactFiles(report, runtime)) complete = false;
+    } catch {
+      complete = false;
+    }
+    return complete;
   };
 
   const mutationFallbackProject: Project = {
@@ -391,14 +406,18 @@ export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, 
 
   const projectResult = ensureProject(input, db);
   if (!projectResult.ok) {
-    rollback(activeReport);
+    if (!rollback(activeReport)) {
+      return block(activeReport, "HANDOFF_RECOVERY_REQUIRED", "Handoff recovery evidence was retained for manual reconciliation.", writeReport);
+    }
     return block(activeReport, projectResult.error.code, projectResult.error.message, writeReport);
   }
 
   const report = emptyProjectReport({ project: projectResult.project, requestedShots: input.shots?.length ?? 0, runId });
   activeReport = report;
   const fail = (code: string, message: string, sourceReport = report): FreezeResult => {
-    rollback(sourceReport);
+    if (!rollback(sourceReport)) {
+      return block(sourceReport, "HANDOFF_RECOVERY_REQUIRED", "Handoff recovery evidence was retained for manual reconciliation.", writeReport);
+    }
     return block(sourceReport, code, message, writeReport);
   };
 
@@ -464,7 +483,8 @@ export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, 
   const validation = validateG0StoryboardPackage(packageInput, db);
   if (!validation.ok) return fail(validation.error.code, validation.error.message);
 
-  const imported = importG0AppReadyStoryboardPackage(packageInput, db);
+  if (!validation.import_input) return fail("HANDOFF_PACKAGE_INVALID", "Validated Storyboard Package did not produce an import contract.");
+  const imported = importStoryboardPackage(validation.import_input, db);
   if (!imported.ok) {
     return fail(
       imported.error.code,
@@ -500,13 +520,27 @@ export function freezeGptHandoffStoryboardPackage(input: FreezeGptHandoffInput, 
       shot_ids: imported.shots.map((shot) => shot.shot_id)
     }
   };
+  preparedG0Write = prepareG0ArtifactWrite({
+    project_id: packageInput.project_id,
+    kind: "storyboard_package",
+    payload: { ...packageInput, storyboard_package_id: imported.storyboard_package_id }
+  }, db);
+  preparedG0Write.place();
+  commitAttempted = true;
   db.exec("COMMIT");
   transactionOpen = false;
+  preparedG0Write.commit();
+  preparedG0Write = null;
   successReport = success;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unexpected handoff freeze failure.";
-    rollback(activeReport);
-    return block(activeReport, "HANDOFF_FREEZE_FAILED", message, writeReport);
+    if (!rollback(activeReport)) {
+      return block(activeReport, "HANDOFF_RECOVERY_REQUIRED", "Handoff recovery evidence was retained for manual reconciliation.", writeReport);
+    }
+    const mapped = workbenchProductionMutationError(error);
+    if (mapped.code !== "PRODUCTION_MUTATION_REJECTED") {
+      return block(activeReport, mapped.code, mapped.message, writeReport);
+    }
+    return block(activeReport, "HANDOFF_FREEZE_FAILED", "Handoff freeze failed before its database and file changes could commit.", writeReport);
   }
 
   if (!successReport) return block(activeReport, "HANDOFF_FREEZE_FAILED", "Unexpected handoff freeze failure.", writeReport);

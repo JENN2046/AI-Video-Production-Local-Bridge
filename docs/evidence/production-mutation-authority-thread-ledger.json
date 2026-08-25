@@ -1,0 +1,64 @@
+{
+  "schema": "production-mutation-authority-thread-ledger-v1",
+  "migration": "0013",
+  "schema_version": "workbench-v2-8",
+  "source_failure_map": "docs/PR123_DELIVERY_STATE_FOUNDATION_FAILURE_MAP.md",
+  "test_file": "tests/workbench-v2-production-mutation-authority.test.ts",
+  "threads": [
+    {
+      "thread": "PRRT_kwDOTTDtUM6Zdye2",
+      "test_name": "PRRT_kwDOTTDtUM6Zdye2 WebGPT content writers require the same rework authority",
+      "result": "COVERED"
+    },
+    {
+      "thread": "PRRT_kwDOTTDtUM6ZeDuS",
+      "test_name": "PRRT_kwDOTTDtUM6ZeDuS G0 writes fail before filesystem or database effects",
+      "result": "COVERED"
+    },
+    {
+      "thread": "PRRT_kwDOTTDtUM6Zf_Hn",
+      "test_name": "PRRT_kwDOTTDtUM6Zf_Hn shared Project and SHOT persistence cannot bypass closed state",
+      "result": "COVERED"
+    },
+    {
+      "thread": "PRRT_kwDOTTDtUM6Zr-uA",
+      "test_name": "PRRT_kwDOTTDtUM6Zr-uA public SHOT persistence requires explicit rework after review",
+      "result": "COVERED"
+    },
+    {
+      "thread": "PRRT_kwDOTTDtUM6Zr-uB",
+      "test_name": "PRRT_kwDOTTDtUM6Zr-uB delivery Artifact content and Blob bindings require authority",
+      "result": "COVERED"
+    },
+    {
+      "thread": "PRRT_kwDOTTDtUM6ZtiA7",
+      "test_name": "PRRT_kwDOTTDtUM6ZtiA7 public Project persistence cannot mutate reviewed production content",
+      "result": "COVERED"
+    },
+    {
+      "thread": "PRRT_kwDOTTDtUM6ZtiA_",
+      "test_name": "PRRT_kwDOTTDtUM6ZtiA_ Artifact-to-SHOT attachment is delivery-aware",
+      "result": "COVERED"
+    },
+    {
+      "thread": "PRRT_kwDOTTDtUM6ZwKci",
+      "test_name": "PRRT_kwDOTTDtUM6ZwKci title updates use a narrow authority path with stable errors",
+      "result": "COVERED"
+    },
+    {
+      "thread": "PRRT_kwDOTTDtUM6Z-Tig",
+      "test_name": "PRRT_kwDOTTDtUM6Z-Tig public Project writes cannot manufacture delivery projection fields",
+      "result": "COVERED"
+    },
+    {
+      "thread": "PRRT_kwDOTTDtUM6acFed",
+      "test_name": "PRRT_kwDOTTDtUM6acFed direct Project and SHOT table writes require database authority",
+      "result": "COVERED"
+    },
+    {
+      "thread": "PRRT_kwDOTTDtUM6atOiW",
+      "test_name": "PRRT_kwDOTTDtUM6atOiW Storyboard Package content is owner-created and immutable",
+      "result": "COVERED"
+    }
+  ]
+}

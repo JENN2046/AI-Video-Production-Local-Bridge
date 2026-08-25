@@ -17,8 +17,10 @@ import {
   getDirectorApprovalTower
 } from "../src/director/workbenchApproval.js";
 import { openM0Database } from "../src/storage/sqlite.js";
+import { withWorkbenchProductionMutationAuthority } from "../src/storage/productionMutationAuthority.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey } from "../src/tools/providerCapabilities.js";
 import { saveProject, saveShot, type Shot } from "../src/tools/projects.js";
+import { saveStoryboardPackage } from "../src/tools/storyboardPackages.js";
 import { confirmGeneration, prepareGeneration } from "../src/tools/s3bT2GenerationAdmission.js";
 import { createWorkbenchProject } from "../src/tools/workbenchV2.js";
 import {
@@ -137,14 +139,17 @@ function insertGenerationPlanProposal(
   };
   saveShot(db, shot);
   const sha256 = "a".repeat(64);
-  db.prepare(`INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
-    VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)`).run(storyboardArtifactId, input.project_id, shotId, JSON.stringify({
-    artifact_id: storyboardArtifactId, blob_id: "blob_director_storyboard_001", artifact_type: "image", role: "storyboard_image", status: "active",
-    storage: { uri: "fixture://storyboard.png", mime_type: "image/png", filename: "storyboard.png" },
-    metadata: { width: 1080, height: 1920, duration_seconds: null, aspect_ratio: "9:16", sha256 },
-    linked_objects: { project_id: input.project_id, shot_id: shotId },
-    source: { kind: "fixture", provider: "mock", provider_job_id: "", sha256, external_url_host: "" }
-  }));
+  withWorkbenchProductionMutationAuthority(db, {
+    kind: "artifact", project_id: input.project_id, object_id: storyboardArtifactId
+  }, () => db.prepare(`INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+      VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)`)
+    .run(storyboardArtifactId, input.project_id, shotId, JSON.stringify({
+      artifact_id: storyboardArtifactId, blob_id: "blob_director_storyboard_001", artifact_type: "image", role: "storyboard_image", status: "active",
+      storage: { uri: "fixture://storyboard.png", mime_type: "image/png", filename: "storyboard.png" },
+      metadata: { width: 1080, height: 1920, duration_seconds: null, aspect_ratio: "9:16", sha256 },
+      linked_objects: { project_id: input.project_id, shot_id: shotId },
+      source: { kind: "fixture", provider: "mock", provider_job_id: "", sha256, external_url_host: "" }
+    })));
   seedVerifiedRunningHubQuote(db, {
     duration_seconds: shot.duration_seconds,
     resolution: project.video_spec.resolution,
@@ -231,38 +236,40 @@ function prepareRunnableDirectorGenerationFixture(
     (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
     VALUES (?, ?, ?, 'image/png', ?, 'verified', ?)`)
     .run(blobId, sha256, statSync(sourcePath).size, sourcePath, JSON.stringify({ media_root: dirname(sourcePath) }));
-  db.prepare(`INSERT INTO media_artifacts
-    (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
-    VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)`)
-    .run(artifactId, projectId, shotId, JSON.stringify({
-      artifact_id: artifactId,
-      blob_id: blobId,
-      artifact_type: "image",
-      role: "storyboard_image",
-      status: "active",
-      storage: { uri: sourcePath, mime_type: "image/png", filename: "shot_001_canary_720x1280.png" },
-      metadata: { width: 720, height: 1280, duration_seconds: null, aspect_ratio: "9:16", sha256 },
-      linked_objects: { project_id: projectId, shot_id: shotId },
-      source: { kind: "fixture", provider: "mock", provider_job_id: "", sha256, external_url_host: "" }
-  }));
-  db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(artifactId, blobId);
-  db.prepare(`INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json)
-    VALUES (?, ?, ?)`)
-    .run("package_director_execution_001", projectId, JSON.stringify({
-      storyboard_package_id: "package_director_execution_001",
-      project_id: projectId,
-      status: "approved_for_video_generation",
-      approved_shot_snapshots: [{
-        shot_id: shotId,
-        order: 1,
-        duration_seconds: shot.duration_seconds,
-        description: shot.description,
-        storyboard_image_artifact_id: artifactId,
-        video_prompt: shot.video_prompt,
-        negative_prompt: shot.negative_prompt
-      }],
-      user_approval: { storyboard_approved: true }
-    }));
+  withWorkbenchProductionMutationAuthority(db, {
+    kind: "artifact", project_id: projectId, object_id: artifactId
+  }, () => {
+    db.prepare(`INSERT INTO media_artifacts
+      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+      VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)`)
+      .run(artifactId, projectId, shotId, JSON.stringify({
+        artifact_id: artifactId,
+        blob_id: blobId,
+        artifact_type: "image",
+        role: "storyboard_image",
+        status: "active",
+        storage: { uri: sourcePath, mime_type: "image/png", filename: "shot_001_canary_720x1280.png" },
+        metadata: { width: 720, height: 1280, duration_seconds: null, aspect_ratio: "9:16", sha256 },
+        linked_objects: { project_id: projectId, shot_id: shotId },
+        source: { kind: "fixture", provider: "mock", provider_job_id: "", sha256, external_url_host: "" }
+      }));
+    db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(artifactId, blobId);
+  });
+  saveStoryboardPackage(db, {
+    storyboard_package_id: "package_director_execution_001",
+    project_id: projectId,
+    status: "approved_for_video_generation",
+    approved_shot_snapshots: [{
+      shot_id: shotId,
+      order: 1,
+      duration_seconds: shot.duration_seconds,
+      description: shot.description,
+      storyboard_image_artifact_id: artifactId,
+      video_prompt: shot.video_prompt,
+      negative_prompt: shot.negative_prompt
+    }],
+    user_approval: { storyboard_approved: true }
+  });
 
   const t2IntentId = options.prepare_t2_reservation
     ? prepareT2ReservationForDirectorFixture(db, projectId, shotId)
@@ -893,10 +900,9 @@ test("a stale adopted T2 reservation terminalizes before any Provider call", asy
     if (!preflight.ok) return;
     assert.equal(preflight.data.intent.intent_id, prepared.t2IntentId);
     const shotRow = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(prepared.fixture.shotId) as { data_json: string };
-    const shot = JSON.parse(shotRow.data_json) as { video_prompt: string };
+    const shot = JSON.parse(shotRow.data_json) as Shot;
     shot.video_prompt = "A stale adopted Director prompt.";
-    db.prepare("UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE shot_id = ?")
-      .run(JSON.stringify(shot), prepared.fixture.shotId);
+    saveShot(db, shot);
     const result = confirmWorkbenchGeneration({
       intent_id: prepared.t2IntentId,
       budget_limit_value: 5,

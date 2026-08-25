@@ -19,6 +19,7 @@ import {
   recordDirectorArtifactImportReceipt
 } from "../src/director/workbenchApproval.js";
 import { DATABASE_MIGRATIONS, assertSchemaCurrent, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
+import { withWorkbenchProductionMutationAuthority } from "../src/storage/productionMutationAuthority.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { createWorkbenchProject, decideWorkbenchImport, listWorkbenchAssets } from "../src/tools/workbenchV2.js";
@@ -45,21 +46,25 @@ function insertVerifiedStoryboardArtifact(
       VALUES (?, ?, ?, 'image/png', ?, 'verified', ?)`)
       .run(blobId, sha256, statSync(fixturePath).size, fixturePath, JSON.stringify({ media_root: dirname(fixturePath) }));
   }
-  db.prepare(`INSERT INTO media_artifacts
-    (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
-    VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)`)
-    .run(input.artifact_id, input.project_id, input.shot_id, JSON.stringify({
-      artifact_id: input.artifact_id,
-      blob_id: blobId,
-      artifact_type: "image",
-      role: "storyboard_image",
-      status: "active",
-      storage: { uri: fixturePath, mime_type: "image/png", filename: "shot_001_canary_720x1280.png" },
-      metadata: { width: 720, height: 1280, duration_seconds: null, aspect_ratio: "9:16", sha256 },
-      linked_objects: { project_id: input.project_id, shot_id: input.shot_id },
-      source: { kind: "fixture", provider: "mock", provider_job_id: "", sha256, external_url_host: "" }
-    }));
-  db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(input.artifact_id, blobId);
+  withWorkbenchProductionMutationAuthority(db, {
+    kind: "artifact", project_id: input.project_id, object_id: input.artifact_id
+  }, () => {
+    db.prepare(`INSERT INTO media_artifacts
+      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+      VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)`)
+      .run(input.artifact_id, input.project_id, input.shot_id, JSON.stringify({
+        artifact_id: input.artifact_id,
+        blob_id: blobId,
+        artifact_type: "image",
+        role: "storyboard_image",
+        status: "active",
+        storage: { uri: fixturePath, mime_type: "image/png", filename: "shot_001_canary_720x1280.png" },
+        metadata: { width: 720, height: 1280, duration_seconds: null, aspect_ratio: "9:16", sha256 },
+        linked_objects: { project_id: input.project_id, shot_id: input.shot_id },
+        source: { kind: "fixture", provider: "mock", provider_job_id: "", sha256, external_url_host: "" }
+      }));
+    db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(input.artifact_id, blobId);
+  });
 }
 
 function createProjectShot(db: ReturnType<typeof openM0Database>, title: string, suffix: string) {
@@ -213,16 +218,18 @@ test("narrow Artifact filters keep an import receipt candidate reachable beyond 
       VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?, '2030-01-01T00:00:00.000Z')`);
     for (let index = 0; index < 201; index += 1) {
       const distractorId = `zz_director_import_distractor_${String(index).padStart(3, "0")}`;
-      insertDistractor.run(distractorId, primary.project.project_id, primary.shot.shot_id, JSON.stringify({
-        artifact_id: distractorId,
-        artifact_type: "video",
-        role: "generated_clip",
-        status: "active",
-        storage: { uri: "", mime_type: "video/mp4", filename: "" },
-        metadata: { width: 0, height: 0, duration_seconds: 5, aspect_ratio: "9:16", sha256: "d".repeat(64) },
-        linked_objects: { project_id: primary.project.project_id, shot_id: primary.shot.shot_id },
-        source: { kind: "fixture", provider: "", provider_job_id: "", sha256: "d".repeat(64), external_url_host: "" }
-      }));
+      withWorkbenchProductionMutationAuthority(db, {
+        kind: "artifact", project_id: primary.project.project_id, object_id: distractorId
+      }, () => insertDistractor.run(distractorId, primary.project.project_id, primary.shot.shot_id, JSON.stringify({
+          artifact_id: distractorId,
+          artifact_type: "video",
+          role: "generated_clip",
+          status: "active",
+          storage: { uri: "", mime_type: "video/mp4", filename: "" },
+          metadata: { width: 0, height: 0, duration_seconds: 5, aspect_ratio: "9:16", sha256: "d".repeat(64) },
+          linked_objects: { project_id: primary.project.project_id, shot_id: primary.shot.shot_id },
+          source: { kind: "fixture", provider: "", provider_job_id: "", sha256: "d".repeat(64), external_url_host: "" }
+        })));
     }
     const broadPage = listWorkbenchAssets("media", {
       scope: "all", project_id: primary.project.project_id, status: "active", limit: 200
@@ -331,8 +338,7 @@ test("accepted artifact_import records exactly one immutable, path-free receipt 
     const crossProject = recordDirectorArtifactImportReceipt({ proposal_id: secondProposal.proposal_id, artifact_id: foreignArtifactId, human_confirmation: true }, db, () => now);
     assert.equal(crossProject.ok ? null : crossProject.error.code, "DIRECTOR_ARTIFACT_IMPORT_ARTIFACT_INVALID");
     const staleShot = { ...primary.shot, video_prompt: "Changed after approval so the advisory state is stale." };
-    db.prepare("UPDATE shots SET data_json = ? WHERE shot_id = ?")
-      .run(JSON.stringify(staleShot), primary.shot.shot_id);
+    saveShot(db, staleShot);
     const stale = recordDirectorArtifactImportReceipt({ proposal_id: secondProposal.proposal_id, artifact_id: artifactId, human_confirmation: true }, db, () => now);
     assert.equal(stale.ok ? null : stale.error.code, "DIRECTOR_PROPOSAL_STALE");
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM director_artifact_import_receipts WHERE proposal_id = ?").get(secondProposal.proposal_id) as { count: number }).count, 0);
@@ -375,7 +381,7 @@ test("migration 0011 preserves 0010 proposal evidence and adds the immutable imp
       VALUES ('event_compiled_legacy_0010', 'proposal_legacy_0010', 'compiled', 'DIRECTOR_HISTORICAL_COMPILED', 'director_automation_grant', 'grant_legacy_0010', ?)`)
       .run(now.toISOString());
 
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0011", "0012"]);
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0011", "0012", "0013"]);
     assert.doesNotThrow(() => assertSchemaCurrent(db));
     assert.equal((db.prepare("SELECT kind FROM director_proposals WHERE proposal_id = 'proposal_legacy_0010'").get() as { kind: string }).kind, "creative_brief");
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM director_proposal_events WHERE proposal_id = 'proposal_legacy_0010' AND event_type = 'compiled' AND receipt_id = 'grant_legacy_0010'").get() as { count: number }).count, 1);
