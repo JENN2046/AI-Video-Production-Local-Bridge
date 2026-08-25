@@ -14,7 +14,7 @@ Each newly confirmed V2 real-generation Job must create one
 admission rolls back. The receipt freezes:
 
 - current Intent confirmation, account, cost, budget, currency and expiry;
-- exact Job stage plus Run row/payload identity, input, Provider binding and
+- Job identity plus Run row/payload identity, input, Provider binding and
   attempt version;
 - Project, SHOT, Provider, model, normalized Provider input, and
   generation-plan identities;
@@ -34,14 +34,16 @@ Migration `0016` moves legacy active generation Jobs without a frozen receipt
 to `manual_reconciliation` with
 `GENERATION_EXECUTION_SNAPSHOT_MISSING`. It does not submit, poll, download,
 retry, or infer authority for those Jobs. Attach or abandon is admitted only
-for a canonical pre-`0016` Project/SHOT/Run/Intent binding carrying its exact
-deterministic migration event and persisted restoration state; random Job IDs
-are supported and forged quarantine rows remain rejected.
+for a canonical pre-`0016` Project/SHOT/Run/Intent binding carrying both its
+exact deterministic migration event and a migration-only immutable attestation,
+plus persisted restoration state. Random Job IDs are supported and
+runtime-forged quarantine Events remain rejected.
 
 ## Await and finalization boundaries
 
-The persistent worker verifies current receipt authority and exact Job stage
-before a Provider effect. It reloads the current Intent and verifies again
+The receipt freezes Job identity; the persistent worker separately verifies
+the exact current Job stage and lease owner before each Provider effect. It
+reloads the current Intent and verifies again
 after resolved or rejected submit, poll and download awaits. A bounded,
 nonempty task identity returned by a successful submit is persisted before
 local canonical-ID validation and post-await authority evaluation. Thus a
@@ -50,6 +52,10 @@ as a retryable no-task outcome. Director accounting settlement is attempted
 separately; if that enrichment fails, the task identity, receipt and manual Job
 remain durable with `DIRECTOR_ACCOUNTING_REQUIRES_RECONCILIATION`.
 
+RunningHub upload completion is also revalidated before the paid submit
+endpoint can be called. Provider task statuses are normalized to a bounded
+stable vocabulary before any Run, receipt, Event, or error projection write.
+
 The Provider output downloader rechecks authority after DNS resolution,
 pinned-address fetch, redirects, response cancellation, and each streamed body
 read. No authority failure proceeds to file activation.
@@ -57,7 +63,11 @@ read. No authority failure proceeds to file activation.
 Final output activation is available only through the worker-supplied
 `activate_artifact` capability and runs inside its outer Workbench transaction.
 An injected downloader cannot independently activate an Artifact and report it
-as the worker result. The worker rechecks Project, SHOT, Storyboard Package,
+as the worker result. The capability verifies its deterministic Artifact
+identity, storage boundary, Project, SHOT, role, type, Provider task and media
+specification both before opening the outer transaction and immediately before
+persistence. Unattested outputs remain durably recovery-bound even when an
+archive attempt fails. The worker rechecks Project, SHOT, Storyboard Package,
 Run, receipt, lease, exact Job stage and any Director grant immediately before
 Artifact persistence. Within that worker-owned path, Artifact, Blob,
 GenerationRun, SHOT, Project, Intent, receipt, Job and Event changes share one

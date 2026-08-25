@@ -833,6 +833,13 @@ test("generation execution receipts require their owner and keep identity, task,
       }, () => db.prepare(`UPDATE generation_execution_receipts
         SET authority_fingerprint = ? WHERE intent_id = 'intent_receipt_boundary'`).run("b".repeat(64))),
       /GENERATION_EXECUTION_IDENTITY_IMMUTABLE/);
+      assert.throws(() => withWorkbenchProductionMutationAuthority(db, {
+        kind: "generation_execution",
+        project_id: "project_receipt_boundary",
+        object_id: "intent_receipt_boundary"
+      }, () => db.prepare(`UPDATE generation_execution_receipts
+        SET provider_status = ? WHERE intent_id = 'intent_receipt_boundary'`).run(`SECRET_${"X".repeat(256)}`)),
+      /CHECK constraint failed/);
 
       withWorkbenchProductionMutationAuthority(db, {
         kind: "generation_execution",
@@ -986,7 +993,7 @@ test("migration 0016 rolls back every partial schema object when its final trigg
       const migration0016 = DATABASE_MIGRATIONS.at(-1);
       assert.ok(migration0016);
       assert.equal(migration0016.id, "0016");
-    assert.equal(migrationChecksum(migration0016), "7105f7b2f2bfdd6838bb39b018ff22dbbe1c882cc3f37374459dd785760f7a43");
+      assert.equal(migrationChecksum(migration0016), "89898088b028d29d689aa95336163f3c88ade022515ca5f92c4bb1e048c79455");
       for (const migration of DATABASE_MIGRATIONS.slice(0, -1)) migration.apply(db);
       db.exec(`CREATE TABLE schema_migrations (
         migration_id TEXT PRIMARY KEY,

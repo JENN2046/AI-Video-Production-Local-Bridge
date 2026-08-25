@@ -790,9 +790,9 @@ function validateSnapshotBindings(value: {
       || project.closeout.export_verification_reason_code === undefined)) {
     context.addIssue({ code: "custom", message: "Current snapshots require explicit Export verification state.", path: ["projects"] });
   }
-  if (sourcePairIsCurrent && value.projects.some((project) => project.delivery.workflow_state === "closed"
+  if ((sourcePairIsCurrent || sourcePairIsDelivery) && value.projects.some((project) => project.delivery.workflow_state === "closed"
     && (project.delivery.export_verification_state !== "verified" || project.delivery.delivered !== true))) {
-    context.addIssue({ code: "custom", message: "Closed current-source snapshots require a verified Export and truthful delivered projection.", path: ["projects"] });
+    context.addIssue({ code: "custom", message: "Closed delivery-capable snapshots require a verified Export and truthful delivered projection.", path: ["projects"] });
   }
   const projectIds = new Set<string>();
   for (const [projectIndex, project] of value.projects.entries()) {

@@ -3055,6 +3055,7 @@ const EXTERNAL_EXECUTION_INTEGRITY_SQL = `
     CHECK (provider = 'runninghub'),
     CHECK (length(authority_fingerprint) = 64 AND authority_fingerprint NOT GLOB '*[^0-9a-f]*'),
     CHECK (json_valid(authority_snapshot_json) = 1),
+    CHECK (length(provider_status) <= 128 AND provider_status NOT GLOB '*[^A-Z0-9._:-]*'),
     CHECK (state IN ('reserved','ambiguous','submitted','reconciling','succeeded','failed','cancelled')),
     CHECK (state NOT IN ('submitted','reconciling','succeeded') OR provider_task_id <> ''),
     CHECK (state NOT IN ('reserved','ambiguous','failed') OR provider_task_id = ''),
@@ -3065,6 +3066,18 @@ const EXTERNAL_EXECUTION_INTEGRITY_SQL = `
     WHERE provider_task_id <> '';
   CREATE INDEX idx_generation_execution_project_shot
     ON generation_execution_receipts(project_id, shot_id, created_at);
+
+  CREATE TABLE generation_execution_legacy_quarantines (
+    job_id TEXT PRIMARY KEY REFERENCES generation_jobs(job_id) ON DELETE RESTRICT,
+    intent_id TEXT NOT NULL UNIQUE REFERENCES generation_intents(intent_id) ON DELETE RESTRICT,
+    event_id TEXT NOT NULL UNIQUE REFERENCES generation_job_events(event_id) ON DELETE RESTRICT,
+    from_state TEXT NOT NULL,
+    reason_code TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (from_state IN ('queued','submitting','polling','downloading','finalizing')),
+    CHECK (reason_code = 'GENERATION_EXECUTION_SNAPSHOT_MISSING'),
+    CHECK (event_id = 'job_event_0016_' || job_id)
+  );
 
   CREATE TRIGGER generation_execution_receipts_owner_insert
   BEFORE INSERT ON generation_execution_receipts
@@ -3125,6 +3138,22 @@ const EXTERNAL_EXECUTION_INTEGRITY_SQL = `
     AND NOT EXISTS (
       SELECT 1 FROM generation_execution_receipts receipt WHERE receipt.intent_id = intent.intent_id
     );
+  INSERT INTO generation_execution_legacy_quarantines
+    (job_id, intent_id, event_id, from_state, reason_code)
+  SELECT job.job_id, job.intent_id, event.event_id, job.state,
+    'GENERATION_EXECUTION_SNAPSHOT_MISSING'
+  FROM generation_jobs job
+  JOIN generation_job_events event
+    ON event.event_id = 'job_event_0016_' || job.job_id
+    AND event.job_id = job.job_id
+    AND event.from_state = job.state
+    AND event.to_state = 'manual_reconciliation'
+    AND event.reason_code = 'GENERATION_EXECUTION_SNAPSHOT_MISSING'
+    AND event.data_json = '{"source":"migration_0016"}'
+  WHERE job.state IN ('queued','submitting','polling','downloading','finalizing')
+    AND NOT EXISTS (
+      SELECT 1 FROM generation_execution_receipts receipt WHERE receipt.intent_id = job.intent_id
+    );
   UPDATE generation_jobs
   SET state = 'manual_reconciliation', reconciliation_reason = 'GENERATION_EXECUTION_SNAPSHOT_MISSING',
     lease_owner = '', lease_token = '', lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP
@@ -3132,6 +3161,22 @@ const EXTERNAL_EXECUTION_INTEGRITY_SQL = `
     AND NOT EXISTS (
       SELECT 1 FROM generation_execution_receipts receipt WHERE receipt.intent_id = generation_jobs.intent_id
     );
+
+  CREATE TRIGGER generation_execution_legacy_quarantines_no_insert
+  BEFORE INSERT ON generation_execution_legacy_quarantines
+  BEGIN
+    SELECT RAISE(ABORT, 'GENERATION_EXECUTION_LEGACY_QUARANTINE_IMMUTABLE');
+  END;
+  CREATE TRIGGER generation_execution_legacy_quarantines_no_update
+  BEFORE UPDATE ON generation_execution_legacy_quarantines
+  BEGIN
+    SELECT RAISE(ABORT, 'GENERATION_EXECUTION_LEGACY_QUARANTINE_IMMUTABLE');
+  END;
+  CREATE TRIGGER generation_execution_legacy_quarantines_no_delete
+  BEFORE DELETE ON generation_execution_legacy_quarantines
+  BEGIN
+    SELECT RAISE(ABORT, 'GENERATION_EXECUTION_LEGACY_QUARANTINE_IMMUTABLE');
+  END;
 
   UPDATE m0_meta SET value = 'workbench-v2-11', updated_at = CURRENT_TIMESTAMP WHERE key = 'schema_version';
 `;
@@ -3483,7 +3528,8 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     workbench_delivery_jobs: ["job_id", "project_id", "job_type", "state", "input_json", "output_artifact_id", "export_id", "retry_of_job_id", "terminal_event_id", "error_code", "created_at", "updated_at", "input_fingerprint", "started_at", "finished_at"],
     workbench_delivery_events: ["event_id", "project_id", "event_type", "job_id", "artifact_id", "export_id", "reason_code", "data_json", "created_at", "from_state", "to_state", "input_fingerprint"],
     workbench_delivery_state: ["project_id", "workflow_state", "current_final_artifact_id", "legacy_final_artifact_id", "assembly_input_fingerprint", "approved_artifact_id", "latest_export_id", "last_assembled_at", "latest_exported_at", "closed_at", "created_at", "updated_at"],
-    generation_execution_receipts: ["intent_id", "job_id", "run_id", "project_id", "shot_id", "storyboard_package_id", "provider", "authority_fingerprint", "authority_snapshot_json", "provider_task_id", "provider_status", "result_artifact_id", "state", "created_at", "updated_at"]
+    generation_execution_receipts: ["intent_id", "job_id", "run_id", "project_id", "shot_id", "storyboard_package_id", "provider", "authority_fingerprint", "authority_snapshot_json", "provider_task_id", "provider_status", "result_artifact_id", "state", "created_at", "updated_at"],
+    generation_execution_legacy_quarantines: ["job_id", "intent_id", "event_id", "from_state", "reason_code", "created_at"]
   } : V24_EXPECTED_COLUMNS;
   const expectedIndexes = includeJobs ? [
     ...V24_EXPECTED_INDEXES,
@@ -3622,7 +3668,10 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "generation_execution_receipts_owner_update",
         "generation_execution_receipts_identity_immutable",
         "generation_execution_receipts_transition_guard",
-        "generation_execution_receipts_no_delete"
+        "generation_execution_receipts_no_delete",
+        "generation_execution_legacy_quarantines_no_insert",
+        "generation_execution_legacy_quarantines_no_update",
+        "generation_execution_legacy_quarantines_no_delete"
       ]
     : ["trg_workbench_project_meta_after_insert"];
   const definitions = expectedSchemaDefinitions(includeJobs, expectedColumns, [...expectedIndexes, ...expectedTriggers]);

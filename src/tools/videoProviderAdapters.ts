@@ -735,7 +735,7 @@ export function parseRunningHubMediaUploadResponse(payload: unknown, secrets: st
 export function parseRunningHubSubmitResponse(payload: unknown, secrets: string[] = []): RunningHubSubmitParseResult {
   const record = payloadObject(payload);
   const taskId = stringField(record, "taskId");
-  const providerStatus = stringField(record, "status") || "UNKNOWN";
+  const providerStatus = normalizeRunningHubProviderStatus(stringField(record, "status"));
   const errorCode = stringField(record, "errorCode");
   const errorMessage = stringField(record, "errorMessage");
 
@@ -757,12 +757,22 @@ export function parseRunningHubSubmitResponse(payload: unknown, secrets: string[
   };
 }
 
-function runningHubStatusFromProvider(providerStatus: string): { status: ProviderJobStatus; retryable: boolean } {
+function normalizeRunningHubProviderStatus(providerStatus: string): "SUCCESS" | "FAILED" | "CANCELLED" | "PENDING" | "RUNNING" | "UNKNOWN" {
   const normalized = providerStatus.trim().toUpperCase();
-  if (normalized === "SUCCESS" || normalized === "SUCCEEDED" || normalized === "COMPLETED") return { status: "succeeded", retryable: false };
-  if (normalized === "FAILED" || normalized === "FAIL" || normalized === "ERROR") return { status: "failed", retryable: false };
-  if (normalized === "CANCELLED" || normalized === "CANCELED") return { status: "cancelled", retryable: false };
-  if (normalized === "PENDING" || normalized === "QUEUED" || normalized === "WAITING" || normalized === "CREATED") return { status: "queued", retryable: true };
+  if (normalized === "SUCCESS" || normalized === "SUCCEEDED" || normalized === "COMPLETED") return "SUCCESS";
+  if (normalized === "FAILED" || normalized === "FAIL" || normalized === "ERROR") return "FAILED";
+  if (normalized === "CANCELLED" || normalized === "CANCELED") return "CANCELLED";
+  if (normalized === "PENDING" || normalized === "QUEUED" || normalized === "WAITING" || normalized === "CREATED") return "PENDING";
+  if (normalized === "RUNNING" || normalized === "PROCESSING" || normalized === "IN_PROGRESS") return "RUNNING";
+  return "UNKNOWN";
+}
+
+function runningHubStatusFromProvider(providerStatus: string): { status: ProviderJobStatus; retryable: boolean } {
+  const normalized = normalizeRunningHubProviderStatus(providerStatus);
+  if (normalized === "SUCCESS") return { status: "succeeded", retryable: false };
+  if (normalized === "FAILED") return { status: "failed", retryable: false };
+  if (normalized === "CANCELLED") return { status: "cancelled", retryable: false };
+  if (normalized === "PENDING") return { status: "queued", retryable: true };
   return { status: "running", retryable: true };
 }
 
@@ -783,7 +793,7 @@ function runningHubResultUrls(payload: Record<string, unknown>): string[] {
 export function parseRunningHubQueryResponse(payload: unknown, fallbackProviderJobId = "", secrets: string[] = []): RunningHubQueryParseResult {
   const record = payloadObject(payload);
   const taskId = stringField(record, "taskId") || fallbackProviderJobId;
-  const providerStatus = stringField(record, "status") || "UNKNOWN";
+  const providerStatus = normalizeRunningHubProviderStatus(stringField(record, "status"));
   const errorCode = stringField(record, "errorCode");
   const errorMessage = stringField(record, "errorMessage");
   const mapped = runningHubStatusFromProvider(providerStatus);
@@ -1194,13 +1204,22 @@ export class RunningHubVideoProviderAdapter implements VideoProviderAdapter {
   private readonly credential: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly revalidateBeforePaidSubmit?: () => ProviderToolError | null;
 
-  constructor(input: { credential?: string; fetch_impl?: typeof fetch; api_base?: string; timeout_ms?: number; model_name?: string } = {}) {
+  constructor(input: {
+    credential?: string;
+    fetch_impl?: typeof fetch;
+    api_base?: string;
+    timeout_ms?: number;
+    model_name?: string;
+    revalidate_before_paid_submit?: () => ProviderToolError | null;
+  } = {}) {
     this.credential = input.credential ?? "";
     this.fetchImpl = input.fetch_impl ?? fetch;
     this.apiBase = input.api_base ?? RUNNINGHUB_API_BASE_URL;
     this.timeoutMs = Math.max(1000, input.timeout_ms ?? 60_000);
     this.model_name = input.model_name ?? RUNNINGHUB_MODEL_ROUTE;
+    this.revalidateBeforePaidSubmit = input.revalidate_before_paid_submit;
   }
 
   private async request(url: string, init: RequestInit, operation: string, timeoutMs = this.timeoutMs): Promise<{ response: Response; payload: Record<string, unknown> } | { error: ProviderToolError }> {
@@ -1240,6 +1259,9 @@ export class RunningHubVideoProviderAdapter implements VideoProviderAdapter {
     }
     const uploaded = parseRunningHubMediaUploadResponse(uploadResponse.payload, [this.credential]);
     if (!uploaded.ok) return uploaded;
+
+    const preSubmitAuthorityError = this.revalidateBeforePaidSubmit?.();
+    if (preSubmitAuthorityError) return { ok: false, error: preSubmitAuthorityError };
 
     const submitRequest = buildRunningHubImageToVideoSubmitRequest({ generation_input: input, uploaded_download_url: uploaded.download_url, model: this.model_name });
     if (!submitRequest.ok) return submitRequest;

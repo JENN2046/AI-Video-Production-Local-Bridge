@@ -551,6 +551,20 @@ test("five-stage operational state exports through Snapshot v4 with canonical me
     });
     fabricatedMedia.projects[0]!.media_bindings.sort((left, right) => left.artifact_id.localeCompare(right.artifact_id));
     assert.throws(() => finalizeReadonlySnapshot(fabricatedMedia), /not referenced by a canonical project workflow object/i);
+
+    for (const source of [
+      { source_schema: "workbench-v2-11", source_migration: "0016" },
+      { source_schema: "workbench-v2-10", source_migration: "0015" }
+    ]) {
+      const malformedClosed = structuredClone(unsigned);
+      malformedClosed.source_schema = source.source_schema as typeof malformedClosed.source_schema;
+      malformedClosed.source_migration = source.source_migration as typeof malformedClosed.source_migration;
+      malformedClosed.projects[0]!.delivery.workflow_state = "closed";
+      malformedClosed.projects[0]!.delivery.export_verification_state = "unverified";
+      malformedClosed.projects[0]!.delivery.delivered = false;
+      assert.throws(() => finalizeReadonlySnapshot(malformedClosed),
+        /Closed delivery-capable snapshots require a verified Export and truthful delivered projection/i);
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
