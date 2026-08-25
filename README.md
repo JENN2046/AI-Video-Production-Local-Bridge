@@ -14,6 +14,7 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 | Database | Canonical source: `workbench-v2-11` / ledger `0016`. The activity database's last explicitly accepted runtime boundary remains `workbench-v2-6` / ledger `0011`; current-main runtime acceptance is not established. Runtime startup still does not automatically migrate or roll back. |
 | ChatGPT Director | Historical, commit-scoped evidence covers 单 Owner Focus → Context → advisory Proposal → Human Workbench 决定 → controlled import receipt；Provider、Grant 启动与 Memory 写入仍关闭。 |
 | Unified ChatGPT Workspace | Historical, commit-scoped evidence covers the bounded `/workspace/mcp` OAuth、Bridge、Render 与活动库黄金路径；旧 `/mcp` 仍保留为回滚面。 |
+| Historical single-user closeout | `JENN_SINGLE_USER_MCP_APP_PASS` is retained as commit-scoped historical evidence only; it does not establish current-main Activity Runtime acceptance. |
 | Product status | `CODE_COMPLETE_ON_CURRENT_MAIN` on the exact current-main fixture-acceptance PR head; this is isolated code/fixture evidence, not Activity Runtime or `PRODUCT_COMPLETE` |
 | Operations status | Historical `MANUAL_PUBLISH_OPERATIONAL_READY` evidence is commit-scoped to an earlier schema. Current-main publish/recovery is `BLOCKED_PENDING_0016_ADMISSION_AND_RUNTIME_ACCEPTANCE`. |
 | Multi-user status | `PARTIAL_MULTI_USER_GATE` |
