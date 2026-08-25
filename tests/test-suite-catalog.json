@@ -79,6 +79,7 @@
       "paths": [
         "tests/workbench-v2-api.test.ts",
         "tests/workbench-v2-assembly.test.ts",
+        "tests/workbench-v2-current-main-acceptance.test.ts",
         "tests/workbench-v2-delivery-actions.test.ts",
         "tests/workbench-v2-delivery-state.test.ts",
         "tests/workbench-v2-domain.test.ts",

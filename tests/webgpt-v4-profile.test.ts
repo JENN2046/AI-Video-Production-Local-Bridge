@@ -14,9 +14,26 @@ import { nodeEngineMinimumVersion, nodeVersionMeetsMinimum } from "../src/tools/
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
 import { getProductionProjectContext } from "../src/webgpt-v4/domain.js";
 import { readProjectContext } from "../src/webgpt-v4/contracts.js";
+import { bootstrapWebGptProjectOwner } from "../src/webgpt-v4/authorizationAdmin.js";
 import { startWebGptV4 } from "../src/webgpt-v4/server.js";
 import { webGptV4ToolsForProfile } from "../src/webgpt-v4/toolCatalog.js";
-import { actorFromSubject, issuerHash, WEBGPT_V4_SCOPES, WebGptV4Error } from "../src/webgpt-v4/types.js";
+import { actorFromFederatedSubject, actorFromSubject, issuerHash, WEBGPT_V4_SCOPES, WebGptV4Error } from "../src/webgpt-v4/types.js";
+
+const READONLY_ISSUER = "https://issuer.example.test/";
+
+function readonlyAuthConfig() {
+  return {
+    provider: "federated" as const,
+    access_model: "project_membership" as const,
+    issuer: READONLY_ISSUER,
+    issuer_hash: issuerHash(READONLY_ISSUER),
+    audience: "https://mcp.example.test/mcp",
+    resource_url: "https://mcp.example.test/mcp",
+    jwks_uri: "https://issuer.example.test/.well-known/jwks.json",
+    client_registration: "predefined" as const,
+    configuration_source: "generic" as const
+  };
+}
 
 function stableValue(value: unknown): unknown {
   if (typeof value === "bigint") return value.toString();
@@ -47,6 +64,8 @@ test("default readonly profile exposes six project tools and performs no databas
   assert.equal(created.ok, true);
   if (!created.ok) throw new Error("fixture setup failed");
   db.prepare("UPDATE workbench_project_meta SET classification = 'production', last_opened_at = ? WHERE project_id = ?").run("2026-01-01T00:00:00.000Z", created.project_id);
+  const actor = actorFromFederatedSubject(READONLY_ISSUER, "fixture|readonly-owner", ["projects.read"]);
+  bootstrapWebGptProjectOwner(db, actor.principal_id, created.project_id, "TEST_READONLY_OWNER", actor.issuer_hash!);
   const shot: Shot = {
     shot_id: "shot_readonly_001", project_id: created.project_id, order: 1, status: "storyboard_approved", duration_seconds: 6,
     description: "Readonly shot", storyboard_image_artifact_id: "", video_prompt: "Readonly prompt", negative_prompt: "", generation_run_ids: [],
@@ -57,11 +76,18 @@ test("default readonly profile exposes six project tools and performs no databas
   saveProject(db, created.project);
   const projectedContext = readProjectContext(getProductionProjectContext({ project_id: created.project_id, workspace: "overview" }, db), "full");
   assert.equal(projectedContext.ok, true, JSON.stringify(projectedContext));
+  const auditEventsBefore = (db.prepare("SELECT COUNT(*) count FROM webgpt_audit_events").get() as { count: number }).count;
   const before = logicalManifest(db);
   db.close();
 
-  const actor = actorFromSubject("auth0|jenn", WEBGPT_V4_SCOPES);
-  const runtime = await startWebGptV4({ mcp_port: 0, media_port: 0, sqlite_path: sqlitePath, authenticate: async () => actor, media: { ffmpeg_path: join(root, "missing-ffmpeg.exe") } });
+  const runtime = await startWebGptV4({
+    mcp_port: 0,
+    media_port: 0,
+    sqlite_path: sqlitePath,
+    auth_config: readonlyAuthConfig(),
+    authenticate: async () => actor,
+    media: { ffmpeg_path: join(root, "missing-ffmpeg.exe") }
+  });
   assert.equal(runtime.profile, "readonly");
   assert.equal(runtime.media_port, null);
   assert.equal(runtime.media_url, null);
@@ -110,7 +136,7 @@ test("default readonly profile exposes six project tools and performs no databas
     const readyResponse = await fetch(runtime.mcp_url.replace(/\/mcp$/, "/readyz"));
     const ready = await readyResponse.json() as { checks: Record<string, boolean>; profile: string };
     assert.equal(ready.profile, "readonly");
-    assert.deepEqual(Object.keys(ready.checks).sort(), ["database", "oauth", "schema"]);
+    assert.deepEqual(Object.keys(ready.checks).sort(), ["authorization", "database", "oauth", "schema"]);
   } finally {
     await client.close();
     await runtime.close();
@@ -121,7 +147,7 @@ test("default readonly profile exposes six project tools and performs no databas
     assert.deepEqual(logicalManifest(verify), before);
     const lastOpened = verify.prepare("SELECT last_opened_at FROM workbench_project_meta WHERE project_id = ?").get(created.project_id) as { last_opened_at: string };
     assert.equal(lastOpened.last_opened_at, "2026-01-01T00:00:00.000Z");
-    assert.equal((verify.prepare("SELECT COUNT(*) count FROM webgpt_audit_events").get() as { count: number }).count, 0);
+    assert.equal((verify.prepare("SELECT COUNT(*) count FROM webgpt_audit_events").get() as { count: number }).count, auditEventsBefore);
   } finally {
     verify.close();
     rmSync(root, { recursive: true, force: true });
@@ -194,6 +220,10 @@ test("WebGPT preflight skips media dependencies for the readonly profile", () =>
         AI_VIDEO_WORKSPACE_DB_PATH: sqlitePath,
         WEBGPT_V4_PROFILE: "readonly",
         WEBGPT_V4_MCP_PORT: "0",
+        WEBGPT_V4_READONLY_OAUTH_ISSUER: undefined,
+        WEBGPT_V4_READONLY_OAUTH_AUDIENCE: undefined,
+        WEBGPT_V4_READONLY_OAUTH_JWKS_URI: undefined,
+        WEBGPT_V4_READONLY_OAUTH_CLIENT_REGISTRATION: undefined,
         WEBGPT_V4_DESCOPE_ISSUER: "https://api.descope.com/project-fixture/",
         WEBGPT_V4_DESCOPE_AUDIENCE: "https://workspace.example.test",
         WEBGPT_V4_RESOURCE_URL: "https://workspace.example.test",

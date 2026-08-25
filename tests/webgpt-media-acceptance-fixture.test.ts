@@ -1326,7 +1326,7 @@ test("media acceptance matrix wrapper normalizes ordinary PowerShell exceptions"
   }
 });
 
-test("media acceptance matrix rejects a linked manifest before reading it", () => {
+test("media acceptance matrix rejects a linked manifest before reading it", (context) => {
   const source = resolve("fixtures/video/mock_clip.mp4");
   const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
   const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
@@ -1341,7 +1341,14 @@ test("media acceptance matrix rejects a linked manifest before reading it", () =
   try {
     writeFileSync(externalManifest, readFileSync(manifestPath));
     unlinkSync(manifestPath);
-    symlinkSync(externalManifest, manifestPath, "file");
+    try {
+      symlinkSync(externalManifest, manifestPath, "file");
+    } catch (error) {
+      const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+      if (!["EACCES", "EPERM"].includes(code)) throw error;
+      context.skip("File symlinks are unavailable for this process.");
+      return;
+    }
     const result = spawnSync(process.execPath, [
       resolve("dist/scripts/webgpt-media-acceptance-matrix.js"),
       "--run", receipt.run_id,
@@ -1356,7 +1363,7 @@ test("media acceptance matrix rejects a linked manifest before reading it", () =
   }
 });
 
-test("media acceptance matrix rejects a manifest replaced by a link during open", () => {
+test("media acceptance matrix rejects a manifest replaced by a link during open", (context) => {
   const source = resolve("fixtures/video/mock_clip.mp4");
   const fixtureCommand = resolve("dist/scripts/webgpt-media-acceptance-fixture.js");
   const created = spawnSync(process.execPath, [fixtureCommand, "create", "--input", source, "--issuer", ISSUER, "--resource", RESOURCE], {
@@ -1368,9 +1375,19 @@ test("media acceptance matrix rejects a manifest replaced by a link during open"
   const external = mkdtempSync(join(tmpdir(), "media-acceptance-manifest-race-"));
   const manifestPath = join(root, "fixture.json");
   const externalManifest = join(external, "fixture.json");
+  const symlinkProbe = join(external, "symlink-probe.json");
   const preloadPath = join(external, "swap-before-open.cjs");
   try {
     writeFileSync(externalManifest, readFileSync(manifestPath));
+    try {
+      symlinkSync(externalManifest, symlinkProbe, "file");
+      unlinkSync(symlinkProbe);
+    } catch (error) {
+      const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+      if (!["EACCES", "EPERM"].includes(code)) throw error;
+      context.skip("File symlinks are unavailable for this process.");
+      return;
+    }
     writeFileSync(preloadPath, `
 const fs = require("node:fs");
 const { syncBuiltinESMExports } = require("node:module");
