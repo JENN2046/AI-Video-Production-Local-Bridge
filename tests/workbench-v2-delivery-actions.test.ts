@@ -260,7 +260,16 @@ test("migration 0015 upgrades 0014 atomically with exact governed objects", asyn
     const migration = DATABASE_MIGRATIONS.find((candidate) => candidate.id === "0015");
     assert.ok(migration);
     assert.equal(migrationChecksum(migration), "f0b57cea351f708cd10fceac74e2da47432061ca4864ddcb9ffecad4ed9fc0bb");
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0015"]);
+    db.exec("BEGIN EXCLUSIVE");
+    try {
+      migration.apply(db);
+      db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)")
+        .run(migration.id, migration.name, migrationChecksum(migration));
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
     assert.equal((db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-10");
     const relativePathIndex = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_workbench_exports_relative_path'")
       .get() as { sql: string };

@@ -9,6 +9,8 @@ export interface Mp4ValidationResult {
   path: string;
   ffprobe_exit_code: number | null;
   has_video_stream: boolean;
+  width: number | null;
+  height: number | null;
   duration_seconds: number | null;
   stream_count: number;
   error: string;
@@ -23,6 +25,8 @@ export interface MediaValiditySummary {
 interface FfprobeStream {
   codec_type?: string;
   duration?: string;
+  width?: number;
+  height?: number;
 }
 
 interface FfprobeOutput {
@@ -76,6 +80,8 @@ function probeMp4(input: string, displayPath: string, stdinDescriptor?: number):
       path: displayPath,
       ffprobe_exit_code: null,
       has_video_stream: false,
+      width: null,
+      height: null,
       duration_seconds: null,
       stream_count: 0,
       error: "ffprobe is unavailable."
@@ -99,6 +105,8 @@ function probeMp4(input: string, displayPath: string, stdinDescriptor?: number):
       path: displayPath,
       ffprobe_exit_code: exitCode,
       has_video_stream: false,
+      width: null,
+      height: null,
       duration_seconds: null,
       stream_count: 0,
       error: result.stderr?.trim() || result.error?.message || "ffprobe failed."
@@ -114,6 +122,8 @@ function probeMp4(input: string, displayPath: string, stdinDescriptor?: number):
       path: displayPath,
       ffprobe_exit_code: exitCode,
       has_video_stream: false,
+      width: null,
+      height: null,
       duration_seconds: null,
       stream_count: 0,
       error: "ffprobe output was not valid JSON."
@@ -123,16 +133,22 @@ function probeMp4(input: string, displayPath: string, stdinDescriptor?: number):
   const streams = parsed.streams ?? [];
   const videoStreams = streams.filter((stream) => stream.codec_type === "video");
   const duration = parseDuration(parsed.format?.duration) ?? parseDuration(videoStreams[0]?.duration);
-  const hasVideoStream = videoStreams.length > 0;
+  const width = Number(videoStreams[0]?.width);
+  const height = Number(videoStreams[0]?.height);
+  const hasVideoStream = videoStreams.length > 0
+    && Number.isInteger(width) && width > 0
+    && Number.isInteger(height) && height > 0;
 
   return {
     status: hasVideoStream && duration !== null ? "PASS" : "FAIL",
     path: displayPath,
     ffprobe_exit_code: exitCode,
     has_video_stream: hasVideoStream,
+    width: hasVideoStream ? width : null,
+    height: hasVideoStream ? height : null,
     duration_seconds: duration,
     stream_count: streams.length,
-    error: hasVideoStream && duration !== null ? "" : "ffprobe did not report a video stream and positive duration."
+    error: hasVideoStream && duration !== null ? "" : "ffprobe did not report a dimensioned video stream and positive duration."
   };
 }
 
@@ -143,6 +159,8 @@ export function validateMp4FileDescriptor(fileDescriptor: number): Mp4Validation
       path: "",
       ffprobe_exit_code: null,
       has_video_stream: false,
+      width: null,
+      height: null,
       duration_seconds: null,
       stream_count: 0,
       error: "MP4 file descriptor is invalid."
@@ -158,6 +176,8 @@ export function validateMp4File(filePath: string): Mp4ValidationResult {
       path: filePath,
       ffprobe_exit_code: null,
       has_video_stream: false,
+      width: null,
+      height: null,
       duration_seconds: null,
       stream_count: 0,
       error: "MP4 path is empty."
@@ -170,6 +190,8 @@ export function validateMp4File(filePath: string): Mp4ValidationResult {
       path: filePath,
       ffprobe_exit_code: null,
       has_video_stream: false,
+      width: null,
+      height: null,
       duration_seconds: null,
       stream_count: 0,
       error: "MP4 file does not exist."
@@ -187,6 +209,8 @@ export function validateMp4File(filePath: string): Mp4ValidationResult {
       path: filePath,
       ffprobe_exit_code: null,
       has_video_stream: false,
+      width: null,
+      height: null,
       duration_seconds: null,
       stream_count: 0,
       error: error instanceof Error ? error.message : "MP4 file is not readable."

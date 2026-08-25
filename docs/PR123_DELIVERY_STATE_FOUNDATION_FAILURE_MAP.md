@@ -117,10 +117,13 @@ executable.
 | `PRRT_kwDOTTDtUM6aruzi` | Targeted regeneration Events must bind to real SHOT rework. |
 | `PRRT_kwDOTTDtUM6asFkq` | A closed Snapshot requires a usable final Artifact and a truthful delivered claim. |
 
-## Deferred to External Execution Integrity
+## Closed by External Execution Integrity
 
-Disposition for every row: `DEFERRED_TO_OWNER`. These findings must be handled
-in a dedicated cross-execution package after the delivery owners are stable.
+Disposition for every row: `CLOSED_BY_0016_LOCAL_FIXTURES`. Migration `0016`,
+schema `workbench-v2-11`, and the exact selected-test mapping are documented in
+[`external-execution-integrity-thread-ledger.json`](evidence/external-execution-integrity-thread-ledger.json).
+This closes the code and fixture findings only; it is not real Provider or
+activity-runtime acceptance.
 
 | Thread | Preserved failure semantics |
 |---|---|

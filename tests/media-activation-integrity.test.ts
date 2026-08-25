@@ -786,7 +786,7 @@ test("recovery never quarantines a pre-existing final that the activation did no
   }
 });
 
-test("an outer transaction rollback cannot leave an unrecorded active file", () => {
+test("[EEI-ACTIVATION-02] an outer transaction rollback cannot leave an unrecorded active file", () => {
   const db = openM0Database();
   const artifact = preparedArtifact();
   let activationId = "";

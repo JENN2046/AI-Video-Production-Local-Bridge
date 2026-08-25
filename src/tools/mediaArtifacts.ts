@@ -840,15 +840,17 @@ function localMediaFacts(filePath: string, artifact: MediaArtifact): LocalMediaF
     };
   }
   const validation = validateMp4File(filePath);
-  if (validation.status !== "PASS") throw new Error(validation.status === "NOT_TESTED" ? "VIDEO_PROBE_UNAVAILABLE" : "VIDEO_FILE_INVALID");
+  if (validation.status !== "PASS" || validation.width === null || validation.height === null || validation.duration_seconds === null) {
+    throw new Error(validation.status === "NOT_TESTED" ? "VIDEO_PROBE_UNAVAILABLE" : "VIDEO_FILE_INVALID");
+  }
   const detectedMime = detectMimeFromBytes(fileFacts.header);
   if (detectedMime !== "video/mp4") throw new Error("MEDIA_MIME_MISMATCH");
   return {
     sha256: fileFacts.sha256,
     size_bytes: fileFacts.size_bytes,
     detected_mime: detectedMime,
-    width: artifact.metadata.width,
-    height: artifact.metadata.height,
+    width: validation.width,
+    height: validation.height,
     duration_seconds: validation.duration_seconds,
     aspect_ratio: artifact.metadata.aspect_ratio
   };
@@ -1246,7 +1248,7 @@ function commitStagedMediaArtifact(
   db: M0Database,
   artifact: MediaArtifact,
   allowStatusTransition: boolean,
-  options: { after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; remove_post_commit_file?: (finalPath: string) => void; media_root?: string; assembly_authority?: AssemblyFinalArtifactAuthority } = {}
+  options: { after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; before_artifact_persist?: () => void; remove_post_commit_file?: (finalPath: string) => void; media_root?: string; assembly_authority?: AssemblyFinalArtifactAuthority } = {}
 ): RegisterMediaArtifactResult {
   const activationId = `activation_${randomUUID()}`;
   const mediaRoot = resolve(options.media_root ?? paths.mediaRoot);
@@ -1318,6 +1320,7 @@ function commitStagedMediaArtifact(
     }
     if (manageTransaction) db.exec("BEGIN IMMEDIATE");
     try {
+      options.before_artifact_persist?.();
       persistMediaArtifactInternal(db, artifact, allowStatusTransition, mediaRoot, options.assembly_authority);
       db.prepare("UPDATE media_activation_journal SET state = 'committed', final_path = ?, artifact_json = ?, error_code = '', updated_at = CURRENT_TIMESTAMP WHERE activation_id = ? AND state = 'file_placed'")
         .run(artifact.storage.uri, JSON.stringify(artifact), activationId);
@@ -1358,8 +1361,21 @@ function commitStagedMediaArtifact(
   }
 }
 
+export interface ActivateLocalMediaArtifactInput {
+  artifact: MediaArtifact;
+  source_path: string;
+  media_root?: string;
+  allow_status_transition?: boolean;
+  after_staging_written?: (stagingPath: string) => void;
+  after_journal_staged?: (stagingPath: string) => void;
+  after_pending_placed?: (pendingPath: string) => void;
+  after_file_placed?: (finalPath: string) => void;
+  before_artifact_persist?: () => void;
+  remove_post_commit_file?: (finalPath: string) => void;
+}
+
 export function activateLocalMediaArtifact(
-  input: { artifact: MediaArtifact; source_path: string; media_root?: string; allow_status_transition?: boolean; after_staging_written?: (stagingPath: string) => void; after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; remove_post_commit_file?: (finalPath: string) => void },
+  input: ActivateLocalMediaArtifactInput,
   db = openM0Database()
 ): RegisterMediaArtifactResult {
   const projectId = input.artifact.linked_objects.project_id;
@@ -1377,7 +1393,7 @@ export function activateLocalMediaArtifact(
   catch { return { ok: false, error: { code: "MEDIA_ACTIVATION_PATH_UNSAFE", message: "Media activation directories are not app-controlled." } }; }
   const stageError = copyToOwnedStaging(input.artifact, sourcePath, mediaRoot, input.after_staging_written);
   if (stageError) return { ok: false, error: stageError };
-  return commitStagedMediaArtifact(db, input.artifact, input.allow_status_transition === true, { after_journal_staged: input.after_journal_staged, after_pending_placed: input.after_pending_placed, after_file_placed: input.after_file_placed, remove_post_commit_file: input.remove_post_commit_file, media_root: mediaRoot });
+  return commitStagedMediaArtifact(db, input.artifact, input.allow_status_transition === true, { after_journal_staged: input.after_journal_staged, after_pending_placed: input.after_pending_placed, after_file_placed: input.after_file_placed, before_artifact_persist: input.before_artifact_persist, remove_post_commit_file: input.remove_post_commit_file, media_root: mediaRoot });
 }
 
 function activationMarkerPaths(): string[] {

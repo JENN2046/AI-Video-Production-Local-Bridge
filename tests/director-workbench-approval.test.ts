@@ -8,7 +8,7 @@ import test from "node:test";
 
 import { buildDirectorContext } from "../src/director/localService.js";
 import { startDirectorBoundedGeneration } from "../src/director/boundedOrchestrator.js";
-import { consumeDirectorGrantReservation, loadDirectorGrantAuthorization, reserveDirectorGrant } from "../src/director/grantRuntime.js";
+import { consumeDirectorGrantReservation, loadDirectorGrantAuthorization, releaseDirectorGrantReservation, reserveDirectorGrant } from "../src/director/grantRuntime.js";
 import { directorBaseStateHash, directorContentHash, DIRECTOR_FOCUS_SCHEMA, DIRECTOR_PROPOSAL_SCHEMA, type DirectorProposal } from "../src/director/domain.js";
 import {
   compileDirectorProposalToAutomationGrant,
@@ -1447,6 +1447,77 @@ test("a paid Director Provider task is consumed when local persistence falls bac
       WHERE grant_id = ? AND event_type = 'consume'`).all(compiled.data.grant.grant_id) as Array<{ event_type: string; amount_minor: number; currency: string; reason_code: string }>;
     assert.deepEqual(consume.map((event) => ({ ...event })), [{ event_type: "consume", amount_minor: 8, currency: "CNY", reason_code: "DIRECTOR_AUTOMATION_SUBMITTED_RECONCILED" }]);
   } finally { db.close(); }
+});
+
+test("[EEI-DIRECTOR-01] a paid Director task remains durable when Grant settlement changes during submit await", async () => {
+  const db = openM0Database(":memory:");
+  try {
+    const prepared = await startBoundedDirectorFixture(db);
+    const binding = prepared.execution.intent.input_snapshot.director_automation;
+    if (!binding?.reservation_id || !binding.amount_minor) {
+      assert.fail("Director execution must persist its reserved Grant binding");
+    }
+    const reservation = {
+      grant_id: binding.grant_id,
+      reservation_id: binding.reservation_id,
+      proposal_id: binding.proposal_id,
+      policy_hash: binding.policy_hash,
+      amount_minor: binding.amount_minor
+    };
+    const taskId = "task-director-accounting-reconciliation";
+    const adapter = {
+      provider_name: "runninghub" as const,
+      model_name: "rhart-video-g/image-to-video",
+      submitGeneration: async () => {
+        releaseDirectorGrantReservation(db, reservation, {
+          amount_minor: reservation.amount_minor,
+          currency: prepared.execution.intent.currency,
+          intent_id: prepared.execution.intent.intent_id,
+          run_id: prepared.execution.intent.run_id,
+          reason_code: "DIRECTOR_RESERVATION_CHANGED_DURING_SUBMIT",
+          now: firstNow
+        });
+        return { ok: true as const, provider_job_id: taskId, provider_status: "PENDING", sanitized_request: {} };
+      },
+      pollStatus: async () => { throw new Error("poll must not run after accounting settlement failure"); },
+      fetchOutput: async () => { throw new Error("output must not run after accounting settlement failure"); }
+    };
+    const workerDatabase = new Proxy(db, {
+      get(target, property) {
+        if (property === "close") return () => undefined;
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+    }) as ReturnType<typeof openM0Database>;
+
+    await runWorkbenchGenerationOnce(prepared.execution.intent.intent_id, {
+      allow_submit: true,
+      dependencies: {
+        open_database: () => workerDatabase,
+        env: prepared.env,
+        fetch_impl: prepared.fetchImpl,
+        adapter_factory: () => adapter,
+        now: () => firstNow
+      }
+    });
+
+    const intent = db.prepare("SELECT status, provider_task_id, sanitized_error_json FROM generation_intents WHERE intent_id = ?")
+      .get(prepared.execution.intent.intent_id) as { status: string; provider_task_id: string; sanitized_error_json: string };
+    const job = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
+      .get(prepared.execution.job_id) as { state: string; reconciliation_reason: string };
+    const receipt = db.prepare("SELECT provider_task_id, state, provider_status FROM generation_execution_receipts WHERE intent_id = ?")
+      .get(prepared.execution.intent.intent_id) as { provider_task_id: string; state: string; provider_status: string };
+    const events = db.prepare(`SELECT event_type FROM director_automation_grant_events
+      WHERE grant_id = ? AND reservation_id = ? ORDER BY created_at, rowid`)
+      .all(prepared.compiled.grant.grant_id, reservation.reservation_id) as Array<{ event_type: string }>;
+    assert.deepEqual({ status: intent.status, provider_task_id: intent.provider_task_id }, { status: "running", provider_task_id: taskId });
+    assert.equal((JSON.parse(intent.sanitized_error_json) as { code: string }).code, "DIRECTOR_ACCOUNTING_REQUIRES_RECONCILIATION");
+    assert.deepEqual({ ...job }, { state: "manual_reconciliation", reconciliation_reason: "DIRECTOR_ACCOUNTING_REQUIRES_RECONCILIATION" });
+    assert.deepEqual({ ...receipt }, { provider_task_id: taskId, state: "reconciling", provider_status: "DIRECTOR_ACCOUNTING_REQUIRES_RECONCILIATION" });
+    assert.deepEqual(events.map((event) => event.event_type), ["reserve", "release"]);
+  } finally {
+    db.close();
+  }
 });
 
 test("human attachment of an existing ambiguous Director task consumes its Grant reservation", async () => {

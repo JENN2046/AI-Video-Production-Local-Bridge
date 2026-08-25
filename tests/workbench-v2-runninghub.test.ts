@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import test from "node:test";
 
-import { RunningHubVideoProviderAdapter, type ProviderGenerationInput } from "../src/tools/videoProviderAdapters.js";
+import {
+  parseRunningHubQueryResponse,
+  parseRunningHubSubmitResponse,
+  RunningHubVideoProviderAdapter,
+  type ProviderGenerationInput
+} from "../src/tools/videoProviderAdapters.js";
 import type { MediaArtifact } from "../src/tools/mediaArtifacts.js";
 
 function fixtureArtifact(): MediaArtifact {
@@ -55,6 +60,31 @@ test("RunningHub adapter performs one upload, one submit, and queries the same t
   assert.equal(calls.filter((url) => url.endsWith("/media/upload/binary")).length, 1);
   assert.equal(calls.filter((url) => url.endsWith("/rhart-video-g/image-to-video")).length, 1);
   assert.equal(calls.filter((url) => url.endsWith("/openapi/v2/query")).length, 1);
+});
+
+test("RunningHub parsers bound unknown Provider statuses before returning them", () => {
+  const untrustedStatus = `PRIVATE_STATUS_${"secret-fragment-".repeat(40)}`;
+  const submitted = parseRunningHubSubmitResponse({
+    taskId: "task_status_bounded",
+    status: untrustedStatus,
+    errorCode: "",
+    errorMessage: ""
+  });
+  assert.equal(submitted.ok, true);
+  if (submitted.ok) assert.equal(submitted.provider_status, "UNKNOWN");
+
+  const queried = parseRunningHubQueryResponse({
+    taskId: "task_status_bounded",
+    status: untrustedStatus,
+    errorCode: "",
+    errorMessage: ""
+  });
+  assert.equal(queried.ok, true);
+  if (queried.ok) {
+    assert.equal(queried.provider_status, "UNKNOWN");
+    assert.equal(queried.status, "running");
+  }
+  assert.doesNotMatch(JSON.stringify({ submitted, queried }), /secret-fragment/);
 });
 
 test("RunningHub adapter rejects a mismatched taskId and never resubmits", async () => {

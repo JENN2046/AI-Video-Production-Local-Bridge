@@ -123,8 +123,16 @@ export function saveGenerationBatch(db: M0Database, batch: GenerationBatch): voi
 
 export function saveGenerationRun(db: M0Database, run: GenerationRun): void {
   db.prepare(`
-    INSERT OR REPLACE INTO generation_runs (run_id, batch_id, project_id, shot_id, run_type, status, data_json, updated_at)
+    INSERT INTO generation_runs (run_id, batch_id, project_id, shot_id, run_type, status, data_json, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(run_id) DO UPDATE SET
+      batch_id = excluded.batch_id,
+      project_id = excluded.project_id,
+      shot_id = excluded.shot_id,
+      run_type = excluded.run_type,
+      status = excluded.status,
+      data_json = excluded.data_json,
+      updated_at = CURRENT_TIMESTAMP
   `).run(run.run_id, run.batch_id, run.project_id, run.shot_id, run.run_type, run.status, JSON.stringify(run));
 }
 
@@ -134,8 +142,30 @@ export function getGenerationBatch(db: M0Database, batchId: string): GenerationB
 }
 
 export function getGenerationRun(db: M0Database, runId: string): GenerationRun | null {
-  const row = db.prepare("SELECT data_json FROM generation_runs WHERE run_id = ?").get(runId) as { data_json: string } | undefined;
-  return row ? (JSON.parse(row.data_json) as GenerationRun) : null;
+  const row = db.prepare(`SELECT run_id, batch_id, project_id, shot_id, run_type, status, data_json
+    FROM generation_runs WHERE run_id = ?`).get(runId) as {
+      run_id: string;
+      batch_id: string | null;
+      project_id: string | null;
+      shot_id: string | null;
+      run_type: string;
+      status: string;
+      data_json: string;
+    } | undefined;
+  if (!row) return null;
+  try {
+    const run = JSON.parse(row.data_json) as GenerationRun;
+    if (!run || typeof run !== "object"
+      || run.run_id !== row.run_id
+      || run.batch_id !== (row.batch_id ?? "")
+      || run.project_id !== (row.project_id ?? "")
+      || run.shot_id !== (row.shot_id ?? "")
+      || run.run_type !== row.run_type
+      || run.status !== row.status) return null;
+    return run;
+  } catch {
+    return null;
+  }
 }
 
 export function listBatchRuns(db: M0Database, batchId: string): GenerationRun[] {
@@ -313,12 +343,12 @@ export async function createGenerationRunFromPackageShot(
   input: PackageShotGenerationInput,
   db = openM0Database()
 ): Promise<PackageShotGenerationResult> {
-  if (input.provider_execution?.provider === "real" && input.allow_live_provider !== true) {
+  if (input.provider_execution?.provider === "real") {
     return {
       ok: false,
       error: {
-        code: "LIVE_PROVIDER_AUTHORIZATION_REQUIRED",
-        message: "Live provider submit requires a separate exact authorization path."
+        code: "PROVIDER_DISABLED",
+        message: "Legacy package-shot generation cannot call a real Provider. Use the receipt-backed V2 single-SHOT worker."
       }
     };
   }
@@ -411,8 +441,8 @@ export async function startStoryboardVideoGeneration(
           },
           credential: undefined
         };
-  if (selectedProvider.provider === "real" && input.allow_live_provider !== true) {
-    return { ok: false, error: { code: "PROVIDER_DISABLED", message: "Legacy batch generation cannot call a real provider. Use the V2 single-SHOT intent flow or an explicitly authorized canary." } };
+  if (selectedProvider.provider === "real") {
+    return { ok: false, error: { code: "PROVIDER_DISABLED", message: "Legacy batch generation cannot call a real Provider. Use the receipt-backed V2 single-SHOT worker." } };
   }
   const adapter = adapterForSelectedProvider(selectedProvider.provider_name, selectedProvider.credential);
 

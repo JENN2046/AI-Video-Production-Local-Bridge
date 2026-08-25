@@ -511,7 +511,8 @@ test("M1 legacy batch lane blocks RunningHub and routes real generation to V2", 
           {
             project_id: project.project_id,
             provider_execution: { provider: "real", provider_name: "runninghub", cost_acknowledged: true },
-            confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+            confirmation: { confirmation_level: "hard_gate", user_confirmed: true },
+            allow_live_provider: true
           },
           db
         )
@@ -753,7 +754,7 @@ test("M1 package shot generation creates mock generated clip with ffprobe valida
   }
 });
 
-test("M1 package shot generation hard-gates live provider submit by default", async () => {
+test("M1 legacy package-shot generation stays retired even when allow_live_provider is true", async () => {
   const db = openM0Database();
   try {
     const { project, storyboard } = setupOneShotProject(db);
@@ -763,14 +764,15 @@ test("M1 package shot generation hard-gates live provider submit by default", as
         storyboard_package_id: storyboard.storyboard_package_id,
         shot_id: storyboard.shots[0].shot_id,
         provider_execution: { provider: "real", provider_name: "runway", cost_acknowledged: true },
-        confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+        confirmation: { confirmation_level: "hard_gate", user_confirmed: true },
+        allow_live_provider: true
       },
       db
     );
 
     assert.equal(result.ok, false);
     if (result.ok) return;
-    assert.equal(result.error.code, "LIVE_PROVIDER_AUTHORIZATION_REQUIRED");
+    assert.equal(result.error.code, "PROVIDER_DISABLED");
   } finally {
     db.close();
   }
@@ -890,6 +892,58 @@ test("M1 provider output downloader retries every validated public address", asy
     });
     assert.equal(result.ok, true);
     assert.deepEqual(attempts, ["2001:4860:4860::8888", "8.8.8.8"]);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("[EEI-AWAIT-03] M1 provider output downloader revalidates authority after DNS, fetch, and body awaits", async () => {
+  const db = openM0Database(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "provider-output-authority-awaits-"));
+  const fixtureBytes = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
+  try {
+    const target = setupProviderOutputTarget(db, "Provider download authority awaits");
+    for (const failAt of [1, 2, 4]) {
+      let authorityChecks = 0;
+      let fetchCalls = 0;
+      const taskId = `authority-await-${failAt}`;
+      const result = await downloadProviderOutputToArtifact({
+        url: "https://cdn.example.test/output.mp4",
+        provider_name: "runninghub",
+        provider_job_id: taskId,
+        project_id: target.project_id,
+        shot_id: target.shot_id,
+        duration_seconds: 2,
+        aspect_ratio: "9:16",
+        storage_directory: root
+      }, db, {
+        storage_root: root,
+        resolve_hostname: async () => [{ address: "8.8.8.8", family: 4 }],
+        fetch_pinned_address: async () => {
+          fetchCalls += 1;
+          return new Response(fixtureBytes, {
+            status: 200,
+            headers: { "content-type": "video/mp4", "content-length": String(fixtureBytes.length) }
+          });
+        },
+        revalidate_execution_authority: () => {
+          authorityChecks += 1;
+          return authorityChecks === failAt
+            ? { code: "GENERATION_EXECUTION_AUTHORITY_STALE", message: "Synthetic post-await authority drift.", retryable: false }
+            : null;
+        }
+      });
+      assert.equal(result.ok, false, `failAt=${failAt}`);
+      if (!result.ok) assert.equal(result.error.code, "GENERATION_EXECUTION_AUTHORITY_STALE", `failAt=${failAt}`);
+      assert.equal(fetchCalls, failAt === 1 ? 0 : 1, `failAt=${failAt}`);
+      assert.equal(authorityChecks, failAt, `failAt=${failAt}`);
+      const artifact = db.prepare(`SELECT artifact_id FROM media_artifacts
+        WHERE json_valid(data_json) = 1 AND json_extract(data_json, '$.source.provider_job_id') = ?`)
+        .get(taskId);
+      assert.equal(artifact, undefined, `failAt=${failAt}`);
+    }
+    assert.equal(readdirSync(root).length, 0);
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });

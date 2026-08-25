@@ -10,6 +10,7 @@ import {
   openM0Database,
   regenerateShotVideo,
   registerMediaArtifact,
+  saveShot,
   startStoryboardVideoGeneration
 } from "../src/index.js";
 
@@ -76,7 +77,7 @@ test("M0-E approved review sets accepted clip", async () => {
   }
 });
 
-test("M0-E revision_needed saves rejection and regeneration preserves old artifact", async () => {
+test("[EEI-REGEN-02] M0-E revision_needed saves rejection and regeneration preserves old artifact", async () => {
   const db = openM0Database();
 
   try {
@@ -131,6 +132,56 @@ test("M0-E revision_needed saves rejection and regeneration preserves old artifa
       getShot(db, shot.shot_id)?.clip_versions.map((version) => version.review_status),
       ["rejected", "approved"]
     );
+  } finally {
+    db.close();
+  }
+});
+
+test("[EEI-REGEN-01] mock regeneration revalidates authority after await and writes no partial Artifact or Run", async () => {
+  const db = openM0Database();
+  try {
+    const { shot, run, artifactId } = await setupGeneratedShot(db);
+    const rejected = markShotClipReview({
+      shot_id: shot.shot_id,
+      artifact_id: artifactId,
+      decision: "revision_needed",
+      rejection_reasons: ["authority drift fixture"],
+      revision_instruction: {
+        summary: "Retry after review",
+        prompt_delta: "add motion",
+        negative_delta: "static",
+        priority: "high"
+      }
+    }, db);
+    assert.equal(rejected.ok, true);
+    const before = db.prepare(`SELECT
+        (SELECT COUNT(*) FROM generation_runs WHERE shot_id = ?) AS run_count,
+        (SELECT COUNT(*) FROM media_artifacts WHERE shot_id = ?) AS artifact_count`)
+      .get(shot.shot_id, shot.shot_id) as { run_count: number; artifact_count: number };
+
+    const regenerated = await regenerateShotVideo({
+      shot_id: shot.shot_id,
+      previous_run_id: run.run_id,
+      updated_prompt: "This output must not commit",
+      confirmation: { confirmation_level: "hard_gate", user_confirmed: true }
+    }, db, {
+      after_provider_await: () => {
+        const drifted = getShot(db, shot.shot_id);
+        assert.ok(drifted);
+        drifted.description = "Changed while mock Provider execution was awaited.";
+        saveShot(db, drifted);
+      }
+    });
+
+    assert.equal(regenerated.ok, false);
+    if (!regenerated.ok) assert.equal(regenerated.error.code, "GENERATION_EXECUTION_AUTHORITY_STALE");
+    const after = db.prepare(`SELECT
+        (SELECT COUNT(*) FROM generation_runs WHERE shot_id = ?) AS run_count,
+        (SELECT COUNT(*) FROM media_artifacts WHERE shot_id = ?) AS artifact_count`)
+      .get(shot.shot_id, shot.shot_id) as { run_count: number; artifact_count: number };
+    assert.deepEqual(after, before);
+    assert.ok(getMediaArtifact(db, artifactId));
+    assert.equal(getShot(db, shot.shot_id)?.clip_versions.length, 1);
   } finally {
     db.close();
   }
