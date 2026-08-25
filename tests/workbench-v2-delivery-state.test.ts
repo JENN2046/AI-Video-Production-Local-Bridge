@@ -90,12 +90,17 @@ test("delivery ledger rejects a duplicate lifecycle Event for one Job", () => {
   const db = openM0Database(":memory:");
   try {
     const projectId = createCurrentProject(db, "duplicate lifecycle");
-    db.prepare(`INSERT INTO workbench_delivery_jobs (job_id, project_id, job_type, state)
-      VALUES ('job_duplicate', ?, 'assembly', 'queued')`).run(projectId);
-    db.prepare(`INSERT INTO workbench_delivery_events (event_id, project_id, event_type, job_id)
-      VALUES ('event_queued_1', ?, 'assembly_queued', 'job_duplicate')`).run(projectId);
-    assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_events (event_id, project_id, event_type, job_id)
-      VALUES ('event_queued_2', ?, 'assembly_queued', 'job_duplicate')`).run(projectId), /UNIQUE constraint failed/);
+    const fingerprint = "a".repeat(64);
+    db.prepare(`INSERT INTO workbench_delivery_jobs (job_id, project_id, job_type, state, input_fingerprint)
+      VALUES ('job_duplicate', ?, 'assembly', 'queued', ?)`).run(projectId, fingerprint);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, job_id, from_state, to_state, input_fingerprint)
+      VALUES ('event_queued_1', ?, 'assembly_queued', 'job_duplicate', 'not_ready', 'assembling', ?)`)
+      .run(projectId, fingerprint);
+    assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, job_id, from_state, to_state, input_fingerprint)
+      VALUES ('event_queued_2', ?, 'assembly_queued', 'job_duplicate', 'not_ready', 'assembling', ?)`)
+      .run(projectId, fingerprint), /UNIQUE constraint failed/);
   } finally {
     db.close();
   }
@@ -190,12 +195,15 @@ test("terminal Job state requires matching terminal Event evidence", () => {
     const projectId = createCurrentProject(db, "terminal evidence");
     db.exec("BEGIN");
     try {
+      const fingerprint = "b".repeat(64);
       db.prepare(`INSERT INTO workbench_delivery_jobs
-        (job_id, project_id, job_type, state, terminal_event_id)
-        VALUES ('job_terminal_match', ?, 'assembly', 'succeeded', 'event_terminal_match')`).run(projectId);
+        (job_id, project_id, job_type, state, input_fingerprint, terminal_event_id, error_code, finished_at)
+        VALUES ('job_terminal_match', ?, 'assembly', 'failed', ?, 'event_terminal_match', 'TEST', CURRENT_TIMESTAMP)`)
+        .run(projectId, fingerprint);
       assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_events
-        (event_id, project_id, event_type, job_id)
-        VALUES ('event_terminal_match', ?, 'assembly_failed', 'job_terminal_match')`).run(projectId), /WORKBENCH_DELIVERY_TERMINAL_EVIDENCE_INVALID/);
+        (event_id, project_id, event_type, job_id, from_state, to_state, input_fingerprint)
+        VALUES ('event_terminal_match', ?, 'assembly_interrupted', 'job_terminal_match', 'assembling', 'ready_to_assemble', ?)`)
+        .run(projectId, fingerprint), /WORKBENCH_DELIVERY_TERMINAL_EVIDENCE_INVALID/);
     } finally {
       db.exec("ROLLBACK");
     }
@@ -209,8 +217,9 @@ test("direct terminal Job insertion fails closed without evidence", () => {
   try {
     const projectId = createCurrentProject(db, "direct terminal");
     assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, terminal_event_id)
-      VALUES ('job_direct_terminal', ?, 'export', 'failed', 'event_missing')`).run(projectId), /FOREIGN KEY constraint failed/);
+      (job_id, project_id, job_type, state, terminal_event_id, error_code, finished_at)
+      VALUES ('job_direct_terminal', ?, 'export', 'failed', 'event_missing', 'TEST', CURRENT_TIMESTAMP)`)
+      .run(projectId), /FOREIGN KEY constraint failed/);
     assert.equal((db.prepare("SELECT COUNT(*) count FROM workbench_delivery_jobs WHERE job_id = 'job_direct_terminal'").get() as { count: number }).count, 0);
   } finally {
     db.close();
@@ -221,14 +230,20 @@ test("terminal Job cannot bind a nonterminal lifecycle Event", () => {
   const db = openM0Database(":memory:");
   try {
     const projectId = createCurrentProject(db, "wrong terminal evidence");
-    db.prepare(`INSERT INTO workbench_delivery_jobs (job_id, project_id, job_type, state)
-      VALUES ('job_wrong_terminal', ?, 'assembly', 'queued')`).run(projectId);
-    db.prepare(`INSERT INTO workbench_delivery_events (event_id, project_id, event_type, job_id)
-      VALUES ('event_not_terminal', ?, 'assembly_queued', 'job_wrong_terminal')`).run(projectId);
+    const fingerprint = "c".repeat(64);
+    db.prepare(`INSERT INTO workbench_delivery_jobs (job_id, project_id, job_type, state, input_fingerprint)
+      VALUES ('job_wrong_terminal', ?, 'assembly', 'queued', ?)`).run(projectId, fingerprint);
+    db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, job_id, from_state, to_state, input_fingerprint)
+      VALUES ('event_not_terminal', ?, 'assembly_queued', 'job_wrong_terminal', 'not_ready', 'assembling', ?)`)
+      .run(projectId, fingerprint);
     db.exec("BEGIN");
     try {
       db.prepare(`UPDATE workbench_delivery_jobs
-        SET state = 'succeeded', terminal_event_id = 'event_not_terminal'
+        SET state = 'running', started_at = CURRENT_TIMESTAMP
+        WHERE job_id = 'job_wrong_terminal'`).run();
+      db.prepare(`UPDATE workbench_delivery_jobs
+        SET state = 'failed', terminal_event_id = 'event_not_terminal', error_code = 'TEST', finished_at = CURRENT_TIMESTAMP
         WHERE job_id = 'job_wrong_terminal'`).run();
       assert.throws(() => db.exec("COMMIT"), /FOREIGN KEY constraint failed/);
     } finally {
@@ -294,19 +309,23 @@ test("generic terminal evidence and global single-active Job constraints admit o
   try {
     const firstProject = createCurrentProject(db, "first active");
     const secondProject = createCurrentProject(db, "second active");
-    db.prepare(`INSERT INTO workbench_delivery_jobs (job_id, project_id, job_type, state)
-      VALUES ('job_active', ?, 'assembly', 'queued')`).run(firstProject);
-    assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs (job_id, project_id, job_type, state)
-      VALUES ('job_other_active', ?, 'export', 'running')`).run(secondProject), /UNIQUE constraint failed/);
+    const fingerprint = "d".repeat(64);
+    db.prepare(`INSERT INTO workbench_delivery_jobs (job_id, project_id, job_type, state, input_fingerprint)
+      VALUES ('job_active', ?, 'assembly', 'queued', ?)`).run(firstProject, fingerprint);
+    assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
+      (job_id, project_id, job_type, state, started_at)
+      VALUES ('job_other_active', ?, 'export', 'running', CURRENT_TIMESTAMP)`).run(secondProject), /UNIQUE constraint failed/);
 
     db.exec("BEGIN");
     try {
       db.prepare(`UPDATE workbench_delivery_jobs
-        SET state = 'interrupted', terminal_event_id = 'event_interrupted', error_code = 'TEST', updated_at = CURRENT_TIMESTAMP
+        SET state = 'interrupted', terminal_event_id = 'event_interrupted', error_code = 'TEST',
+          finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
         WHERE job_id = 'job_active'`).run();
       db.prepare(`INSERT INTO workbench_delivery_events
-        (event_id, project_id, event_type, job_id, reason_code)
-        VALUES ('event_interrupted', ?, 'assembly_interrupted', 'job_active', 'TEST')`).run(firstProject);
+        (event_id, project_id, event_type, job_id, from_state, to_state, input_fingerprint, reason_code)
+        VALUES ('event_interrupted', ?, 'assembly_interrupted', 'job_active', 'assembling', 'ready_to_assemble', ?, 'TEST')`)
+        .run(firstProject, fingerprint);
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -327,15 +346,29 @@ test("delivery Job identity is immutable in every lifecycle state without ledger
       const jobId = `job_${state}`;
       const terminal = ["succeeded", "failed", "interrupted"].includes(state);
       const terminalEventId = terminal ? `event_${state}` : null;
+      const fingerprint = "e".repeat(64);
+      const outputArtifactId = state === "succeeded" ? `artifact_${state}` : null;
+      if (outputArtifactId) {
+        withWorkbenchProductionMutationAuthority(db, {
+          kind: "artifact", project_id: projectId, object_id: outputArtifactId
+        }, () => insertFinalArtifact(db, projectId, outputArtifactId));
+      }
       if (terminal) db.exec("BEGIN");
       try {
         db.prepare(`INSERT INTO workbench_delivery_jobs
-          (job_id, project_id, job_type, state, terminal_event_id)
-          VALUES (?, ?, 'assembly', ?, ?)`).run(jobId, projectId, state, terminalEventId);
+          (job_id, project_id, job_type, state, input_fingerprint, output_artifact_id, terminal_event_id,
+           error_code, started_at, finished_at)
+          VALUES (?, ?, 'assembly', ?, ?, ?, ?, ?, ?, ?)`)
+          .run(jobId, projectId, state, fingerprint, outputArtifactId, terminalEventId,
+            state === "failed" || state === "interrupted" ? "TEST" : "",
+            state === "running" || state === "succeeded" || state === "failed" ? new Date().toISOString() : null,
+            terminal ? new Date().toISOString() : null);
         if (terminal) {
           db.prepare(`INSERT INTO workbench_delivery_events
-            (event_id, project_id, event_type, job_id)
-            VALUES (?, ?, ?, ?)`).run(terminalEventId, projectId, `assembly_${state}`, jobId);
+            (event_id, project_id, event_type, job_id, artifact_id, from_state, to_state, input_fingerprint)
+            VALUES (?, ?, ?, ?, ?, 'assembling', ?, ?)`)
+            .run(terminalEventId, projectId, `assembly_${state}`, jobId, outputArtifactId,
+              state === "succeeded" ? "final_review" : "ready_to_assemble", fingerprint);
           db.exec("COMMIT");
         }
       } catch (error) {

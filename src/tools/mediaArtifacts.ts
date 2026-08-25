@@ -343,7 +343,45 @@ function persistBlob(db: M0Database, blob: MediaBlob): MediaBlob {
   return blob;
 }
 
-function persistMediaArtifactInternal(db: M0Database, artifact: MediaArtifact, allowStatusTransition: boolean, mediaRoot = paths.mediaRoot): void {
+interface AssemblyFinalArtifactAuthority {
+  project_id: string;
+  job_id: string;
+}
+
+function hasAssemblyFinalArtifactAuthority(
+  db: M0Database,
+  artifact: MediaArtifact,
+  authority: AssemblyFinalArtifactAuthority | undefined
+): boolean {
+  if (!authority
+    || artifact.artifact_type !== "video"
+    || artifact.role !== "final_video"
+    || artifact.status !== "active"
+    || artifact.linked_objects.project_id !== authority.project_id
+    || artifact.linked_objects.shot_id !== ""
+    || artifact.source.provider_job_id !== authority.job_id) return false;
+  const row = db.prepare(`
+    SELECT 1 AS authorized
+    FROM workbench_delivery_jobs job
+    JOIN workbench_delivery_state delivery ON delivery.project_id = job.project_id
+    WHERE job.job_id = ?
+      AND job.project_id = ?
+      AND job.job_type = 'assembly'
+      AND job.state = 'running'
+      AND job.output_artifact_id IS NULL
+      AND delivery.workflow_state = 'assembling'
+      AND delivery.assembly_input_fingerprint IS job.input_fingerprint
+  `).get(authority.job_id, authority.project_id) as { authorized: number } | undefined;
+  return row?.authorized === 1;
+}
+
+function persistMediaArtifactInternal(
+  db: M0Database,
+  artifact: MediaArtifact,
+  allowStatusTransition: boolean,
+  mediaRoot = paths.mediaRoot,
+  assemblyAuthority?: AssemblyFinalArtifactAuthority
+): void {
   const manageTransaction = !databaseIsInTransaction(db);
   try {
     if (manageTransaction) db.exec("BEGIN IMMEDIATE");
@@ -351,7 +389,7 @@ function persistMediaArtifactInternal(db: M0Database, artifact: MediaArtifact, a
     const governedProject = projectId
       ? db.prepare("SELECT 1 AS present FROM workbench_delivery_state WHERE project_id = ?").get(projectId)
       : undefined;
-    if (projectId && governedProject) {
+    if (projectId && governedProject && !hasAssemblyFinalArtifactAuthority(db, artifact, assemblyAuthority)) {
       const writable = assertWorkbenchContentMutationAllowed(db, projectId);
       if (!writable.ok) throw new WorkbenchProductionMutationError(writable.error.code);
     }
@@ -1208,7 +1246,7 @@ function commitStagedMediaArtifact(
   db: M0Database,
   artifact: MediaArtifact,
   allowStatusTransition: boolean,
-  options: { after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; remove_post_commit_file?: (finalPath: string) => void; media_root?: string } = {}
+  options: { after_journal_staged?: (stagingPath: string) => void; after_pending_placed?: (pendingPath: string) => void; after_file_placed?: (finalPath: string) => void; remove_post_commit_file?: (finalPath: string) => void; media_root?: string; assembly_authority?: AssemblyFinalArtifactAuthority } = {}
 ): RegisterMediaArtifactResult {
   const activationId = `activation_${randomUUID()}`;
   const mediaRoot = resolve(options.media_root ?? paths.mediaRoot);
@@ -1280,7 +1318,7 @@ function commitStagedMediaArtifact(
     }
     if (manageTransaction) db.exec("BEGIN IMMEDIATE");
     try {
-      persistMediaArtifactInternal(db, artifact, allowStatusTransition, mediaRoot);
+      persistMediaArtifactInternal(db, artifact, allowStatusTransition, mediaRoot, options.assembly_authority);
       db.prepare("UPDATE media_activation_journal SET state = 'committed', final_path = ?, artifact_json = ?, error_code = '', updated_at = CURRENT_TIMESTAMP WHERE activation_id = ? AND state = 'file_placed'")
         .run(artifact.storage.uri, JSON.stringify(artifact), activationId);
       if (manageTransaction) db.exec("COMMIT");
@@ -2189,6 +2227,30 @@ export function registerMediaArtifact(input: RegisterMediaArtifactInput, db = op
   }
 
   return result;
+}
+
+export function registerAssemblyFinalMediaArtifact(
+  input: RegisterMediaArtifactInput,
+  jobId: string,
+  db: M0Database
+): RegisterMediaArtifactResult {
+  const projectId = input.linked_objects?.project_id ?? "";
+  if (input.artifact_type !== "video"
+    || input.role !== "final_video"
+    || input.source.kind !== "provider_output_file"
+    || !projectId
+    || Boolean(input.linked_objects?.shot_id)
+    || input.provenance?.provider_job_id !== jobId) {
+    return { ok: false, error: { code: "ASSEMBLY_FINAL_ARTIFACT_INVALID", message: "Assembly final Artifact binding is invalid." } };
+  }
+  const authority = { project_id: projectId, job_id: jobId };
+  const placeholder = buildArtifact(input, "active", "", "", "video/mp4");
+  if (!hasAssemblyFinalArtifactAuthority(db, placeholder, authority)) {
+    return { ok: false, error: { code: "ASSEMBLY_FINALIZATION_AUTHORITY_INVALID", message: "Assembly finalization authority is no longer current." } };
+  }
+  const copied = copyProviderOutputFile(input);
+  if (!copied.ok) return copied;
+  return commitStagedMediaArtifact(db, copied.artifact, false, { assembly_authority: authority });
 }
 
 export function activatePendingMediaArtifact(input: ActivatePendingMediaArtifactInput, db = openM0Database()): ActivatePendingMediaArtifactResult {

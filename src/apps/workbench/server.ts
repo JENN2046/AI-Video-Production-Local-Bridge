@@ -9,6 +9,7 @@ import { getMediaArtifact, recoverMediaActivations, validateImageFile } from "..
 import { generationWorkerStatus, resumeWorkbenchGenerationJobs } from "../../packages/providers/index.js";
 import { openM0Database } from "../../packages/storage/index.js";
 import { checkProviderEnv } from "../../tools/providerEnv.js";
+import { deliveryWorkerStatus, interruptUnfinishedWorkbenchDeliveryJobs } from "../../tools/assembly.js";
 import { resolveFfmpegExecutable, resolveFfprobeExecutable } from "../../webgpt-v4/media.js";
 import {
   createPersonalReadonlyOperationsService,
@@ -157,8 +158,10 @@ async function workbenchReadiness(): Promise<{ status: number; body: Record<stri
     readinessCache = { checks: staticChecks, expires: Date.now() + 30_000 };
   }
   let worker = false;
+  let deliveryWorker = false;
   try { worker = withDatabase((db) => generationWorkerStatus(db).ready); } catch { worker = false; }
-  const checks = { ...staticChecks, worker };
+  try { deliveryWorker = withDatabase((db) => deliveryWorkerStatus(db).ready); } catch { deliveryWorker = false; }
+  const checks = { ...staticChecks, worker, delivery_worker: deliveryWorker };
   const ok = Object.values(checks).every(Boolean);
   const result = { status: ok ? 200 : 503, body: { ok, service: "workbench-v2", checks } };
   return result;
@@ -300,6 +303,7 @@ export async function startWorkbenchApplication(
 ): Promise<WorkbenchRuntime> {
   ensureM0Directories();
   withDatabase((db) => recoverMediaActivations(db));
+  withDatabase((db) => interruptUnfinishedWorkbenchDeliveryJobs(db));
   resumeWorkbenchGenerationJobs();
   const actionNonce = randomUUID();
   const shutdown = options.shutdown_token?.trim() && options.on_shutdown_requested

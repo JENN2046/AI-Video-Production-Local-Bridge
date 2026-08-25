@@ -83,7 +83,7 @@ async function main(): Promise<void> {
     const approval = approveH3GeneratedClip({ shot_id: shotId, artifact_id: generation.generated_artifact_id, write_report: false }, db);
     if (!approval.ok) throw new Error(approval.error.message);
 
-    const assembly = executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, undefined, db);
+    const assembly = await executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, undefined, db);
     if (!assembly.ok) throw new Error(assembly.error.message);
 
     const proposalResult = createMemorySavebackProposal({ project_id: project.project_id, write_report: false }, db);

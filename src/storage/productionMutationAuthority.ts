@@ -7,7 +7,11 @@ export type WorkbenchProductionMutationKind =
   | "storyboard_package"
   | "artifact"
   | "regeneration_request"
-  | "readiness_refresh";
+  | "readiness_refresh"
+  | "assembly_queue"
+  | "assembly_failure"
+  | "assembly_interruption"
+  | "assembly_finalization";
 
 export interface WorkbenchProductionMutationCapability {
   kind: WorkbenchProductionMutationKind;

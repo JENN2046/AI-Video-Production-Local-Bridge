@@ -1137,11 +1137,11 @@ export function h4FinalAssemblyWorkbenchSummary(
   };
 }
 
-export function executeH4FinalAssembly(
+export async function executeH4FinalAssembly(
   input: { project_id?: string; human_confirmation: boolean; write_report?: boolean },
   state = loadH1WorkbenchState(),
   db = openM0Database()
-): H1MutationResult<{ summary: H4FinalAssemblyWorkbenchSummary; report: unknown; final_video_artifact_id: string }> {
+): Promise<H1MutationResult<{ summary: H4FinalAssemblyWorkbenchSummary; report: unknown; final_video_artifact_id: string }>> {
   if (input.human_confirmation !== true) {
     return { ok: false, error: toolError("HUMAN_CONFIRMATION_REQUIRED", "Final assembly requires explicit human confirmation.") };
   }
@@ -1154,7 +1154,7 @@ export function executeH4FinalAssembly(
     return { ok: false, error: toolError("FINAL_ASSEMBLY_NOT_READY", before.blockers.join(", ")) };
   }
 
-  const assembled = assembleFinalVideo(
+  const assembled = await assembleFinalVideo(
     {
       project_id: project.project_id,
       confirmation: { confirmation_level: "explicit", user_confirmed: true }

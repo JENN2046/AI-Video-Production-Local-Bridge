@@ -1,10 +1,10 @@
 # User Guide
 
-Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS` remains historical, commit-scoped evidence. Canonical source now includes Production Mutation Authority and requires `workbench-v2-8` / ledger `0013`; the activity database's last explicitly accepted runtime boundary remains `workbench-v2-6` / ledger `0011`, and current-main activity runtime acceptance is not established. The owner-only `0.1.0-beta.5` / ledger `0008`, bounded Unified Director and isolated Media Gateway MP4 fixture results remain historical evidence; byte-range plus broader Media, Provider, Memory and multi-user gates remain separate.
+Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS` remains historical, commit-scoped evidence. Canonical source now includes Production Mutation Authority and Durable FFmpeg Assembly and requires `workbench-v2-9` / ledger `0014`; the activity database's last explicitly accepted runtime boundary remains `workbench-v2-6` / ledger `0011`, and current-main activity runtime acceptance is not established. The owner-only `0.1.0-beta.5` / ledger `0008`, bounded Unified Director and isolated Media Gateway MP4 fixture results remain historical evidence; byte-range plus broader Media, Provider, Memory and multi-user gates remain separate.
 
 ## Current-main source / activity database boundary
 
-Canonical source requires `workbench-v2-8` / ledger `0013`. The activity database has passed only its last explicitly accepted `workbench-v2-6` / `0011` migration and bounded runtime acceptance; that evidence does not transfer to current main. Runtime startup never migrates a database automatically. A separately authorized `0011 → 0013` activity-database admission/migration and runtime acceptance are required before using the current source/runtime combination. This boundary does not authorize Provider execution, automatic Snapshot publishing, Memory saveback or production delivery.
+Canonical source requires `workbench-v2-9` / ledger `0014`. The activity database has passed only its last explicitly accepted `workbench-v2-6` / `0011` migration and bounded runtime acceptance; that evidence does not transfer to current main. Runtime startup never migrates a database automatically. A separately authorized `0011 → 0014` activity-database admission/migration and runtime acceptance are required before using the current source/runtime combination. This boundary does not authorize Provider execution, automatic Snapshot publishing, Memory saveback or production delivery.
 
 ## What Jenn can do today
 
@@ -12,7 +12,7 @@ Canonical source requires `workbench-v2-8` / ledger `0013`. The activity databas
 
 The Workbench is the human production surface for projects, SHOTs, Storyboard, Generation, Review, Delivery and system operations. It is also the only surface allowed to confirm paid Provider work or adopt production decisions.
 
-The following is the historically accepted `0011` local startup sequence. Do not run it from current main against the activity database until the separate `0011 → 0013` admission/migration and runtime-acceptance gate has passed. In any later authorized use, verify the activity database and keep `REAL_PROVIDER_ENABLED=false` unless a separate Provider authorization exists:
+The following is the historically accepted `0011` local startup sequence. Do not run it from current main against the activity database until the separate `0011 → 0014` admission/migration and runtime-acceptance gate has passed. In any later authorized use, verify the activity database and keep `REAL_PROVIDER_ENABLED=false` unless a separate Provider authorization exists:
 
 ```powershell
 Set-Location "<verified repository root that owns the accepted data\app.sqlite>"
@@ -51,7 +51,7 @@ Allowed actions are view, refresh, select project, expand SHOT, switch detail an
 
 ## Snapshot operations (Unified profile only; manual confirmation required)
 
-New Snapshot exports from canonical source require `workbench-v2-8` / ledger `0013`. Previously published signed Snapshot v4 data may retain explicit previous-source compatibility with `workbench-v2-6` / `0011`, but that compatibility is not authorization to publish from or run current main against the activity database. The dedicated Unified publisher profile and Unified Snapshot store remain manual boundaries: do not invoke publish, renewal or recovery without the separate human confirmation required for that one operation. The default `系统 → 只读 App 发布` Workbench surface and its `data/webgpt/publisher/profile.json` remain legacy `/mcp` to `/snapshot` controls pending their own bounded acceptance.
+New Snapshot exports from canonical source require `workbench-v2-9` / ledger `0014`. Previously published signed Snapshot v4 data may retain explicit previous-source compatibility with `workbench-v2-6` / `0011`, but that compatibility is not authorization to publish from or run current main against the activity database. The dedicated Unified publisher profile and Unified Snapshot store remain manual boundaries: do not invoke publish, renewal or recovery without the separate human confirmation required for that one operation. The default `系统 → 只读 App 发布` Workbench surface and its `data/webgpt/publisher/profile.json` remain legacy `/mcp` to `/snapshot` controls pending their own bounded acceptance.
 
 Unified currently has no low-disclosure remote freshness or `renewal_due` status command/UI. Do not reuse the legacy `fresh`, `renewal_due`, `no_snapshot`, `snapshot_expired` or `service_unavailable` labels for Unified decisions, and do not infer the existing remote Snapshot's lifetime from a local preflight result.
 

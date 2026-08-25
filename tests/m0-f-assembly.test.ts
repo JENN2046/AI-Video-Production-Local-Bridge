@@ -50,7 +50,7 @@ async function setupApprovedProject(db: ReturnType<typeof openM0Database>) {
   return project.project_id;
 }
 
-test("M0-F legacy placeholder assembly fails closed without durable delivery side effects", async () => {
+test("M0-F durable assembly commits final media and delivery evidence", async () => {
   const db = openM0Database(":memory:");
   try {
     const projectId = await setupApprovedProject(db);
@@ -63,19 +63,33 @@ test("M0-F legacy placeholder assembly fails closed without durable delivery sid
       runs: db.prepare("SELECT COUNT(*) count FROM generation_runs").get()
     };
 
-    const assembled = assembleFinalVideo({
+    const assembled = await assembleFinalVideo({
       project_id: projectId,
       confirmation: { confirmation_level: "explicit", user_confirmed: true }
     }, db);
 
-    assert.equal(assembled.ok, false);
-    if (!assembled.ok) assert.equal(assembled.error.code, "LEGACY_ASSEMBLY_INCOMPATIBLE");
-    assert.deepEqual(db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(projectId), before.project);
-    assert.deepEqual(db.prepare("SELECT * FROM workbench_delivery_state WHERE project_id = ?").get(projectId), before.delivery);
-    assert.deepEqual(db.prepare("SELECT COUNT(*) count FROM workbench_delivery_jobs").get(), before.jobs);
-    assert.deepEqual(db.prepare("SELECT COUNT(*) count FROM workbench_delivery_events").get(), before.events);
-    assert.deepEqual(db.prepare("SELECT COUNT(*) count FROM media_artifacts").get(), before.artifacts);
-    assert.deepEqual(db.prepare("SELECT COUNT(*) count FROM generation_runs").get(), before.runs);
+    assert.equal(assembled.ok, true);
+    if (!assembled.ok) return;
+    assert.equal(assembled.run.provider.provider_name, "local_assembly");
+    const delivery = db.prepare(`SELECT workflow_state, current_final_artifact_id FROM workbench_delivery_state
+      WHERE project_id = ?`).get(projectId) as { workflow_state: string; current_final_artifact_id: string };
+    assert.equal(delivery.workflow_state, "final_review");
+    assert.equal(delivery.current_final_artifact_id, assembled.final_video_artifact_id);
+    assert.equal(
+      JSON.parse((db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(projectId) as { data_json: string }).data_json)
+        .exports.final_video_artifact_id,
+      assembled.final_video_artifact_id
+    );
+    assert.equal((db.prepare("SELECT COUNT(*) count FROM workbench_delivery_jobs").get() as { count: number }).count,
+      (before.jobs as { count: number }).count + 1);
+    assert.equal((db.prepare("SELECT COUNT(*) count FROM workbench_delivery_events").get() as { count: number }).count >
+      (before.events as { count: number }).count, true);
+    assert.equal((db.prepare("SELECT COUNT(*) count FROM media_artifacts").get() as { count: number }).count,
+      (before.artifacts as { count: number }).count + 1);
+    assert.equal((db.prepare("SELECT COUNT(*) count FROM generation_runs").get() as { count: number }).count,
+      (before.runs as { count: number }).count + 1);
+    assert.notDeepEqual(db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(projectId), before.project);
+    assert.notDeepEqual(db.prepare("SELECT * FROM workbench_delivery_state WHERE project_id = ?").get(projectId), before.delivery);
   } finally {
     db.close();
   }

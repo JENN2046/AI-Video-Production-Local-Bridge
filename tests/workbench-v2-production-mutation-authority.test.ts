@@ -986,9 +986,11 @@ test("any queued or running Delivery Job freezes Project, SHOT, Package, and Art
     for (const jobState of ["queued", "running"] as const) {
       const fixture = currentFixture(true);
       try {
-        fixture.db.prepare(`INSERT INTO workbench_delivery_jobs (job_id, project_id, job_type, state)
-          VALUES (?, ?, ?, ?)`)
-          .run(`job_freeze_${jobType}_${jobState}`, fixture.project.project_id, jobType, jobState);
+        fixture.db.prepare(`INSERT INTO workbench_delivery_jobs
+          (job_id, project_id, job_type, state, started_at)
+          VALUES (?, ?, ?, ?, ?)`)
+          .run(`job_freeze_${jobType}_${jobState}`, fixture.project.project_id, jobType, jobState,
+            jobState === "running" ? new Date().toISOString() : null);
         assertMutationError(() => saveProject(fixture.db, { ...fixture.project, brief: { blocked: jobType } }), "DELIVERY_JOB_ACTIVE");
         assertMutationError(() => saveShot(fixture.db, { ...fixture.shot, description: `blocked ${jobType}` }), "DELIVERY_JOB_ACTIVE");
         assert.throws(() => saveStoryboardPackage(fixture.db, {

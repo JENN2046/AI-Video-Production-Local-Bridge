@@ -143,7 +143,7 @@ test("M0-R1 regenerated shot artifact is valid mp4", async () => {
   }
 });
 
-test("M0-R1 legacy final assembly is disabled until the durable Assembly owner is stacked", async () => {
+test("M0-R1 durable final assembly produces a valid governed mp4", async () => {
   const db = openM0Database();
 
   try {
@@ -155,15 +155,21 @@ test("M0-R1 legacy final assembly is disabled until the durable Assembly owner i
       assert.equal(review.ok, true);
     }
 
-    const assembled = assembleFinalVideo(
+    const assembled = await assembleFinalVideo(
       {
         project_id: project.project_id,
         confirmation: { confirmation_level: "explicit", user_confirmed: true }
       },
       db
     );
-    assert.equal(assembled.ok, false);
-    if (!assembled.ok) assert.equal(assembled.error.code, "LEGACY_ASSEMBLY_INCOMPATIBLE");
+    assert.equal(assembled.ok, true);
+    if (!assembled.ok) return;
+    assert.equal(assembled.run.provider.provider_name, "local_assembly");
+    assertValidMp4Artifact(getMediaArtifact(db, assembled.final_video_artifact_id));
+    const delivery = db.prepare(`SELECT workflow_state, current_final_artifact_id FROM workbench_delivery_state
+      WHERE project_id = ?`).get(project.project_id) as { workflow_state: string; current_final_artifact_id: string };
+    assert.equal(delivery.workflow_state, "final_review");
+    assert.equal(delivery.current_final_artifact_id, assembled.final_video_artifact_id);
   } finally {
     db.close();
   }
