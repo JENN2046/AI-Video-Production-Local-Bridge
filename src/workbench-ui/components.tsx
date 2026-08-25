@@ -226,6 +226,7 @@ export function ProjectPicker({
   placeholder?: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const listboxId = `project-picker-${useId().replaceAll(":", "")}`;
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(value);
@@ -242,6 +243,10 @@ export function ProjectPicker({
   useEffect(() => {
     setActiveIndex((current) => Math.max(0, Math.min(current, Math.max(0, items.length - 1))));
   }, [items.length]);
+  useEffect(() => {
+    if (!open) return;
+    optionRefs.current[activeIndex]?.scrollIntoView?.({ block: "nearest" });
+  }, [activeIndex, items.length, open]);
   useEffect(() => {
     const close = (event: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
@@ -281,6 +286,7 @@ export function ProjectPicker({
       role="combobox"
       value={text}
       onFocus={() => { setOpen(true); setActiveIndex(Math.max(0, items.findIndex((item) => item.project.project_id === value))); }}
+      onBlur={() => setOpen(false)}
       onChange={(event) => { setText(event.target.value); onChange(""); setActiveIndex(0); setOpen(true); }}
       onKeyDown={onKeyDown}
       placeholder={placeholder}
@@ -290,9 +296,10 @@ export function ProjectPicker({
       aria-controls={listboxId}
       aria-activedescendant={open && items[activeIndex] ? `${listboxId}-option-${activeIndex}` : undefined}
     /></div>
-    {open && <div id={listboxId} className={s.projectPickerMenu} role="listbox" aria-label="项目搜索结果">
+    {open && <div id={listboxId} className={s.projectPickerMenu} role={items.length ? "listbox" : "status"} aria-label={items.length ? "项目搜索结果" : undefined}>
       {query.isLoading ? <span className={s.projectPickerMessage}>正在搜索</span> : items.length ? items.map((item, index) => <button
         id={`${listboxId}-option-${index}`}
+        ref={(element) => { optionRefs.current[index] = element; }}
         type="button"
         role="option"
         tabIndex={-1}

@@ -22,6 +22,16 @@ async function firstActiveProjectId(request: APIRequestContext): Promise<string>
   return project!.project_id;
 }
 
+async function expectMainPageReady(page: Page, label: string): Promise<void> {
+  if (label === "指挥台") await expect(page.getByRole("region", { name: "生产指标" })).toBeVisible();
+  else if (label === "项目") await expect(page.locator('section[class*="_projectList_"]')).toBeVisible();
+  else if (label === "收件箱" || label === "资产库") await expect(page.locator('[class*="_masterDetail_"]')).toBeVisible();
+  else if (label === "Director") await expect(page.getByRole("region", { name: "Director 边界状态" })).toBeVisible();
+  else if (label === "系统") await expect(page.getByRole("heading", { name: "单 SHOT 单次提交" })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+}
+
 test("素材隔离的可见项选择和筛选往返不会跳顶", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/v2/inbox/quarantine?status=excluded");
@@ -93,6 +103,7 @@ for (const [label, path, heading] of [
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(path);
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+    await expectMainPageReady(page, label);
     await expectNoWcagViolations(page, label);
   });
 }
@@ -116,6 +127,38 @@ test("移动端五入口和 More sheet 的焦点圈定可用", async ({ page }) 
   await page.keyboard.press("Escape");
   await expect(sheet).toBeHidden();
   await expect(more).toBeFocused();
+});
+
+test("项目选择器长列表保持活动选项可见且 ARIA 结构有效", async ({ page }) => {
+  await page.route("**/api/v2/projects?scope=daily**", async (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      ok: true,
+      data: Array.from({ length: 20 }, (_, index) => ({ project: { project_id: `picker_project_${index}`, title: `选择器项目 ${index + 1}` } })),
+      meta: { limit: 20, offset: 0, total: 20, has_more: false }
+    })
+  }));
+  await page.setViewportSize({ width: 820, height: 900 });
+  await page.goto("/v2/assets/media");
+  await expect(page.locator('[class*="_masterDetail_"]')).toBeVisible();
+  const picker = page.getByRole("combobox", { name: "搜索项目名称或 ID" });
+  await picker.focus();
+  const listbox = page.getByRole("listbox", { name: "项目搜索结果" });
+  await expect(listbox.getByRole("option")).toHaveCount(20);
+  await picker.press("End");
+  const activeId = await picker.getAttribute("aria-activedescendant");
+  expect(activeId).toBeTruthy();
+  const activeOption = page.locator(`#${activeId}`);
+  await expect(activeOption).toBeVisible();
+  const bounds = await Promise.all([listbox.boundingBox(), activeOption.boundingBox()]);
+  expect(bounds[0]).toBeTruthy();
+  expect(bounds[1]).toBeTruthy();
+  expect(bounds[1]!.y).toBeGreaterThanOrEqual(bounds[0]!.y);
+  expect(bounds[1]!.y + bounds[1]!.height).toBeLessThanOrEqual(bounds[0]!.y + bounds[0]!.height + 1);
+  await expectNoWcagViolations(page, "项目选择器长列表");
+  await picker.press("Tab");
+  await expect(listbox).toBeHidden();
 });
 
 test("五个项目页签使用真实 Workspace 投影并通过 WCAG 2.2 A/AA 自动扫描", async ({ page, request }) => {

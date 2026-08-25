@@ -96,6 +96,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .projectPickerMenu button { display: flex; flex-direction: column; width: 100%; min-height: 46px; padding: 7px 9px; border: 0; border-radius: 4px; background: transparent; text-align: left; cursor: pointer; }
 .projectPickerMenu button:hover, .projectPickerMenu button[aria-selected="true"] { background: var(--blue-soft); }
 .projectPickerMenu .projectPickerOptionActive { background: #deebff; box-shadow: inset 3px 0 #0c66e4; }
+.projectPickerMenu .projectPickerOptionActive small { color: #172b4d; }
 .projectPickerMenu strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .projectPickerMenu small, .projectPickerMessage { margin-top: 3px; color: var(--muted); font-size: 9px; }
 .projectPickerMessage { display: block; padding: 12px; text-align: center; }

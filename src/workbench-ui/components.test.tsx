@@ -5,10 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Modal, ProjectPicker, SegmentedTabs } from "./components";
 
+const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   document.getElementById("root")?.remove();
+  if (originalScrollIntoView) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: originalScrollIntoView });
+  else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
 });
 
 describe("Workbench accessible interaction primitives", () => {
@@ -63,13 +67,12 @@ describe("Workbench accessible interaction primitives", () => {
   });
 
   it("supports the complete combobox/listbox keyboard selection model", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       ok: true,
-      data: [
-        { project: { project_id: "project_a", title: "项目 A" } },
-        { project: { project_id: "project_b", title: "项目 B" } }
-      ],
-      meta: { limit: 20, offset: 0, total: 2, has_more: false }
+      data: Array.from({ length: 20 }, (_, index) => ({ project: { project_id: `project_${index}`, title: `项目 ${String.fromCharCode(65 + index)}` } })),
+      meta: { limit: 20, offset: 0, total: 20, has_more: false }
     }), { status: 200, headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -81,6 +84,10 @@ describe("Workbench accessible interaction primitives", () => {
     const combobox = screen.getByRole("combobox", { name: "搜索项目名称或 ID" });
     fireEvent.focus(combobox);
     expect(await screen.findByRole("option", { name: /项目 A/ })).toBeInTheDocument();
+    fireEvent.keyDown(combobox, { key: "End" });
+    await waitFor(() => expect(combobox.getAttribute("aria-activedescendant")).toContain("option-19"));
+    await waitFor(() => expect(scrollIntoView).toHaveBeenLastCalledWith({ block: "nearest" }));
+    fireEvent.keyDown(combobox, { key: "Home" });
     fireEvent.keyDown(combobox, { key: "ArrowDown" });
     await waitFor(() => expect(combobox.getAttribute("aria-activedescendant")).toContain("option-1"));
     fireEvent.keyDown(combobox, { key: "Enter" });
@@ -90,5 +97,22 @@ describe("Workbench accessible interaction primitives", () => {
     expect(combobox).toHaveAttribute("aria-expanded", "true");
     fireEvent.keyDown(combobox, { key: "Escape" });
     expect(combobox).toHaveAttribute("aria-expanded", "false");
+    fireEvent.keyDown(combobox, { key: "ArrowDown" });
+    fireEvent.blur(combobox);
+    expect(combobox).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("keeps loading and empty picker messages outside listbox semantics", async () => {
+    let resolveFetch!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(() => new Promise<Response>((resolve) => { resolveFetch = resolve; })));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><ProjectPicker value="" onChange={() => undefined} /></QueryClientProvider>);
+    const combobox = screen.getByRole("combobox", { name: "搜索项目名称或 ID" });
+    fireEvent.focus(combobox);
+    expect(await screen.findByRole("status")).toHaveTextContent("正在搜索");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    resolveFetch(new Response(JSON.stringify({ ok: true, data: [], meta: { limit: 20, offset: 0, total: 0, has_more: false } }), { status: 200, headers: { "content-type": "application/json" } }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("没有匹配项目"));
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 });
