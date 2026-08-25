@@ -2267,6 +2267,345 @@ const PRODUCTION_MUTATION_AUTHORITY_SQL = `
   UPDATE m0_meta SET value = 'workbench-v2-8', updated_at = CURRENT_TIMESTAMP WHERE key = 'schema_version';
 `;
 
+const DURABLE_ASSEMBLY_SQL = `
+  ALTER TABLE workbench_delivery_jobs ADD COLUMN input_fingerprint TEXT;
+  ALTER TABLE workbench_delivery_jobs ADD COLUMN started_at TEXT;
+  ALTER TABLE workbench_delivery_jobs ADD COLUMN finished_at TEXT;
+
+  ALTER TABLE workbench_delivery_events ADD COLUMN from_state TEXT NOT NULL DEFAULT '';
+  ALTER TABLE workbench_delivery_events ADD COLUMN to_state TEXT NOT NULL DEFAULT '';
+  ALTER TABLE workbench_delivery_events ADD COLUMN input_fingerprint TEXT;
+
+  DROP TRIGGER workbench_delivery_state_production_owner;
+  CREATE TRIGGER workbench_delivery_state_production_owner
+  BEFORE UPDATE ON workbench_delivery_state
+  WHEN OLD.project_id IS NOT NEW.project_id
+    OR OLD.created_at IS NOT NEW.created_at
+    OR NOT (
+      (
+        OLD.workflow_state IS NEW.workflow_state
+        AND OLD.current_final_artifact_id IS NEW.current_final_artifact_id
+        AND OLD.legacy_final_artifact_id IS NEW.legacy_final_artifact_id
+        AND OLD.assembly_input_fingerprint IS NEW.assembly_input_fingerprint
+        AND OLD.approved_artifact_id IS NEW.approved_artifact_id
+        AND OLD.latest_export_id IS NEW.latest_export_id
+        AND OLD.last_assembled_at IS NEW.last_assembled_at
+        AND OLD.latest_exported_at IS NEW.latest_exported_at
+        AND OLD.closed_at IS NEW.closed_at
+      )
+      OR (
+        OLD.workflow_state = 'ready_to_assemble'
+        AND NEW.workflow_state = 'not_ready'
+        AND NEW.assembly_input_fingerprint IS NULL
+        AND OLD.current_final_artifact_id IS NEW.current_final_artifact_id
+        AND OLD.legacy_final_artifact_id IS NEW.legacy_final_artifact_id
+        AND OLD.approved_artifact_id IS NEW.approved_artifact_id
+        AND OLD.latest_export_id IS NEW.latest_export_id
+        AND OLD.last_assembled_at IS NEW.last_assembled_at
+        AND OLD.latest_exported_at IS NEW.latest_exported_at
+        AND OLD.closed_at IS NEW.closed_at
+      )
+      OR (
+        OLD.workflow_state = 'not_ready'
+        AND NEW.workflow_state = 'ready_to_assemble'
+        AND NEW.assembly_input_fingerprint IS NULL
+        AND workbench_production_mutation_authorized('readiness_refresh', OLD.project_id, OLD.project_id) = 1
+        AND OLD.current_final_artifact_id IS NEW.current_final_artifact_id
+        AND OLD.legacy_final_artifact_id IS NEW.legacy_final_artifact_id
+        AND OLD.approved_artifact_id IS NEW.approved_artifact_id
+        AND OLD.latest_export_id IS NEW.latest_export_id
+        AND OLD.last_assembled_at IS NEW.last_assembled_at
+        AND OLD.latest_exported_at IS NEW.latest_exported_at
+        AND OLD.closed_at IS NEW.closed_at
+      )
+      OR (
+        OLD.workflow_state = 'ready_to_assemble'
+        AND NEW.workflow_state = 'assembling'
+        AND length(NEW.assembly_input_fingerprint) = 64
+        AND NEW.assembly_input_fingerprint NOT GLOB '*[^0-9a-f]*'
+        AND workbench_production_mutation_authorized('assembly_queue', OLD.project_id, OLD.project_id) = 1
+        AND OLD.current_final_artifact_id IS NEW.current_final_artifact_id
+        AND OLD.legacy_final_artifact_id IS NEW.legacy_final_artifact_id
+        AND OLD.approved_artifact_id IS NEW.approved_artifact_id
+        AND OLD.latest_export_id IS NEW.latest_export_id
+        AND OLD.last_assembled_at IS NEW.last_assembled_at
+        AND OLD.latest_exported_at IS NEW.latest_exported_at
+        AND OLD.closed_at IS NEW.closed_at
+      )
+      OR (
+        OLD.workflow_state = 'assembling'
+        AND NEW.workflow_state = 'ready_to_assemble'
+        AND NEW.assembly_input_fingerprint IS NULL
+        AND (
+          workbench_production_mutation_authorized('assembly_failure', OLD.project_id, OLD.project_id) = 1
+          OR workbench_production_mutation_authorized('assembly_interruption', OLD.project_id, OLD.project_id) = 1
+        )
+        AND OLD.current_final_artifact_id IS NEW.current_final_artifact_id
+        AND OLD.legacy_final_artifact_id IS NEW.legacy_final_artifact_id
+        AND OLD.approved_artifact_id IS NEW.approved_artifact_id
+        AND OLD.latest_export_id IS NEW.latest_export_id
+        AND OLD.last_assembled_at IS NEW.last_assembled_at
+        AND OLD.latest_exported_at IS NEW.latest_exported_at
+        AND OLD.closed_at IS NEW.closed_at
+      )
+      OR (
+        OLD.workflow_state = 'assembling'
+        AND NEW.workflow_state = 'final_review'
+        AND NEW.current_final_artifact_id IS NOT NULL
+        AND NEW.assembly_input_fingerprint IS OLD.assembly_input_fingerprint
+        AND NEW.approved_artifact_id IS NULL
+        AND NEW.latest_export_id IS NULL
+        AND NEW.latest_exported_at IS NULL
+        AND NEW.last_assembled_at IS NOT NULL
+        AND workbench_production_mutation_authorized('assembly_finalization', OLD.project_id, OLD.project_id) = 1
+        AND OLD.legacy_final_artifact_id IS NEW.legacy_final_artifact_id
+        AND OLD.closed_at IS NEW.closed_at
+      )
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_PROJECTION_OWNER_REQUIRED');
+  END;
+
+  DROP TRIGGER workbench_projects_update_owner;
+  CREATE TRIGGER workbench_projects_update_owner
+  BEFORE UPDATE OF data_json ON projects
+  WHEN (
+    json_remove(OLD.data_json, '$.title') IS json_remove(NEW.data_json, '$.title')
+    AND workbench_production_mutation_authorized('project_title', OLD.project_id, OLD.project_id) <> 1
+    AND workbench_production_mutation_authorized('project_content', OLD.project_id, OLD.project_id) <> 1
+    AND workbench_production_mutation_authorized('assembly_finalization', OLD.project_id, OLD.project_id) <> 1
+  ) OR (
+    json_remove(OLD.data_json, '$.title') IS NOT json_remove(NEW.data_json, '$.title')
+    AND workbench_production_mutation_authorized('project_content', OLD.project_id, OLD.project_id) <> 1
+    AND workbench_production_mutation_authorized('assembly_finalization', OLD.project_id, OLD.project_id) <> 1
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_PRODUCTION_OWNER_REQUIRED');
+  END;
+
+  DROP TRIGGER workbench_projects_delivery_projection_guard;
+  CREATE TRIGGER workbench_projects_delivery_projection_guard
+  BEFORE UPDATE OF data_json ON projects
+  WHEN (
+    COALESCE(json_extract(OLD.data_json, '$.exports.final_video_artifact_id'), '')
+      IS NOT COALESCE(json_extract(NEW.data_json, '$.exports.final_video_artifact_id'), '')
+    OR (COALESCE(json_extract(OLD.data_json, '$.status'), '') = 'final_approved')
+      IS NOT (COALESCE(json_extract(NEW.data_json, '$.status'), '') = 'final_approved')
+  ) AND (
+    workbench_production_mutation_authorized('assembly_finalization', OLD.project_id, OLD.project_id) <> 1
+    OR COALESCE(json_extract(NEW.data_json, '$.status'), '') <> 'video_review'
+    OR NOT EXISTS (
+      SELECT 1 FROM media_artifacts artifact
+      WHERE artifact.artifact_id = json_extract(NEW.data_json, '$.exports.final_video_artifact_id')
+        AND artifact.project_id = OLD.project_id
+        AND COALESCE(artifact.shot_id, '') = ''
+        AND artifact.role = 'final_video'
+        AND artifact.artifact_type = 'video'
+        AND artifact.status = 'active'
+    )
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_PROJECTION_OWNER_REQUIRED');
+  END;
+
+  DROP TRIGGER workbench_projects_active_job_guard;
+  CREATE TRIGGER workbench_projects_active_job_guard
+  BEFORE UPDATE OF data_json ON projects
+  WHEN (
+    EXISTS (
+      SELECT 1 FROM workbench_delivery_jobs job
+      WHERE job.project_id = OLD.project_id AND job.state IN ('queued','running')
+    ) OR EXISTS (
+      SELECT 1 FROM workbench_delivery_state state
+      WHERE state.project_id = OLD.project_id AND state.workflow_state = 'assembling'
+    )
+  ) AND workbench_production_mutation_authorized('assembly_finalization', OLD.project_id, OLD.project_id) <> 1
+  BEGIN
+    SELECT RAISE(ABORT, 'DELIVERY_JOB_ACTIVE');
+  END;
+
+  CREATE TRIGGER workbench_delivery_jobs_production_owner_insert
+  BEFORE INSERT ON workbench_delivery_jobs
+  WHEN NOT (
+    (NEW.job_type = 'assembly'
+      AND workbench_production_mutation_authorized('assembly_queue', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.job_type = 'export'
+      AND workbench_production_mutation_authorized('export_queue', NEW.project_id, NEW.job_id) = 1)
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_OWNER_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_delivery_jobs_production_owner_update
+  BEFORE UPDATE ON workbench_delivery_jobs
+  WHEN NOT (
+    (OLD.job_type = 'assembly' AND (
+      (OLD.state = 'queued' AND NEW.state = 'running'
+        AND workbench_production_mutation_authorized('assembly_start', NEW.project_id, NEW.job_id) = 1)
+      OR (OLD.state IN ('queued','running') AND NEW.state = 'failed'
+        AND workbench_production_mutation_authorized('assembly_failure', NEW.project_id, NEW.job_id) = 1)
+      OR (OLD.state IN ('queued','running') AND NEW.state = 'interrupted'
+        AND workbench_production_mutation_authorized('assembly_interruption', NEW.project_id, NEW.job_id) = 1)
+      OR (OLD.state = 'running' AND NEW.state = 'succeeded'
+        AND workbench_production_mutation_authorized('assembly_finalization', NEW.project_id, NEW.job_id) = 1)
+    ))
+    OR (OLD.job_type = 'export' AND (
+      (OLD.state = 'queued' AND NEW.state = 'running'
+        AND workbench_production_mutation_authorized('export_start', NEW.project_id, NEW.job_id) = 1)
+      OR (OLD.state IN ('queued','running') AND NEW.state = 'failed'
+        AND workbench_production_mutation_authorized('export_failure', NEW.project_id, NEW.job_id) = 1)
+      OR (OLD.state IN ('queued','running') AND NEW.state = 'interrupted'
+        AND workbench_production_mutation_authorized('export_interruption', NEW.project_id, NEW.job_id) = 1)
+      OR (OLD.state = 'running' AND NEW.state = 'succeeded'
+        AND workbench_production_mutation_authorized('export_finalization', NEW.project_id, NEW.job_id) = 1)
+    ))
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_OWNER_REQUIRED');
+  END;
+
+  DROP TRIGGER workbench_delivery_jobs_identity_immutable;
+  CREATE TRIGGER workbench_delivery_jobs_identity_immutable
+  BEFORE UPDATE ON workbench_delivery_jobs
+  WHEN OLD.job_id IS NOT NEW.job_id
+    OR OLD.project_id IS NOT NEW.project_id
+    OR OLD.job_type IS NOT NEW.job_type
+    OR OLD.input_json IS NOT NEW.input_json
+    OR OLD.input_fingerprint IS NOT NEW.input_fingerprint
+    OR OLD.retry_of_job_id IS NOT NEW.retry_of_job_id
+    OR OLD.created_at IS NOT NEW.created_at
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_IDENTITY_IMMUTABLE');
+  END;
+
+  CREATE TRIGGER workbench_delivery_jobs_fingerprint_guard
+  BEFORE INSERT ON workbench_delivery_jobs
+  WHEN NEW.input_fingerprint IS NOT NULL AND (
+    length(NEW.input_fingerprint) <> 64
+    OR NEW.input_fingerprint GLOB '*[^0-9a-f]*'
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_FINGERPRINT_INVALID');
+  END;
+
+  CREATE TRIGGER workbench_delivery_jobs_transition_guard
+  BEFORE UPDATE OF state ON workbench_delivery_jobs
+  WHEN OLD.state IS NOT NEW.state AND NOT (
+    (OLD.state = 'queued' AND NEW.state IN ('running','interrupted'))
+    OR (OLD.state = 'running' AND NEW.state IN ('succeeded','failed','interrupted'))
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_TRANSITION_INVALID');
+  END;
+
+  CREATE TRIGGER workbench_delivery_jobs_timestamps_guard_insert
+  BEFORE INSERT ON workbench_delivery_jobs
+  WHEN NOT (
+    (NEW.state = 'queued' AND NEW.started_at IS NULL AND NEW.finished_at IS NULL)
+    OR (NEW.state = 'running' AND NEW.started_at IS NOT NULL AND NEW.finished_at IS NULL)
+    OR (NEW.state IN ('succeeded','failed','interrupted') AND NEW.finished_at IS NOT NULL)
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_TIMESTAMPS_INVALID');
+  END;
+
+  CREATE TRIGGER workbench_delivery_jobs_timestamps_guard_update
+  BEFORE UPDATE OF state, started_at, finished_at ON workbench_delivery_jobs
+  WHEN NOT (
+    (NEW.state = 'queued' AND NEW.started_at IS NULL AND NEW.finished_at IS NULL)
+    OR (NEW.state = 'running' AND NEW.started_at IS NOT NULL AND NEW.finished_at IS NULL)
+    OR (NEW.state IN ('succeeded','failed','interrupted') AND NEW.finished_at IS NOT NULL)
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_TIMESTAMPS_INVALID');
+  END;
+
+  CREATE TRIGGER workbench_delivery_jobs_terminal_output_guard
+  BEFORE UPDATE OF state, output_artifact_id, export_id ON workbench_delivery_jobs
+  WHEN (NEW.state = 'succeeded' AND (
+      (NEW.job_type = 'assembly' AND NEW.output_artifact_id IS NULL)
+      OR (NEW.job_type = 'export' AND NEW.export_id IS NULL)
+    ))
+    OR (NEW.state IN ('failed','interrupted') AND (
+      NEW.output_artifact_id IS NOT NULL OR NEW.export_id IS NOT NULL
+    ))
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_TERMINAL_OUTPUT_INVALID');
+  END;
+
+  CREATE TRIGGER workbench_delivery_events_projection_guard
+  BEFORE INSERT ON workbench_delivery_events
+  WHEN NEW.from_state NOT IN (
+      'not_ready','ready_to_assemble','assembling','final_review','revision_requested',
+      'approved','exported','closed','legacy_review_required'
+    )
+    OR NEW.to_state NOT IN (
+      'not_ready','ready_to_assemble','assembling','final_review','revision_requested',
+      'approved','exported','closed','legacy_review_required'
+    )
+    OR (NEW.input_fingerprint IS NOT NULL AND (
+      length(NEW.input_fingerprint) <> 64
+      OR NEW.input_fingerprint GLOB '*[^0-9a-f]*'
+    ))
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_PROJECTION_INVALID');
+  END;
+
+  CREATE TRIGGER workbench_delivery_events_production_owner
+  BEFORE INSERT ON workbench_delivery_events
+  WHEN NEW.job_id IS NOT NULL AND NOT (
+    (NEW.event_type = 'assembly_queued'
+      AND workbench_production_mutation_authorized('assembly_queue', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'assembly_started'
+      AND workbench_production_mutation_authorized('assembly_start', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'assembly_failed'
+      AND workbench_production_mutation_authorized('assembly_failure', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'assembly_interrupted'
+      AND workbench_production_mutation_authorized('assembly_interruption', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'assembly_succeeded'
+      AND workbench_production_mutation_authorized('assembly_finalization', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'export_queued'
+      AND workbench_production_mutation_authorized('export_queue', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'export_started'
+      AND workbench_production_mutation_authorized('export_start', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'export_failed'
+      AND workbench_production_mutation_authorized('export_failure', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'export_interrupted'
+      AND workbench_production_mutation_authorized('export_interruption', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'export_succeeded'
+      AND workbench_production_mutation_authorized('export_finalization', NEW.project_id, NEW.job_id) = 1)
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_OWNER_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_delivery_events_assembly_guard
+  BEFORE INSERT ON workbench_delivery_events
+  WHEN NEW.event_type LIKE 'assembly_%' AND NOT EXISTS (
+    SELECT 1 FROM workbench_delivery_jobs job
+    WHERE job.job_id = NEW.job_id
+      AND job.project_id = NEW.project_id
+      AND job.job_type = 'assembly'
+      AND job.input_fingerprint IS NEW.input_fingerprint
+      AND (
+        (NEW.event_type = 'assembly_queued'
+          AND NEW.from_state IN ('not_ready','ready_to_assemble','revision_requested')
+          AND NEW.to_state = 'assembling')
+        OR (NEW.event_type = 'assembly_started'
+          AND NEW.from_state = 'assembling' AND NEW.to_state = 'assembling')
+        OR (NEW.event_type = 'assembly_succeeded'
+          AND NEW.from_state = 'assembling' AND NEW.to_state = 'final_review')
+        OR (NEW.event_type IN ('assembly_failed','assembly_interrupted')
+          AND NEW.from_state = 'assembling' AND NEW.to_state = 'ready_to_assemble')
+      )
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_ASSEMBLY_EVENT_INVALID');
+  END;
+
+  UPDATE m0_meta SET value = 'workbench-v2-9', updated_at = CURRENT_TIMESTAMP WHERE key = 'schema_version';
+`;
+
 export const DATABASE_MIGRATIONS: readonly Migration[] = [
   {
     id: "0001",
@@ -2352,6 +2691,12 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
       installWorkbenchProductionMutationAuthority(db);
       db.exec(PRODUCTION_MUTATION_AUTHORITY_SQL);
     }
+  },
+  {
+    id: "0014",
+    name: "durable_ffmpeg_assembly",
+    canonical: `${DURABLE_ASSEMBLY_SQL}\nWORKER durable_ffmpeg_assembly_v1\nRECOVERY interrupt_without_resume_v1\nCONTRACT final_assembly_v1`,
+    apply: (db) => db.exec(DURABLE_ASSEMBLY_SQL)
   }
 ];
 
@@ -2541,6 +2886,7 @@ function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record
       applyDeliveryStateFoundationMigration(reference);
       installWorkbenchProductionMutationAuthority(reference);
       reference.exec(PRODUCTION_MUTATION_AUTHORITY_SQL);
+      reference.exec(DURABLE_ASSEMBLY_SQL);
     }
     const columns = new Map<string, Map<string, string>>();
     const checks = new Map<string, string[]>();
@@ -2590,8 +2936,8 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     storyboard_package_versions: ["package_version_id", "project_id", "version", "supersedes_package_version_id", "schema_version", "payload_json", "content_hash", "created_from_proposal_id", "created_at"],
     storyboard_package_version_events: ["event_id", "package_version_id", "workspace_id", "principal_id", "event_type", "reason_code", "created_at"],
     workbench_exports: ["export_id", "project_id", "artifact_id", "relative_path", "sha256", "size_bytes", "created_at"],
-    workbench_delivery_jobs: ["job_id", "project_id", "job_type", "state", "input_json", "output_artifact_id", "export_id", "retry_of_job_id", "terminal_event_id", "error_code", "created_at", "updated_at"],
-    workbench_delivery_events: ["event_id", "project_id", "event_type", "job_id", "artifact_id", "export_id", "reason_code", "data_json", "created_at"],
+    workbench_delivery_jobs: ["job_id", "project_id", "job_type", "state", "input_json", "output_artifact_id", "export_id", "retry_of_job_id", "terminal_event_id", "error_code", "created_at", "updated_at", "input_fingerprint", "started_at", "finished_at"],
+    workbench_delivery_events: ["event_id", "project_id", "event_type", "job_id", "artifact_id", "export_id", "reason_code", "data_json", "created_at", "from_state", "to_state", "input_fingerprint"],
     workbench_delivery_state: ["project_id", "workflow_state", "current_final_artifact_id", "legacy_final_artifact_id", "assembly_input_fingerprint", "approved_artifact_id", "latest_export_id", "last_assembled_at", "latest_exported_at", "closed_at", "created_at", "updated_at"]
   } : V24_EXPECTED_COLUMNS;
   const expectedIndexes = includeJobs ? [
@@ -2664,8 +3010,18 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_jobs_identity_immutable",
         "workbench_delivery_jobs_terminal_immutable",
         "workbench_delivery_jobs_no_delete",
+        "workbench_delivery_jobs_fingerprint_guard",
+        "workbench_delivery_jobs_production_owner_insert",
+        "workbench_delivery_jobs_production_owner_update",
+        "workbench_delivery_jobs_transition_guard",
+        "workbench_delivery_jobs_timestamps_guard_insert",
+        "workbench_delivery_jobs_timestamps_guard_update",
+        "workbench_delivery_jobs_terminal_output_guard",
         "workbench_delivery_events_validate_job",
         "workbench_delivery_events_validate_terminal",
+        "workbench_delivery_events_projection_guard",
+        "workbench_delivery_events_production_owner",
+        "workbench_delivery_events_assembly_guard",
         "workbench_delivery_events_no_update",
         "workbench_delivery_events_no_delete",
         "workbench_delivery_state_no_replace",

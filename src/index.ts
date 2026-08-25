@@ -193,7 +193,31 @@ export type {
 } from "./tools/generation.js";
 export { markShotClipReview, regenerateShotVideo } from "./tools/review.js";
 export type { RevisionInstruction } from "./tools/review.js";
-export { assembleFinalVideo } from "./tools/assembly.js";
+export {
+  FINAL_ASSEMBLY_CONTRACT_VERSION,
+  FINAL_ASSEMBLY_TIMEOUT_MS,
+  assembleFinalVideo,
+  assemblyInputFingerprint,
+  buildFinalAssemblyFfmpegArgs,
+  deliveryWorkerStatus,
+  getAssemblyDatabasePreflight,
+  interruptUnfinishedWorkbenchDeliveryJobs,
+  parseAssemblyResolution,
+  preflightWorkbenchAssembly,
+  queueWorkbenchAssembly,
+  runWorkbenchAssemblyJob,
+  startWorkbenchAssemblyJob
+} from "./tools/assembly.js";
+export type {
+  AssemblyBlocker,
+  AssemblyDependencies,
+  AssemblyInputSnapshot,
+  AssemblyPreflight,
+  AssemblyProbeResult,
+  AssemblyProcessResult,
+  ResolvedAssemblySource,
+  AssemblyResult
+} from "./tools/assembly.js";
 export {
   findFfprobeExecutable,
   summarizeMp4Validations,

@@ -1,6 +1,8 @@
 # Current Core Production Loop Gap Audit
 
-Status: `CURRENT` read-only audit
+Status: `HISTORICAL_GAP_AUDIT` — the Assembly findings were superseded by
+[Durable FFmpeg Assembly](DURABLE_FFMPEG_ASSEMBLY_2026-08-25.md); retain this
+document as dated pre-implementation evidence.
 
 Task: `S2-T1_CURRENT_CORE_LOOP_GAP_PROOF`
 

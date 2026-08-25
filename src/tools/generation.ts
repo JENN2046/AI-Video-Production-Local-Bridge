@@ -60,8 +60,8 @@ export interface GenerationRun {
     artifact_ids: string[];
   };
   provider: {
-    provider: "mock" | "real";
-    provider_name: ProviderPortName;
+    provider: "mock" | "real" | "local";
+    provider_name: ProviderPortName | "local_assembly";
     model_name: string;
     provider_job_id: string;
     provider_status: string;

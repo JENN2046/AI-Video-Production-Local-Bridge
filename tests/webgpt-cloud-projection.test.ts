@@ -72,7 +72,7 @@ function logicalManifest(db: M0Database): { table_count: number; row_count: numb
   return { table_count: tables.length, row_count: rowCount, sha256: createHash("sha256").update(JSON.stringify(payload)).digest("hex") };
 }
 
-function migrateThrough0011(db: DatabaseSync): void {
+function migrateThrough(db: DatabaseSync, through: string): void {
   db.exec(`
     PRAGMA foreign_keys = ON;
     CREATE TABLE schema_migrations (
@@ -84,7 +84,7 @@ function migrateThrough0011(db: DatabaseSync): void {
     BEGIN EXCLUSIVE;
   `);
   try {
-    for (const migration of DATABASE_MIGRATIONS.filter((item) => item.id <= "0011")) {
+    for (const migration of DATABASE_MIGRATIONS.filter((item) => item.id <= through)) {
       migration.apply(db);
       db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)")
         .run(migration.id, migration.name, migrationChecksum(migration));
@@ -94,6 +94,10 @@ function migrateThrough0011(db: DatabaseSync): void {
     db.exec("ROLLBACK");
     throw error;
   }
+}
+
+function migrateThrough0011(db: DatabaseSync): void {
+  migrateThrough(db, "0011");
 }
 
 function createFixture(sqlitePath: string): {
@@ -258,15 +262,15 @@ function stripMeta(result: ReturnType<SqliteReadonlyDataSource["listProductionPr
   return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
 }
 
-test("readonly projection requires migration 0013 and never upgrades an older database", () => {
+test("readonly projection requires migration 0014 and never upgrades an older database", () => {
   const root = mkdtempSync(join(tmpdir(), "readonly-projection-ledger-"));
   const sqlitePath = join(root, "app.sqlite");
-  const db = openM0Database(sqlitePath);
-  db.exec(`
-    DROP TABLE workbench_delivery_state;
-    DELETE FROM schema_migrations WHERE migration_id = '0013';
-  `);
+  const db = new DatabaseSync(sqlitePath);
+  migrateThrough(db, "0013");
   db.close();
+  const beforeDb = openM0DatabaseConnection(sqlitePath, { readOnly: true });
+  const before = logicalManifest(beforeDb);
+  beforeDb.close();
   try {
     assert.throws(
       () => exportReadonlySnapshotFromDatabase({
@@ -278,9 +282,11 @@ test("readonly projection requires migration 0013 and never upgrades an older da
     );
     const verify = openM0DatabaseConnection(sqlitePath, { readOnly: true });
     try {
-      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0013'").get() as { count: number }).count, 0);
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0014'").get() as { count: number }).count, 0);
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM pragma_table_info('workbench_delivery_jobs') WHERE name = 'input_fingerprint'").get() as { count: number }).count, 0);
       assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'director_automation_grants'").get() as { count: number }).count, 1);
-      assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'workbench_delivery_state'").get() as { count: number }).count, 0);
+      assert.equal((verify.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-8");
+      assert.deepEqual(logicalManifest(verify), before);
     } finally {
       verify.close();
     }
@@ -361,7 +367,7 @@ test("readonly Snapshot keeps legacy review authoritative over stale final appro
     created.project.exports.final_video_artifact_id = legacyFinalVideo.artifact_id;
     db.prepare("UPDATE projects SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?")
       .run(JSON.stringify(created.project), created.project_id);
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0012", "0013"]);
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0012", "0013", "0014"]);
 
     const snapshot = exportReadonlySnapshotFromDatabase({
       database_path: sqlitePath,
@@ -589,8 +595,8 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
   assert.equal(readonlySnapshotStatus(snapshot, new Date("2026-07-16T01:00:00.000Z")).freshness_status, "snapshot_expired");
 
   const currentSource = structuredClone(unsigned);
-  currentSource.source_schema = "workbench-v2-8";
-  currentSource.source_migration = "0013";
+  currentSource.source_schema = "workbench-v2-9";
+  currentSource.source_migration = "0014";
   assert.doesNotThrow(() => finalizeReadonlySnapshot(currentSource));
   const previousSource = structuredClone(currentSource);
   previousSource.source_schema = "workbench-v2-6";

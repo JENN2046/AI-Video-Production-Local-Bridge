@@ -26,6 +26,11 @@ import {
   startWorkbenchGeneration
 } from "../tools/workbenchGeneration.js";
 import {
+  preflightWorkbenchAssembly,
+  queueWorkbenchAssembly,
+  startWorkbenchAssemblyJob
+} from "../tools/assembly.js";
+import {
   createWorkbenchProject,
   decideWorkbenchClip,
   decideWorkbenchImport,
@@ -65,7 +70,9 @@ function sendOk(response: ServerResponse, data: unknown, meta?: unknown): void {
 
 function statusForError(error: WorkbenchV2Error): number {
   if (error.code.endsWith("_NOT_FOUND")) return 404;
-  if (["PROJECT_ARCHIVED", "PROJECT_CLOSED", "DELIVERY_JOB_ACTIVE", "DELIVERY_REWORK_REQUIRED", "PRODUCTION_MUTATION_CONFLICT", "PRODUCTION_MUTATION_REJECTED", "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION", "SHOT_BLOCKED", "GOVERNANCE_SNAPSHOT_STALE", "INVALID_DRAFT_TRANSITION", "ACTION_NOT_PENDING", "DIRECTOR_PROPOSAL_STALE", "DIRECTOR_PROPOSAL_NOT_PENDING", "DIRECTOR_PROPOSAL_PRINCIPAL_INACTIVE", "DIRECTOR_FOCUS_STALE", "DIRECTOR_FOCUS_TARGET_INVALID", "DIRECTOR_PRINCIPAL_SELECTION_REQUIRED"].includes(error.code)) return 409;
+  if (["PROJECT_ARCHIVED", "PROJECT_CLOSED", "DELIVERY_JOB_ACTIVE", "DELIVERY_REWORK_REQUIRED", "PRODUCTION_MUTATION_CONFLICT", "PRODUCTION_MUTATION_REJECTED", "ASSEMBLY_NOT_READY", "ASSEMBLY_INPUT_CHANGED", "ASSEMBLY_RETRY_REQUIRED", "ASSEMBLY_RETRY_INVALID", "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION", "SHOT_BLOCKED", "GOVERNANCE_SNAPSHOT_STALE", "INVALID_DRAFT_TRANSITION", "ACTION_NOT_PENDING", "DIRECTOR_PROPOSAL_STALE", "DIRECTOR_PROPOSAL_NOT_PENDING", "DIRECTOR_PROPOSAL_PRINCIPAL_INACTIVE", "DIRECTOR_FOCUS_STALE", "DIRECTOR_FOCUS_TARGET_INVALID", "DIRECTOR_PRINCIPAL_SELECTION_REQUIRED"].includes(error.code)) return 409;
+  if (error.code === "FFMPEG_UNAVAILABLE") return 503;
+  if (["ASSEMBLY_OUTPUT_INVALID", "ASSEMBLY_FFMPEG_FAILED", "ASSEMBLY_TIMEOUT", "ASSEMBLY_RECOVERY_REQUIRED"].includes(error.code)) return 500;
   if (error.code === "ACTION_NONCE_REQUIRED") return 403;
   return 400;
 }
@@ -326,7 +333,42 @@ export async function handleWorkbenchV2Api(
       send(response, 404, { ok: false, error: { code: "PROJECT_WORKSPACE_NOT_FOUND", message: "Project workspace was not found." } });
       return true;
     }
-    sendResult(response, withDatabase((db) => getWorkbenchProjectWorkspace(projectId, workspace, db, { touch_last_opened: true })));
+    sendResult(response, withDatabase((db) => getWorkbenchProjectWorkspace(projectId, workspace, db, { touch_last_opened: false })));
+    return true;
+  }
+
+  const assemblyPreflightMatch = url.pathname.match(/^\/api\/v2\/projects\/([^/]+)\/delivery\/assembly\/preflight$/);
+  if (request.method === "POST" && assemblyPreflightMatch) {
+    const projectId = decodeSegment(assemblyPreflightMatch[1]);
+    await mutation(request, response, actionNonce, async () => {
+      const db = openM0Database();
+      try {
+        sendResult(response, await preflightWorkbenchAssembly(projectId, db));
+      } finally {
+        db.close();
+      }
+    });
+    return true;
+  }
+
+  const assemblyStartMatch = url.pathname.match(/^\/api\/v2\/projects\/([^/]+)\/delivery\/assembly$/);
+  if (request.method === "POST" && assemblyStartMatch) {
+    const projectId = decodeSegment(assemblyStartMatch[1]);
+    await mutation(request, response, actionNonce, async (body) => {
+      const db = openM0Database();
+      try {
+        const result = await queueWorkbenchAssembly({
+          project_id: projectId,
+          input_fingerprint: text(body.input_fingerprint),
+          human_confirmation: body.human_confirmation === true,
+          retry_of_job_id: optionalText(body.retry_of_job_id)
+        }, db);
+        sendResult(response, result, 202);
+        if (result.ok) startWorkbenchAssemblyJob(result.data.job.job_id);
+      } finally {
+        db.close();
+      }
+    });
     return true;
   }
 

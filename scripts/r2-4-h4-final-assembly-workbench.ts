@@ -79,14 +79,14 @@ async function main(): Promise<void> {
       throw new Error(generation.ok ? "Generation produced no artifact." : generation.error.message);
     }
 
-    const missingConfirmation = executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: false, write_report: false }, undefined, db);
-    const notReady = executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, undefined, db);
+    const missingConfirmation = await executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: false, write_report: false }, undefined, db);
+    const notReady = await executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, undefined, db);
 
     const approval = approveH3GeneratedClip({ shot_id: shotId, artifact_id: generation.generated_artifact_id, write_report: false }, db);
     if (!approval.ok) throw new Error(approval.error.message);
 
     const readySummary = h4FinalAssemblyWorkbenchSummary(undefined, db, { project_id: project.project_id });
-    const assembled = executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: true }, undefined, db);
+    const assembled = await executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: true }, undefined, db);
     if (!assembled.ok) throw new Error(assembled.error.message);
 
     const report = {

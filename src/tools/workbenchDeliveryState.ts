@@ -26,6 +26,26 @@ export interface WorkbenchDeliveryState {
   updated_at: string;
 }
 
+export type WorkbenchDeliveryJobType = "assembly" | "export";
+export type WorkbenchDeliveryJobState = "queued" | "running" | "succeeded" | "failed" | "interrupted";
+
+export interface WorkbenchDeliveryJobRecord {
+  job_id: string;
+  project_id: string;
+  job_type: WorkbenchDeliveryJobType;
+  state: WorkbenchDeliveryJobState;
+  input_fingerprint: string | null;
+  retry_of_job_id: string | null;
+  output_artifact_id: string | null;
+  export_id: string | null;
+  terminal_event_id: string | null;
+  error_code: string;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  updated_at: string;
+}
+
 export type WorkbenchDeliverySummaryState = "not_ready" | "ready_to_assemble" | "final_review" | "delivered";
 
 export type WorkbenchProductionMutationCode =
@@ -113,6 +133,34 @@ export function requireWorkbenchDeliveryState(db: M0Database, projectId: string)
   const state = getWorkbenchDeliveryState(db, projectId);
   if (!state) throw new Error("WORKBENCH_DELIVERY_STATE_MISSING");
   return state;
+}
+
+const DELIVERY_JOB_PUBLIC_COLUMNS = `
+  job_id, project_id, job_type, state, input_fingerprint, retry_of_job_id,
+  output_artifact_id, export_id, terminal_event_id, error_code,
+  created_at, started_at, finished_at, updated_at
+`;
+
+export function getWorkbenchDeliveryJob(db: M0Database, jobId: string): WorkbenchDeliveryJobRecord | null {
+  return db.prepare(`SELECT ${DELIVERY_JOB_PUBLIC_COLUMNS}
+    FROM workbench_delivery_jobs WHERE job_id = ?`)
+    .get(jobId) as WorkbenchDeliveryJobRecord | undefined ?? null;
+}
+
+export function getActiveWorkbenchDeliveryJob(
+  db: M0Database,
+  projectId?: string
+): WorkbenchDeliveryJobRecord | null {
+  const row = projectId
+    ? db.prepare(`SELECT ${DELIVERY_JOB_PUBLIC_COLUMNS}
+        FROM workbench_delivery_jobs
+        WHERE project_id = ? AND state IN ('queued','running')
+        ORDER BY created_at, job_id LIMIT 1`).get(projectId)
+    : db.prepare(`SELECT ${DELIVERY_JOB_PUBLIC_COLUMNS}
+        FROM workbench_delivery_jobs
+        WHERE state IN ('queued','running')
+        ORDER BY created_at, job_id LIMIT 1`).get();
+  return row as WorkbenchDeliveryJobRecord | undefined ?? null;
 }
 
 export function assertWorkbenchProductionWriteAllowed(

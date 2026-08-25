@@ -385,7 +385,7 @@ test("database migrated through 0003 keeps its historical checksums and upgrades
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[1]), "52dc1311414cd88468542159d215adce443717b087e65d73d3f60859e5727c75");
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[2]), "161aa27dec915827c0ab6d46bc768ca2734c2efdf4bc45ae2fa1b2f4b564fef8");
     const result = runDatabaseMigrations(db);
-    assert.deepEqual(result.applied, ["0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013"]);
+    assert.deepEqual(result.applied, ["0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014"]);
     const event = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = 'job_intent_legacy'").get() as { to_state: string; reason_code: string };
     assert.deepEqual({ ...event }, { to_state: "polling", reason_code: "MIGRATION_BACKFILL" });
     assertSchemaCurrent(db);
@@ -434,7 +434,7 @@ test("migration 0006 backfills active legacy Artifact facts from the verified Bl
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[4]), HISTORICAL_MIGRATION_0005_CHECKSUM);
     insertLedger.run(DATABASE_MIGRATIONS[4].id, DATABASE_MIGRATIONS[4].name, HISTORICAL_MIGRATION_0005_CHECKSUM);
     const migrated = runDatabaseMigrations(db);
-    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013"]);
+    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014"]);
 
     const after = JSON.parse((db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(artifact.artifact_id) as { data_json: string }).data_json) as typeof artifact;
     assert.equal(after.metadata.sha256, before.sha256);
@@ -479,7 +479,7 @@ test("migration accepts and canonicalizes the interim 0005 ledger checksum", () 
         && /Database schema version is workbench-v2-5|Missing database migration 0006/.test(error.message)
     );
     const migrated = runDatabaseMigrations(connection);
-    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013"]);
+    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014"]);
     const normalized = connection.prepare("SELECT checksum FROM schema_migrations WHERE migration_id = '0005'").get() as { checksum: string };
     assert.equal(normalized.checksum, HISTORICAL_MIGRATION_0005_CHECKSUM);
     assertSchemaCurrent(connection);
@@ -629,11 +629,14 @@ test("database check reports delivery ledger evidence drift left by a foreign-ke
     const sqlitePath = join(root, "delivery-drift.sqlite");
     migrateDatabase(sqlitePath);
     const db = new DatabaseSync(sqlitePath);
+    installWorkbenchProductionMutationAuthority(db);
     db.exec("PRAGMA foreign_keys = OFF");
     insertGovernedProject(db, "project_delivery_drift", { project_id: "project_delivery_drift", status: "draft", exports: { final_video_artifact_id: "" } });
-    db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, terminal_event_id)
-      VALUES ('job_delivery_drift', 'project_delivery_drift', 'assembly', 'failed', 'event_missing')`).run();
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "assembly_queue", project_id: "project_delivery_drift", object_id: "job_delivery_drift"
+    }, () => db.prepare(`INSERT INTO workbench_delivery_jobs
+        (job_id, project_id, job_type, state, terminal_event_id, finished_at)
+        VALUES ('job_delivery_drift', 'project_delivery_drift', 'assembly', 'failed', 'event_missing', CURRENT_TIMESTAMP)`).run());
     db.close();
 
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });

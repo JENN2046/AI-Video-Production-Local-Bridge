@@ -20,8 +20,8 @@ import {
 } from "../webgpt-v4/contracts.js";
 
 export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v4";
-export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-8";
-export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0013";
+export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-9";
+export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0014";
 // Snapshot v4 retains the last accepted activity-runtime source ledger and the
 // intervening foundation ledger as verification-only inputs. A remote may
 // therefore keep serving an already signed v4 snapshot while its publisher is

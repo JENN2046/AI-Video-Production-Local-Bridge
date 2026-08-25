@@ -471,8 +471,10 @@ test("WebGPT regeneration actions cannot bypass final, closed, or active-job pro
 
   const active = currentFixture(true);
   try {
-    active.db.prepare(`INSERT INTO workbench_delivery_jobs (job_id, project_id, job_type, state)
-      VALUES ('job_regeneration_active', ?, 'assembly', 'queued')`).run(active.project.project_id);
+    withWorkbenchProductionMutationAuthority(active.db, {
+      kind: "assembly_queue", project_id: active.project.project_id, object_id: "job_regeneration_active"
+    }, () => active.db.prepare(`INSERT INTO workbench_delivery_jobs (job_id, project_id, job_type, state)
+      VALUES ('job_regeneration_active', ?, 'assembly', 'queued')`).run(active.project.project_id));
     saveWorkbenchPendingActionRecord({
       action_id: "action_regeneration_active",
       tool: "request_webgpt_regeneration",
@@ -781,8 +783,10 @@ test("PRRT_kwDOTTDtUM6ZwKci title updates use a narrow authority path with stabl
     if (!invalidClassification.ok) assert.equal(invalidClassification.error.code, "CLASSIFICATION_INVALID");
     assert.equal(getProject(reviewed.db, reviewed.project.project_id)?.title, "Reviewed title only");
 
-    active.db.prepare(`INSERT INTO workbench_delivery_jobs (job_id, project_id, job_type, state)
-      VALUES ('job_active_title', ?, 'export', 'queued')`).run(active.project.project_id);
+    withWorkbenchProductionMutationAuthority(active.db, {
+      kind: "export_queue", project_id: active.project.project_id, object_id: "job_active_title"
+    }, () => active.db.prepare(`INSERT INTO workbench_delivery_jobs (job_id, project_id, job_type, state)
+      VALUES ('job_active_title', ?, 'export', 'queued')`).run(active.project.project_id));
     const frozen = updateWorkbenchProject(active.project.project_id, { title: "Must stay frozen" }, active.db);
     assert.equal(frozen.ok, false);
     if (!frozen.ok) {
@@ -986,9 +990,16 @@ test("any queued or running Delivery Job freezes Project, SHOT, Package, and Art
     for (const jobState of ["queued", "running"] as const) {
       const fixture = currentFixture(true);
       try {
-        fixture.db.prepare(`INSERT INTO workbench_delivery_jobs (job_id, project_id, job_type, state)
-          VALUES (?, ?, ?, ?)`)
-          .run(`job_freeze_${jobType}_${jobState}`, fixture.project.project_id, jobType, jobState);
+        const jobId = `job_freeze_${jobType}_${jobState}`;
+        withWorkbenchProductionMutationAuthority(fixture.db, {
+          kind: jobType === "assembly" ? "assembly_queue" : "export_queue",
+          project_id: fixture.project.project_id,
+          object_id: jobId
+        }, () => fixture.db.prepare(`INSERT INTO workbench_delivery_jobs
+            (job_id, project_id, job_type, state, started_at)
+            VALUES (?, ?, ?, ?, ?)`)
+          .run(jobId, fixture.project.project_id, jobType, jobState,
+            jobState === "running" ? new Date().toISOString() : null));
         assertMutationError(() => saveProject(fixture.db, { ...fixture.project, brief: { blocked: jobType } }), "DELIVERY_JOB_ACTIVE");
         assertMutationError(() => saveShot(fixture.db, { ...fixture.shot, description: `blocked ${jobType}` }), "DELIVERY_JOB_ACTIVE");
         assert.throws(() => saveStoryboardPackage(fixture.db, {

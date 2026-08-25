@@ -9,13 +9,15 @@ snapshot. They are not current-main operator authority.
 
 For the current source/runtime boundary, use the repository [README](README.md),
 the [Delivery State Foundation Closeout](docs/DELIVERY_STATE_FOUNDATION_CLOSEOUT_2026-08-21.md),
-and the [Production Mutation Authority status](docs/PRODUCTION_MUTATION_AUTHORITY_2026-08-24.md).
-Canonical source requires `workbench-v2-8` / ledger `0013`; the activity
+the [Production Mutation Authority status](docs/PRODUCTION_MUTATION_AUTHORITY_2026-08-24.md),
+and [Durable FFmpeg Assembly](docs/DURABLE_FFMPEG_ASSEMBLY_2026-08-25.md).
+Canonical source requires `workbench-v2-9` / ledger `0014`; the activity
 runtime's last explicitly accepted boundary remains `workbench-v2-6` / ledger
 `0011`, so current-main activity runtime acceptance is not established. The
-active Assembly entry point now fails closed with
-`LEGACY_ASSEMBLY_INCOMPATIBLE`; the historical `placeholder_copy` description
-below is no longer a current code fact.
+canonical source now contains durable local FFmpeg Assembly, but that source
+and fixture result is not Activity Runtime or production acceptance. The
+historical `placeholder_copy` description below is no longer a current code
+fact.
 
 ```yaml
 repository_baseline_policy:
