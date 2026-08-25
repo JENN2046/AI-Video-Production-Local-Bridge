@@ -2313,7 +2313,7 @@ function providerOutputActivationBindingError(
   const sourceRelative = mediaRoot ? relative(mediaRoot, sourcePath) : "..";
   const insideMediaRoot = (value: string): boolean => value === "" || (!value.startsWith("..") && !isAbsolute(value));
   const expectedResolution = parseAssemblyResolution(
-    intent.input_snapshot.project_resolution ?? "",
+    intent.resolution,
     intent.input_snapshot.aspect_ratio
   );
   const probed = validateMp4File(sourcePath);

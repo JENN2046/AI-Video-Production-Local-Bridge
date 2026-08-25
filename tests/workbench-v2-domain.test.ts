@@ -45,14 +45,16 @@ import { downloadProviderOutputToArtifact } from "../src/tools/providerOutputDow
 import type { ProviderPollOptions, VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
 
 const FFMPEG = process.env.FFMPEG_PATH ?? "ffmpeg";
+const DEFAULT_PROVIDER_OUTPUT_WIDTH = 480;
+const DEFAULT_PROVIDER_OUTPUT_HEIGHT = 854;
 
 function writeProviderOutputFixture(
   targetPath: string,
   input: { duration_seconds?: number; width?: number; height?: number } = {}
 ): void {
   const duration = input.duration_seconds ?? 6;
-  const width = input.width ?? 1080;
-  const height = input.height ?? 1920;
+  const width = input.width ?? DEFAULT_PROVIDER_OUTPUT_WIDTH;
+  const height = input.height ?? DEFAULT_PROVIDER_OUTPUT_HEIGHT;
   mkdirSync(dirname(resolve(targetPath)), { recursive: true });
   const sourcePath = resolve("fixtures/video/mock_clip.mp4");
   const sameDimensions = width === 1080 && height === 1920;
@@ -2783,7 +2785,7 @@ test("[EEI-RUN-01] Generation Run authority is frozen before effects, after subm
             role: "generated_clip",
             status: "active",
             storage: { uri: join(mediaRoot, `${artifactId}.mp4`), mime_type: "video/mp4", filename: `${artifactId}.mp4` },
-            metadata: { width: 1080, height: 1920, duration_seconds: 6, aspect_ratio: "9:16", sha256: "" },
+            metadata: { width: DEFAULT_PROVIDER_OUTPUT_WIDTH, height: DEFAULT_PROVIDER_OUTPUT_HEIGHT, duration_seconds: 6, aspect_ratio: "9:16", sha256: "" },
             linked_objects: { project_id: input.project_id, shot_id: input.shot_id },
             source: {
               kind: "provider_output_file",
@@ -3898,7 +3900,7 @@ test("[EEI-DOWNLOAD-03] worker activation capability rejects confused-deputy Art
               mime_type: "video/mp4",
               filename: `${artifactId}.mp4`
             },
-            metadata: { width: 1080, height: 1920, duration_seconds: 6, aspect_ratio: "9:16", sha256: "" },
+            metadata: { width: DEFAULT_PROVIDER_OUTPUT_WIDTH, height: DEFAULT_PROVIDER_OUTPUT_HEIGHT, duration_seconds: 6, aspect_ratio: "9:16", sha256: "" },
             linked_objects: { project_id: prepared.project_id, shot_id: prepared.shot_id },
             source: {
               kind: "provider_output_file",
@@ -3995,7 +3997,7 @@ test("[EEI-AUTH-02] final activation transaction revalidates SHOT authority imme
           role: "generated_clip",
           status: "active",
           storage: { uri: join(mediaRoot, `${artifactId}.mp4`), mime_type: "video/mp4", filename: `${artifactId}.mp4` },
-          metadata: { width: 1080, height: 1920, duration_seconds: 6, aspect_ratio: "9:16", sha256: "" },
+          metadata: { width: DEFAULT_PROVIDER_OUTPUT_WIDTH, height: DEFAULT_PROVIDER_OUTPUT_HEIGHT, duration_seconds: 6, aspect_ratio: "9:16", sha256: "" },
           linked_objects: { project_id: input.project_id, shot_id: input.shot_id },
           source: {
             kind: "provider_output_file",
@@ -4579,8 +4581,8 @@ test("human reattachment redownloads, repairs verified Blob bytes, and rebinds w
         filename: "existing-output.mp4"
       },
       metadata: {
-        width: 1080,
-        height: 1920,
+        width: DEFAULT_PROVIDER_OUTPUT_WIDTH,
+        height: DEFAULT_PROVIDER_OUTPUT_HEIGHT,
         duration_seconds: 6,
         aspect_ratio: "9:16",
         sha256: ""
@@ -6001,7 +6003,7 @@ test("poll timeout remains distinct from submit rejection, unknown submit, task 
             mime_type: "video/mp4",
             filename: `${succeededArtifactId}.mp4`
           },
-          metadata: { width: 1080, height: 1920, duration_seconds: 6, aspect_ratio: "9:16", sha256: "" },
+          metadata: { width: DEFAULT_PROVIDER_OUTPUT_WIDTH, height: DEFAULT_PROVIDER_OUTPUT_HEIGHT, duration_seconds: 6, aspect_ratio: "9:16", sha256: "" },
           linked_objects: { project_id: input.project_id, shot_id: input.shot_id },
           source: {
             kind: "provider_output_file",
@@ -6026,14 +6028,24 @@ test("poll timeout remains distinct from submit rejection, unknown submit, task 
       }
     });
     checked = openM0Database(succeededPath);
-    const succeededIntent = checked.prepare("SELECT status, provider_task_id, output_artifact_id FROM generation_intents WHERE intent_id = ?").get(succeeded.intent_id) as { status: string; provider_task_id: string; output_artifact_id: string };
+    const succeededIntent = checked.prepare("SELECT status, provider_task_id, output_artifact_id, resolution FROM generation_intents WHERE intent_id = ?").get(succeeded.intent_id) as { status: string; provider_task_id: string; output_artifact_id: string; resolution: string };
     const succeededJob = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?").get(succeeded.job_id) as { state: string; reconciliation_reason: string };
+    const succeededArtifact = checked.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(succeededArtifactId) as { data_json: string };
     checked.close();
+    const succeededArtifactData = JSON.parse(succeededArtifact.data_json) as MediaArtifact;
     assert.equal(succeededPollCalls, 1);
     assert.equal(succeededDownloadCalls, 1);
     assert.equal(succeededIntent.status, "succeeded");
     assert.equal(succeededIntent.provider_task_id, succeededTaskId);
     assert.equal(succeededIntent.output_artifact_id, succeededArtifactId);
+    assert.equal(succeededIntent.resolution, "480p");
+    assert.deepEqual(succeededArtifactData.metadata, {
+      width: DEFAULT_PROVIDER_OUTPUT_WIDTH,
+      height: DEFAULT_PROVIDER_OUTPUT_HEIGHT,
+      duration_seconds: 6,
+      aspect_ratio: "9:16",
+      sha256: succeededArtifactData.metadata.sha256
+    });
     assert.deepEqual({ ...succeededJob }, { state: "succeeded", reconciliation_reason: "" });
   } finally {
     for (const root of roots) rmSync(root, { recursive: true, force: true });

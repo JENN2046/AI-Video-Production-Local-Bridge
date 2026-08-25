@@ -66,10 +66,11 @@ An injected downloader cannot independently activate an Artifact and report it
 as the worker result. The capability verifies its deterministic Artifact
 identity, worker-authorized output directory, Project, SHOT, role, type and
 Provider task both before opening the outer transaction and immediately before
-persistence. It also probes the actual MP4 bytes and binds width, height,
-aspect ratio and duration (within the greater of 250 ms or 2 percent) to the
-frozen Project/Intent specification; downloader-supplied metadata is not a
-media-fact authority. Unattested outputs remain durably recovery-bound even
+persistence. It also probes the actual MP4 bytes and binds width, height and
+aspect ratio to the frozen Intent Provider resolution/aspect request, while
+duration is bound within the greater of 250 ms or 2 percent. The Project
+resolution remains the later Assembly target; downloader-supplied metadata is
+not a media-fact authority. Unattested outputs remain durably recovery-bound even
 when an archive attempt fails. The worker rechecks Project, SHOT, Storyboard
 Package,
 Run, receipt, lease, exact Job stage and any Director grant immediately before
