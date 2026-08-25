@@ -29,6 +29,7 @@ import {
   rejectH3GeneratedClip,
   updateH1ShotMetadata,
   validateH1StoryboardPackage,
+  validateMp4File,
   type H1WorkbenchState
 } from "../src/index.js";
 
@@ -402,7 +403,7 @@ test("H3 reviews generated clips and creates regeneration drafts without regener
   }
 });
 
-test("H4 keeps readiness visible while legacy placeholder assembly fails closed", async () => {
+test("H4 keeps readiness visible and commits durable final assembly evidence", async () => {
   const db = openM0Database();
 
   try {
@@ -478,9 +479,19 @@ test("H4 keeps readiness visible while legacy placeholder assembly fails closed"
     assert.equal(ready.clip_order_preview[0].ffprobe?.status, "PASS");
 
     const assembled = await executeH4FinalAssembly({ project_id: project.project_id, human_confirmation: true, write_report: false }, defaultH1WorkbenchState(), db);
-    assert.equal(assembled.ok, false);
-    if (assembled.ok) return;
-    assert.equal(assembled.error.code, "LEGACY_ASSEMBLY_INCOMPATIBLE");
+    assert.equal(assembled.ok, true);
+    if (!assembled.ok) return;
+    const finalArtifact = getMediaArtifact(db, assembled.value.final_video_artifact_id);
+    assert(finalArtifact);
+    assert.equal(finalArtifact.status, "active");
+    assert.equal(validateMp4File(finalArtifact.storage.uri).status, "PASS");
+    assert.equal(assembled.value.summary.final_video_artifact?.artifact_id, finalArtifact.artifact_id);
+    const delivery = db.prepare(`SELECT workflow_state, current_final_artifact_id
+      FROM workbench_delivery_state WHERE project_id = ?`).get(project.project_id) as {
+        workflow_state: string; current_final_artifact_id: string;
+      };
+    assert.equal(delivery.workflow_state, "final_review");
+    assert.equal(delivery.current_final_artifact_id, finalArtifact.artifact_id);
     assert.equal(getMediaArtifact(db, generatedArtifactId)?.status, "active");
   } finally {
     db.close();

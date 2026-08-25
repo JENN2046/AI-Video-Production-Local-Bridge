@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:http";
@@ -20,6 +20,7 @@ import {
   paths,
   preflightWorkbenchAssembly,
   queueWorkbenchAssembly,
+  recoverMediaActivations,
   registerMediaArtifact,
   runWorkbenchAssemblyJob,
   saveProject,
@@ -32,7 +33,11 @@ import {
 } from "../src/index.js";
 import { handleWorkbenchV2Api } from "../src/http/workbenchV2Routes.js";
 import { DATABASE_MIGRATIONS, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
-import { installWorkbenchProductionMutationAuthority } from "../src/storage/productionMutationAuthority.js";
+import {
+  installWorkbenchProductionMutationAuthority,
+  withWorkbenchProductionMutationAuthority
+} from "../src/storage/productionMutationAuthority.js";
+import { cleanupRolledBackMediaActivationFiles } from "../src/tools/mediaArtifacts.js";
 import type { M0Database } from "../src/storage/sqlite.js";
 import { refreshWorkbenchAssemblyReadiness } from "../src/tools/workbenchDeliveryState.js";
 import { getWorkbenchProjectWorkspace } from "../src/tools/workbenchV2.js";
@@ -201,6 +206,16 @@ test("real assembly preserves ordered sources and atomically registers the final
     const finalArtifact = getMediaArtifact(db, completed.data.final_video_artifact_id);
     assert.equal(finalArtifact?.role, "final_video");
     assert.equal(validateMp4File(finalArtifact?.storage.uri ?? "").status, "PASS");
+    const metadataProbe = spawnSync(process.env.FFPROBE_PATH ?? "ffprobe", [
+      "-v", "error", "-show_entries", "format_tags=comment", "-show_chapters", "-of", "json",
+      finalArtifact?.storage.uri ?? ""
+    ], { encoding: "utf8", windowsHide: true });
+    assert.equal(metadataProbe.status, 0, metadataProbe.stderr);
+    const metadata = JSON.parse(metadataProbe.stdout) as {
+      format?: { tags?: { comment?: string } }; chapters?: unknown[];
+    };
+    assert.equal(metadata.format?.tags?.comment, undefined);
+    assert.deepEqual(metadata.chapters ?? [], []);
     assert.equal(getProject(db, fixture.project.project_id)?.exports.final_video_artifact_id, completed.data.final_video_artifact_id);
     assert.deepEqual(fixture.artifacts.map((artifact) => sha256(artifact.storage.uri)), sourceHashes);
 
@@ -438,6 +453,87 @@ test("FFmpeg output exclusivity keeps an existing staging output unchanged", asy
   }
 });
 
+test("uncertain finalization commit preserves media and recovery evidence", async () => {
+  for (const mode of ["commit_after_apply", "rollback_failed"] as const) {
+    const db = openM0Database();
+    let stagingDirectory = "";
+    try {
+      const fixture = setupAssemblyProject(db, 1);
+      const preflight = await preflightWorkbenchAssembly(fixture.project.project_id, db);
+      assert.equal(preflight.ok, true, mode);
+      if (!preflight.ok) continue;
+      const queued = await queueWorkbenchAssembly({
+        project_id: fixture.project.project_id,
+        input_fingerprint: preflight.data.input_fingerprint,
+        human_confirmation: true
+      }, db);
+      assert.equal(queued.ok, true, mode);
+      if (!queued.ok) continue;
+      stagingDirectory = resolve(paths.mediaRoot, ".delivery", "assembly",
+        createHash("sha256").update(queued.data.job.job_id, "utf8").digest("hex"));
+
+      let commitCount = 0;
+      const faulting = new Proxy(db, {
+        get(target, property) {
+          if (property === "exec") {
+            return (sql: string): void => {
+              if (sql === "COMMIT") {
+                commitCount += 1;
+                if (commitCount === 2) {
+                  if (mode === "commit_after_apply") target.exec(sql);
+                  throw Object.assign(new Error("injected finalization commit failure"), { code: "SQLITE_IOERR" });
+                }
+              }
+              if (sql === "ROLLBACK" && commitCount === 2 && mode === "rollback_failed") {
+                throw Object.assign(new Error("injected finalization rollback failure"), { code: "SQLITE_IOERR" });
+              }
+              target.exec(sql);
+            };
+          }
+          const value = Reflect.get(target, property, target) as unknown;
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+      }) as M0Database;
+
+      const completed = await runWorkbenchAssemblyJob(queued.data.job.job_id, faulting);
+      assert.equal(completed.ok, false, mode);
+      if (!completed.ok) assert.equal(completed.error.code, "ASSEMBLY_RECOVERY_REQUIRED", mode);
+      assert.equal(existsSync(stagingDirectory), true, mode);
+
+      const finalRow = db.prepare(`SELECT artifact_id FROM media_artifacts
+        WHERE project_id = ? AND role = 'final_video' ORDER BY created_at DESC LIMIT 1`)
+        .get(fixture.project.project_id) as { artifact_id: string } | undefined;
+      assert(finalRow, mode);
+      const finalArtifact = getMediaArtifact(db, finalRow.artifact_id);
+      assert(finalArtifact, mode);
+      const finalUri = finalArtifact.storage.uri;
+      assert.equal(existsSync(finalUri), true, mode);
+      assert.equal((db.prepare(`SELECT COUNT(*) AS count FROM media_activation_journal
+        WHERE artifact_id = ? AND state = 'committed'`).get(finalRow.artifact_id) as { count: number }).count, 1, mode);
+
+      if (mode === "commit_after_apply") {
+        assert.equal((db as unknown as { isTransaction?: boolean }).isTransaction, false);
+        assert.equal((db.prepare("SELECT state FROM workbench_delivery_jobs WHERE job_id = ?")
+          .get(queued.data.job.job_id) as { state: string }).state, "succeeded");
+        assert.equal(getProject(db, fixture.project.project_id)?.exports.final_video_artifact_id, finalRow.artifact_id);
+        recoverMediaActivations(db);
+        assert.equal(existsSync(finalUri), true);
+      } else {
+        assert.equal((db as unknown as { isTransaction?: boolean }).isTransaction, true);
+        db.exec("ROLLBACK");
+        assert.equal(getMediaArtifact(db, finalRow.artifact_id), null);
+        interruptUnfinishedWorkbenchDeliveryJobs(db);
+        assert.equal(cleanupRolledBackMediaActivationFiles([finalRow.artifact_id]), true);
+        assert.equal(existsSync(finalUri), false);
+      }
+    } finally {
+      if ((db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+      db.close();
+      if (stagingDirectory && existsSync(stagingDirectory)) rmSync(stagingDirectory, { recursive: true, force: true });
+    }
+  }
+});
+
 test("assembly HTTP preflight and start require nonce and return a persistent 202 Job", async (t) => {
   const db = openM0Database();
   const nonce = `assembly-nonce-${randomUUID()}`;
@@ -497,6 +593,7 @@ test("assembly HTTP preflight and start require nonce and return a persistent 20
 test("assembly filter plan preserves SHOT order, pads, and supplies missing audio", () => {
   assert.deepEqual(parseAssemblyResolution("1080p", "9:16"), { width: 1080, height: 1920 });
   assert.deepEqual(parseAssemblyResolution("720:1280", "9:16"), { width: 720, height: 1280 });
+  assert.equal(parseAssemblyResolution("320x180", "9:16"), null);
   const snapshot: AssemblyInputSnapshot = {
     contract_version: "final-assembly-v1",
     project: {
@@ -519,6 +616,8 @@ test("assembly filter plan preserves SHOT order, pads, and supplies missing audi
   ], snapshot, "output.mp4");
   assert.deepEqual(args.filter((item, index) => args[index - 1] === "-i"), ["first.mp4", "second.mp4"]);
   assert.equal(args.includes("-n"), true);
+  assert.equal(args[args.indexOf("-map_metadata") + 1], "-1");
+  assert.equal(args[args.indexOf("-map_chapters") + 1], "-1");
   const filter = args[args.indexOf("-filter_complex") + 1];
   assert.match(filter, /force_original_aspect_ratio=decrease/);
   assert.match(filter, /pad=320:180/);
@@ -586,6 +685,13 @@ test("migration 0014 freezes assembly Job identity and terminal evidence", async
     applyMigrationsThrough(db, "0014");
     const fixture = setupAssemblyProject(db, 1);
     const fingerprint = "a".repeat(64);
+    for (const jobType of ["assembly", "export"] as const) {
+      assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_jobs
+        (job_id, project_id, job_type, state, input_fingerprint)
+        VALUES (?, ?, ?, 'queued', ?)`)
+        .run(`forged_${jobType}`, fixture.project.project_id, jobType, fingerprint),
+      /WORKBENCH_DELIVERY_JOB_OWNER_REQUIRED/);
+    }
     db.exec("BEGIN IMMEDIATE");
     try {
       db.prepare(`UPDATE workbench_delivery_state SET workflow_state = 'assembling', assembly_input_fingerprint = ?
@@ -611,15 +717,41 @@ test("migration 0014 freezes assembly Job identity and terminal evidence", async
     assert.equal(queued.ok, true);
     if (!queued.ok) return;
     assert.throws(() => db.prepare("UPDATE workbench_delivery_jobs SET input_fingerprint = ? WHERE job_id = ?")
-      .run("b".repeat(64), queued.data.job.job_id), /WORKBENCH_DELIVERY_JOB_IDENTITY_IMMUTABLE/);
+      .run("b".repeat(64), queued.data.job.job_id), /WORKBENCH_DELIVERY_JOB_(IDENTITY_IMMUTABLE|OWNER_REQUIRED)/);
+
+    assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_events
+      (event_id, project_id, event_type, job_id, from_state, to_state, input_fingerprint)
+      VALUES ('forged_started', ?, 'assembly_started', ?, 'assembling', 'assembling', ?)`)
+      .run(fixture.project.project_id, queued.data.job.job_id, preflight.data.input_fingerprint),
+    /WORKBENCH_DELIVERY_EVENT_OWNER_REQUIRED/);
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_jobs SET state = 'running', started_at = CURRENT_TIMESTAMP
+      WHERE job_id = ?`).run(queued.data.job.job_id), /WORKBENCH_DELIVERY_JOB_OWNER_REQUIRED/);
+
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "assembly_start", project_id: fixture.project.project_id, object_id: queued.data.job.job_id
+    }, () => {
+      db.prepare(`UPDATE workbench_delivery_jobs SET state = 'running', started_at = CURRENT_TIMESTAMP
+        WHERE job_id = ?`).run(queued.data.job.job_id);
+      db.prepare(`INSERT INTO workbench_delivery_events
+        (event_id, project_id, event_type, job_id, from_state, to_state, input_fingerprint)
+        VALUES ('authorized_started', ?, 'assembly_started', ?, 'assembling', 'assembling', ?)`)
+        .run(fixture.project.project_id, queued.data.job.job_id, preflight.data.input_fingerprint);
+    });
+    assert.throws(() => db.prepare(`UPDATE workbench_delivery_jobs SET state = 'failed',
+      terminal_event_id = 'forged_failed', error_code = 'TEST_FAILURE', finished_at = CURRENT_TIMESTAMP
+      WHERE job_id = ?`).run(queued.data.job.job_id), /WORKBENCH_DELIVERY_JOB_OWNER_REQUIRED/);
 
     db.exec("BEGIN IMMEDIATE");
     try {
-      db.prepare(`UPDATE workbench_delivery_jobs SET state = 'running', started_at = CURRENT_TIMESTAMP
-        WHERE job_id = ?`).run(queued.data.job.job_id);
-      db.prepare(`UPDATE workbench_delivery_jobs SET state = 'failed', terminal_event_id = 'missing_terminal_event',
-        error_code = 'TEST_FAILURE', finished_at = CURRENT_TIMESTAMP WHERE job_id = ?`).run(queued.data.job.job_id);
-      assert.throws(() => db.exec("COMMIT"), /FOREIGN KEY constraint failed/);
+      withWorkbenchProductionMutationAuthority(db, {
+        kind: "assembly_failure", project_id: fixture.project.project_id, object_id: queued.data.job.job_id
+      }, () => db.prepare(`UPDATE workbench_delivery_jobs SET state = 'failed', terminal_event_id = 'forged_failed',
+        error_code = 'TEST_FAILURE', finished_at = CURRENT_TIMESTAMP WHERE job_id = ?`).run(queued.data.job.job_id));
+      assert.throws(() => db.prepare(`INSERT INTO workbench_delivery_events
+        (event_id, project_id, event_type, job_id, from_state, to_state, input_fingerprint, reason_code)
+        VALUES ('forged_failed', ?, 'assembly_failed', ?, 'assembling', 'ready_to_assemble', ?, 'TEST_FAILURE')`)
+        .run(fixture.project.project_id, queued.data.job.job_id, preflight.data.input_fingerprint),
+      /WORKBENCH_DELIVERY_EVENT_OWNER_REQUIRED/);
       db.exec("ROLLBACK");
     } catch (error) {
       if ((db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
@@ -627,7 +759,10 @@ test("migration 0014 freezes assembly Job identity and terminal evidence", async
     }
     const preserved = db.prepare("SELECT state, terminal_event_id, started_at, finished_at FROM workbench_delivery_jobs WHERE job_id = ?")
       .get(queued.data.job.job_id) as { state: string; terminal_event_id: string | null; started_at: string | null; finished_at: string | null };
-    assert.deepEqual({ ...preserved }, { state: "queued", terminal_event_id: null, started_at: null, finished_at: null });
+    assert.equal(preserved.state, "running");
+    assert.equal(preserved.terminal_event_id, null);
+    assert.notEqual(preserved.started_at, null);
+    assert.equal(preserved.finished_at, null);
     interruptUnfinishedWorkbenchDeliveryJobs(db);
   } finally {
     db.close();

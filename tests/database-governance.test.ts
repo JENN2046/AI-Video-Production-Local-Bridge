@@ -629,11 +629,14 @@ test("database check reports delivery ledger evidence drift left by a foreign-ke
     const sqlitePath = join(root, "delivery-drift.sqlite");
     migrateDatabase(sqlitePath);
     const db = new DatabaseSync(sqlitePath);
+    installWorkbenchProductionMutationAuthority(db);
     db.exec("PRAGMA foreign_keys = OFF");
     insertGovernedProject(db, "project_delivery_drift", { project_id: "project_delivery_drift", status: "draft", exports: { final_video_artifact_id: "" } });
-    db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, terminal_event_id, finished_at)
-      VALUES ('job_delivery_drift', 'project_delivery_drift', 'assembly', 'failed', 'event_missing', CURRENT_TIMESTAMP)`).run();
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "assembly_queue", project_id: "project_delivery_drift", object_id: "job_delivery_drift"
+    }, () => db.prepare(`INSERT INTO workbench_delivery_jobs
+        (job_id, project_id, job_type, state, terminal_event_id, finished_at)
+        VALUES ('job_delivery_drift', 'project_delivery_drift', 'assembly', 'failed', 'event_missing', CURRENT_TIMESTAMP)`).run());
     db.close();
 
     const checked = checkDatabase(sqlitePath, { recover_media_activations: false });

@@ -9,9 +9,15 @@ export type WorkbenchProductionMutationKind =
   | "regeneration_request"
   | "readiness_refresh"
   | "assembly_queue"
+  | "assembly_start"
   | "assembly_failure"
   | "assembly_interruption"
-  | "assembly_finalization";
+  | "assembly_finalization"
+  | "export_queue"
+  | "export_start"
+  | "export_failure"
+  | "export_interruption"
+  | "export_finalization";
 
 export interface WorkbenchProductionMutationCapability {
   kind: WorkbenchProductionMutationKind;

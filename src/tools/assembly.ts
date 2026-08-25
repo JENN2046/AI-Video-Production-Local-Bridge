@@ -206,16 +206,21 @@ function even(value: number): number {
 }
 
 export function parseAssemblyResolution(resolution: string, aspectRatio: string): { width: number; height: number } | null {
+  const ratio = parseAspectRatio(aspectRatio);
+  if (!ratio) return null;
   const exact = /^(\d{2,4})[x:](\d{2,4})$/i.exec(resolution.trim());
   if (exact) {
     const width = Number(exact[1]);
     const height = Number(exact[2]);
     if (width < 16 || height < 16 || width > 8192 || height > 8192) return null;
-    return { width: even(width), height: even(height) };
+    const target = { width: even(width), height: even(height) };
+    const declaredScale = ratio.width / ratio.height;
+    const actualScale = target.width / target.height;
+    if (Math.abs(actualScale - declaredScale) / declaredScale > 0.01) return null;
+    return target;
   }
   const progressive = /^(\d{2,4})p$/i.exec(resolution.trim());
-  const ratio = parseAspectRatio(aspectRatio);
-  if (!progressive || !ratio) return null;
+  if (!progressive) return null;
   const shortSide = even(Number(progressive[1]));
   if (shortSide < 16 || shortSide > 4320) return null;
   const scale = ratio.width / ratio.height;
@@ -497,6 +502,7 @@ export function buildFinalAssemblyFfmpegArgs(
   args.push(
     "-filter_complex", filters.join(";"),
     "-map", "[vout]", "-map", "[aout]",
+    "-map_metadata", "-1", "-map_chapters", "-1",
     "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-r", "30", "-pix_fmt", "yuv420p",
     "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
     "-movflags", "+faststart",
@@ -685,6 +691,7 @@ export async function queueWorkbenchAssembly(
     if (!isInternalAssemblyInput(fresh.data) || fresh.data.input_fingerprint !== input.input_fingerprint) {
       throw new AssemblyFailure("ASSEMBLY_INPUT_CHANGED", "Assembly inputs changed after preflight.");
     }
+    const freshInput = fresh.data;
     const delivery = getWorkbenchDeliveryState(db, input.project_id);
     if (!delivery || !QUEUEABLE_STATES.has(delivery.workflow_state)) {
       throw new AssemblyFailure("ASSEMBLY_NOT_READY", "Project delivery state is not ready for assembly.");
@@ -696,15 +703,19 @@ export async function queueWorkbenchAssembly(
         SET workflow_state = 'assembling', assembly_input_fingerprint = ?, updated_at = ?
         WHERE project_id = ?`)
       .run(input.input_fingerprint, createdAt, input.project_id));
-    db.prepare(`INSERT INTO workbench_delivery_jobs
-      (job_id, project_id, job_type, state, input_fingerprint, input_json, retry_of_job_id, created_at, updated_at)
-      VALUES (?, ?, 'assembly', 'queued', ?, ?, ?, ?, ?)`)
-      .run(jobId, input.project_id, input.input_fingerprint, canonicalizeJcs(fresh.data.snapshot), input.retry_of_job_id ?? null, createdAt, createdAt);
-    db.prepare(`INSERT INTO workbench_delivery_events
-      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint, reason_code, data_json, created_at)
-      VALUES (?, ?, ?, 'assembly_queued', ?, 'assembling', ?, 'ASSEMBLY_QUEUED', ?, ?)`)
-      .run(`delivery_event_${uuid(dependencies)}`, input.project_id, jobId, fromState, input.input_fingerprint,
-        canonicalizeJcs({ contract_version: FINAL_ASSEMBLY_CONTRACT_VERSION, shot_count: fresh.data.snapshot.shots.length }), createdAt);
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "assembly_queue", project_id: input.project_id, object_id: jobId
+    }, () => {
+      db.prepare(`INSERT INTO workbench_delivery_jobs
+        (job_id, project_id, job_type, state, input_fingerprint, input_json, retry_of_job_id, created_at, updated_at)
+        VALUES (?, ?, 'assembly', 'queued', ?, ?, ?, ?, ?)`)
+        .run(jobId, input.project_id, input.input_fingerprint, canonicalizeJcs(freshInput.snapshot), input.retry_of_job_id ?? null, createdAt, createdAt);
+      db.prepare(`INSERT INTO workbench_delivery_events
+        (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint, reason_code, data_json, created_at)
+        VALUES (?, ?, ?, 'assembly_queued', ?, 'assembling', ?, 'ASSEMBLY_QUEUED', ?, ?)`)
+        .run(`delivery_event_${uuid(dependencies)}`, input.project_id, jobId, fromState, input.input_fingerprint,
+          canonicalizeJcs({ contract_version: FINAL_ASSEMBLY_CONTRACT_VERSION, shot_count: freshInput.snapshot.shots.length }), createdAt);
+    });
     db.exec("COMMIT");
     transactionOpen = false;
     const job = getDeliveryJob(db, jobId);
@@ -751,15 +762,19 @@ function markAssemblyJobFailed(db: M0Database, jobId: string, code: string, depe
         SET workflow_state = 'ready_to_assemble', assembly_input_fingerprint = NULL, updated_at = ?
         WHERE project_id = ?`)
       .run(timestamp, job.project_id));
-    db.prepare(`UPDATE workbench_delivery_jobs
-      SET state = 'failed', terminal_event_id = ?, error_code = ?, finished_at = ?, updated_at = ?
-      WHERE job_id = ?`)
-      .run(terminalEventId, code, timestamp, timestamp, jobId);
-    db.prepare(`INSERT INTO workbench_delivery_events
-      (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint, reason_code, data_json, created_at)
-      VALUES (?, ?, ?, 'assembly_failed', ?, ?, ?, ?, '{}', ?)`)
-      .run(terminalEventId, job.project_id, jobId, "assembling",
-        "ready_to_assemble", job.input_fingerprint, code, timestamp);
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "assembly_failure", project_id: job.project_id, object_id: jobId
+    }, () => {
+      db.prepare(`UPDATE workbench_delivery_jobs
+        SET state = 'failed', terminal_event_id = ?, error_code = ?, finished_at = ?, updated_at = ?
+        WHERE job_id = ?`)
+        .run(terminalEventId, code, timestamp, timestamp, jobId);
+      db.prepare(`INSERT INTO workbench_delivery_events
+        (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint, reason_code, data_json, created_at)
+        VALUES (?, ?, ?, 'assembly_failed', ?, ?, ?, ?, '{}', ?)`)
+        .run(terminalEventId, job.project_id, jobId, "assembling",
+          "ready_to_assemble", job.input_fingerprint, code, timestamp);
+    });
     db.exec("COMMIT");
     transactionOpen = false;
   } catch {
@@ -790,6 +805,7 @@ export async function runWorkbenchAssemblyJob(
   const ownsConnection = db === undefined;
   let claimed = false;
   let outputArtifactId = "";
+  let preserveRecoveryEvidence = false;
   try {
     let transactionOpen = false;
     try {
@@ -799,12 +815,16 @@ export async function runWorkbenchAssemblyJob(
       if (!queued || queued.job_type !== "assembly") throw new AssemblyFailure("ASSEMBLY_JOB_NOT_FOUND", "Assembly Job was not found.");
       if (queued.state !== "queued") throw new AssemblyFailure("ASSEMBLY_JOB_NOT_QUEUED", "Assembly Job is not queued.");
       const timestamp = now(dependencies);
-      connection.prepare("UPDATE workbench_delivery_jobs SET state = 'running', started_at = ?, updated_at = ? WHERE job_id = ?")
-        .run(timestamp, timestamp, jobId);
-      connection.prepare(`INSERT INTO workbench_delivery_events
-        (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint, reason_code, data_json, created_at)
-        VALUES (?, ?, ?, 'assembly_started', 'assembling', 'assembling', ?, 'ASSEMBLY_STARTED', '{}', ?)`)
-        .run(`delivery_event_${uuid(dependencies)}`, queued.project_id, jobId, queued.input_fingerprint, timestamp);
+      withWorkbenchProductionMutationAuthority(connection, {
+        kind: "assembly_start", project_id: queued.project_id, object_id: jobId
+      }, () => {
+        connection.prepare("UPDATE workbench_delivery_jobs SET state = 'running', started_at = ?, updated_at = ? WHERE job_id = ?")
+          .run(timestamp, timestamp, jobId);
+        connection.prepare(`INSERT INTO workbench_delivery_events
+          (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint, reason_code, data_json, created_at)
+          VALUES (?, ?, ?, 'assembly_started', 'assembling', 'assembling', ?, 'ASSEMBLY_STARTED', '{}', ?)`)
+          .run(`delivery_event_${uuid(dependencies)}`, queued.project_id, jobId, queued.input_fingerprint, timestamp);
+      });
       connection.exec("COMMIT");
       transactionOpen = false;
       claimed = true;
@@ -938,24 +958,39 @@ export async function runWorkbenchAssemblyJob(
         }
       });
       finalizationPhase = "job_terminal_projection";
-      connection.prepare(`UPDATE workbench_delivery_jobs SET
-        state = 'succeeded', output_artifact_id = ?, terminal_event_id = ?, finished_at = ?, updated_at = ?
-        WHERE job_id = ?`)
-        .run(outputArtifactId, terminalEventId, timestamp, timestamp, jobId);
-      finalizationPhase = "terminal_event_registration";
-      connection.prepare(`INSERT INTO workbench_delivery_events
-        (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, input_fingerprint, reason_code, data_json, created_at)
-        VALUES (?, ?, ?, 'assembly_succeeded', 'assembling', 'final_review', ?, ?, 'ASSEMBLY_SUCCEEDED', ?, ?)`)
-        .run(terminalEventId, job.project_id, jobId, outputArtifactId, job.input_fingerprint,
-          canonicalizeJcs({ contract_version: FINAL_ASSEMBLY_CONTRACT_VERSION, run_id: run.run_id }), timestamp);
+      withWorkbenchProductionMutationAuthority(connection, {
+        kind: "assembly_finalization", project_id: job.project_id, object_id: jobId
+      }, () => {
+        connection.prepare(`UPDATE workbench_delivery_jobs SET
+          state = 'succeeded', output_artifact_id = ?, terminal_event_id = ?, finished_at = ?, updated_at = ?
+          WHERE job_id = ?`)
+          .run(outputArtifactId, terminalEventId, timestamp, timestamp, jobId);
+        finalizationPhase = "terminal_event_registration";
+        connection.prepare(`INSERT INTO workbench_delivery_events
+          (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id, input_fingerprint, reason_code, data_json, created_at)
+          VALUES (?, ?, ?, 'assembly_succeeded', 'assembling', 'final_review', ?, ?, 'ASSEMBLY_SUCCEEDED', ?, ?)`)
+          .run(terminalEventId, job.project_id, jobId, outputArtifactId, job.input_fingerprint,
+            canonicalizeJcs({ contract_version: FINAL_ASSEMBLY_CONTRACT_VERSION, run_id: run.run_id }), timestamp);
+      });
       finalizationPhase = "transaction_commit";
       connection.exec("COMMIT");
       finalizationOpen = false;
     } catch (error) {
+      let rollbackConfirmed = false;
       if (finalizationOpen) {
-        try { connection.exec("ROLLBACK"); } catch { /* preserve original failure */ }
+        try {
+          connection.exec("ROLLBACK");
+          rollbackConfirmed = true;
+        } catch { /* an uncertain commit/rollback must retain all recovery evidence */ }
       }
-      if (outputArtifactId) cleanupRolledBackMediaActivationFiles([outputArtifactId]);
+      if (outputArtifactId && rollbackConfirmed) cleanupRolledBackMediaActivationFiles([outputArtifactId]);
+      else if (outputArtifactId) preserveRecoveryEvidence = true;
+      if (preserveRecoveryEvidence) {
+        throw new AssemblyFailure(
+          "ASSEMBLY_RECOVERY_REQUIRED",
+          "Final assembly commit outcome requires explicit recovery."
+        );
+      }
       if (error instanceof AssemblyFailure) throw error;
       throw new AssemblyFailure(
         "ASSEMBLY_FINALIZATION_FAILED",
@@ -963,14 +998,14 @@ export async function runWorkbenchAssemblyJob(
       );
     }
     cleanupCommittedMediaActivationMarkers(connection, [outputArtifactId]);
-    cleanupJobStaging(jobId);
+    if (!preserveRecoveryEvidence) cleanupJobStaging(jobId);
     const succeeded = getDeliveryJob(connection, jobId);
     if (!succeeded) throw new AssemblyFailure("ASSEMBLY_OUTPUT_INVALID", "Completed assembly Job could not be read.");
     return { ok: true, data: { job: publicDeliveryJob(succeeded), run, final_video_artifact_id: outputArtifactId } };
   } catch (error) {
     const failure = error instanceof AssemblyFailure ? error : new AssemblyFailure("ASSEMBLY_OUTPUT_INVALID", "Final assembly did not complete.");
-    if (claimed) markAssemblyJobFailed(connection, jobId, failure.code, dependencies);
-    cleanupJobStaging(jobId);
+    if (claimed && !preserveRecoveryEvidence) markAssemblyJobFailed(connection, jobId, failure.code, dependencies);
+    if (!preserveRecoveryEvidence) cleanupJobStaging(jobId);
     return assemblyErrorResult(failure);
   } finally {
     if (ownsConnection) connection.close();
@@ -1021,25 +1056,31 @@ export function interruptUnfinishedWorkbenchDeliveryJobs(
             WHERE project_id = ?`)
           .run(timestamp, job.project_id));
       }
-      db.prepare(`UPDATE workbench_delivery_jobs
-        SET state = 'interrupted', terminal_event_id = ?, error_code = 'PROCESS_RESTART',
-          finished_at = ?, updated_at = ? WHERE job_id = ?`)
-        .run(terminalEventId, timestamp, timestamp, job.job_id);
-      db.prepare(`INSERT INTO workbench_delivery_events
-        (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint, reason_code, data_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'PROCESS_RESTART', ?, ?)`)
-        .run(terminalEventId, job.project_id, job.job_id,
-          job.job_type === "assembly" ? "assembly_interrupted" : "export_interrupted",
-          fromState,
-          job.job_type === "assembly" && fromState === "assembling" ? "ready_to_assemble" : fromState,
-          job.input_fingerprint,
-          canonicalizeJcs({
-            recovery_evidence_preserved: recoveryEvidence.get(job.job_id) === true,
-            staging_key: recoveryEvidence.get(job.job_id) === true
-              ? createHash("sha256").update(job.job_id, "utf8").digest("hex")
-              : null
-          }),
-          timestamp);
+      withWorkbenchProductionMutationAuthority(db, {
+        kind: job.job_type === "assembly" ? "assembly_interruption" : "export_interruption",
+        project_id: job.project_id,
+        object_id: job.job_id
+      }, () => {
+        db.prepare(`UPDATE workbench_delivery_jobs
+          SET state = 'interrupted', terminal_event_id = ?, error_code = 'PROCESS_RESTART',
+            finished_at = ?, updated_at = ? WHERE job_id = ?`)
+          .run(terminalEventId, timestamp, timestamp, job.job_id);
+        db.prepare(`INSERT INTO workbench_delivery_events
+          (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint, reason_code, data_json, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'PROCESS_RESTART', ?, ?)`)
+          .run(terminalEventId, job.project_id, job.job_id,
+            job.job_type === "assembly" ? "assembly_interrupted" : "export_interrupted",
+            fromState,
+            job.job_type === "assembly" && fromState === "assembling" ? "ready_to_assemble" : fromState,
+            job.input_fingerprint,
+            canonicalizeJcs({
+              recovery_evidence_preserved: recoveryEvidence.get(job.job_id) === true,
+              staging_key: recoveryEvidence.get(job.job_id) === true
+                ? createHash("sha256").update(job.job_id, "utf8").digest("hex")
+                : null
+            }),
+            timestamp);
+      });
     }
     db.exec("COMMIT");
     transactionOpen = false;

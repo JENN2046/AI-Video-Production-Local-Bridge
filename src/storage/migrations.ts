@@ -2424,6 +2424,46 @@ const DURABLE_ASSEMBLY_SQL = `
     SELECT RAISE(ABORT, 'DELIVERY_JOB_ACTIVE');
   END;
 
+  CREATE TRIGGER workbench_delivery_jobs_production_owner_insert
+  BEFORE INSERT ON workbench_delivery_jobs
+  WHEN NOT (
+    (NEW.job_type = 'assembly'
+      AND workbench_production_mutation_authorized('assembly_queue', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.job_type = 'export'
+      AND workbench_production_mutation_authorized('export_queue', NEW.project_id, NEW.job_id) = 1)
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_OWNER_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_delivery_jobs_production_owner_update
+  BEFORE UPDATE ON workbench_delivery_jobs
+  WHEN NOT (
+    (OLD.job_type = 'assembly' AND (
+      (OLD.state = 'queued' AND NEW.state = 'running'
+        AND workbench_production_mutation_authorized('assembly_start', NEW.project_id, NEW.job_id) = 1)
+      OR (OLD.state IN ('queued','running') AND NEW.state = 'failed'
+        AND workbench_production_mutation_authorized('assembly_failure', NEW.project_id, NEW.job_id) = 1)
+      OR (OLD.state IN ('queued','running') AND NEW.state = 'interrupted'
+        AND workbench_production_mutation_authorized('assembly_interruption', NEW.project_id, NEW.job_id) = 1)
+      OR (OLD.state = 'running' AND NEW.state = 'succeeded'
+        AND workbench_production_mutation_authorized('assembly_finalization', NEW.project_id, NEW.job_id) = 1)
+    ))
+    OR (OLD.job_type = 'export' AND (
+      (OLD.state = 'queued' AND NEW.state = 'running'
+        AND workbench_production_mutation_authorized('export_start', NEW.project_id, NEW.job_id) = 1)
+      OR (OLD.state IN ('queued','running') AND NEW.state = 'failed'
+        AND workbench_production_mutation_authorized('export_failure', NEW.project_id, NEW.job_id) = 1)
+      OR (OLD.state IN ('queued','running') AND NEW.state = 'interrupted'
+        AND workbench_production_mutation_authorized('export_interruption', NEW.project_id, NEW.job_id) = 1)
+      OR (OLD.state = 'running' AND NEW.state = 'succeeded'
+        AND workbench_production_mutation_authorized('export_finalization', NEW.project_id, NEW.job_id) = 1)
+    ))
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_JOB_OWNER_REQUIRED');
+  END;
+
   DROP TRIGGER workbench_delivery_jobs_identity_immutable;
   CREATE TRIGGER workbench_delivery_jobs_identity_immutable
   BEFORE UPDATE ON workbench_delivery_jobs
@@ -2509,6 +2549,34 @@ const DURABLE_ASSEMBLY_SQL = `
     ))
   BEGIN
     SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_PROJECTION_INVALID');
+  END;
+
+  CREATE TRIGGER workbench_delivery_events_production_owner
+  BEFORE INSERT ON workbench_delivery_events
+  WHEN NEW.job_id IS NOT NULL AND NOT (
+    (NEW.event_type = 'assembly_queued'
+      AND workbench_production_mutation_authorized('assembly_queue', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'assembly_started'
+      AND workbench_production_mutation_authorized('assembly_start', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'assembly_failed'
+      AND workbench_production_mutation_authorized('assembly_failure', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'assembly_interrupted'
+      AND workbench_production_mutation_authorized('assembly_interruption', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'assembly_succeeded'
+      AND workbench_production_mutation_authorized('assembly_finalization', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'export_queued'
+      AND workbench_production_mutation_authorized('export_queue', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'export_started'
+      AND workbench_production_mutation_authorized('export_start', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'export_failed'
+      AND workbench_production_mutation_authorized('export_failure', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'export_interrupted'
+      AND workbench_production_mutation_authorized('export_interruption', NEW.project_id, NEW.job_id) = 1)
+    OR (NEW.event_type = 'export_succeeded'
+      AND workbench_production_mutation_authorized('export_finalization', NEW.project_id, NEW.job_id) = 1)
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_OWNER_REQUIRED');
   END;
 
   CREATE TRIGGER workbench_delivery_events_assembly_guard
@@ -2943,6 +3011,8 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_jobs_terminal_immutable",
         "workbench_delivery_jobs_no_delete",
         "workbench_delivery_jobs_fingerprint_guard",
+        "workbench_delivery_jobs_production_owner_insert",
+        "workbench_delivery_jobs_production_owner_update",
         "workbench_delivery_jobs_transition_guard",
         "workbench_delivery_jobs_timestamps_guard_insert",
         "workbench_delivery_jobs_timestamps_guard_update",
@@ -2950,6 +3020,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_events_validate_job",
         "workbench_delivery_events_validate_terminal",
         "workbench_delivery_events_projection_guard",
+        "workbench_delivery_events_production_owner",
         "workbench_delivery_events_assembly_guard",
         "workbench_delivery_events_no_update",
         "workbench_delivery_events_no_delete",

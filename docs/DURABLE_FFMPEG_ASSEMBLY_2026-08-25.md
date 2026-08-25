@@ -38,7 +38,7 @@ durability guarantee.
 
 The Delivery workspace projects `assembly_preflight`, `active_job`,
 `final_versions`, and `current_final_version`. Read operations do not start,
-resume, or retry a Job.
+resume, retry a Job, or mutate `last_opened_at`.
 
 ## Frozen input identity
 
@@ -67,9 +67,13 @@ AAC audio
 30 fps
 yuv420p
 faststart
+source metadata and chapter stripping
 aspect-preserving scale and pad
 generated silence for clips without audio
 ```
+
+Explicit output dimensions must also agree with the declared Project aspect
+ratio within the governed tolerance.
 
 Staging rejects path escape and symbolic-link ancestry. Output must pass
 FFprobe facts, codec, dimensions, frame-rate, pixel-format, audio, duration,
@@ -80,6 +84,11 @@ Final Artifact, Blob, GenerationRun, Project final pointer, Delivery state,
 Job terminal state, and immutable Event are committed as one outer database
 transaction. Media activation markers are removed only after that transaction
 commits.
+
+If the database driver reports an indeterminate commit result, the worker
+returns `ASSEMBLY_RECOVERY_REQUIRED` and preserves both the registered media
+and staging evidence. It does not mark the Job failed or delete activation
+evidence unless rollback was explicitly confirmed.
 
 ## Worker and restart semantics
 
@@ -100,16 +109,22 @@ No automatic retry or resume occurs. A later attempt must:
 
 ## Migration guarantees
 
-Migration `0014` is additive. It adds Job fingerprint/timestamp facts, Event
-state/fingerprint facts, exact Assembly transitions, immutable Job identity,
-timestamp and terminal-output guards, and Assembly Event projection guards.
-Migration `0012` and migration `0013` are not modified.
+Migration `0014` is a new forward-only incremental migration; migration `0012`
+and migration `0013` are not modified. It adds Job fingerprint/timestamp facts,
+Event state/fingerprint facts, exact Assembly transitions, immutable Job
+identity, timestamp and terminal-output guards, and Assembly Event projection
+guards. Connection-local Production Mutation Authority is required for every
+Assembly/Export Job insert, lifecycle transition, and lifecycle Event. Direct
+SQL cannot mint that authority or manufacture delivery projection.
 
 Tests cover checksum/schema expectations, trigger definitions, failed
-migration rollback, direct-SQL rejection, terminal evidence atomicity, global
-single-active enforcement, FFmpeg failure, timeout, input drift, output
-no-overwrite, restart interruption, explicit retry, HTTP `202`, path safety,
-real local composition, and atomic final registration.
+migration rollback, direct-SQL Job/Event owner rejection, terminal evidence
+atomicity, commit-after-apply uncertainty, confirmed rollback, global
+single-active enforcement, FFmpeg failure, timeout, input drift, aspect-ratio
+drift, output no-overwrite, metadata/chapter stripping, restart interruption,
+explicit retry, HTTP `202`, zero-write workspace polling, path safety, real
+local composition, and atomic final registration. The previous-version
+read-only fixture is a real database migrated through `0013`.
 
 ## Remaining gates
 

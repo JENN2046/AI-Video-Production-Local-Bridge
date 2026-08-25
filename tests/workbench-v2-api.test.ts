@@ -6,7 +6,7 @@ import { handleWorkbenchV2Api } from "../src/http/workbenchV2Routes.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import type { PersonalReadonlyOperationsService } from "../src/webgpt-cloud/personalReadonlyOperations.js";
 
-test("V2 API uses stable envelopes, pagination, nonce and archived write blocking", async (t) => {
+test("V2 API uses readonly workspace GETs, stable envelopes, pagination, nonce and archived write blocking", async (t) => {
   const nonce = "synthetic-action-nonce";
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -50,7 +50,7 @@ test("V2 API uses stable envelopes, pagination, nonce and archived write blockin
   const verifyOpenDb = openM0Database();
   try {
     const meta = verifyOpenDb.prepare("SELECT last_opened_at FROM workbench_project_meta WHERE project_id = ?").get(projectId) as { last_opened_at: string };
-    assert.notEqual(meta.last_opened_at, beforeOpen);
+    assert.equal(meta.last_opened_at, beforeOpen);
   } finally {
     verifyOpenDb.close();
   }
