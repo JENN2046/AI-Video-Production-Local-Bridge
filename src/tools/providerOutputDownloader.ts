@@ -9,7 +9,9 @@ import {
   recoverMediaActivations,
   recoverVerifiedBlobStorage,
   verifyMediaArtifactBytes,
+  type ActivateLocalMediaArtifactInput,
   type MediaArtifact,
+  type RegisterMediaArtifactResult,
   type VerifiedBlobStorageRecoveryFaults
 } from "./mediaArtifacts.js";
 import { validateMp4File, type Mp4ValidationResult } from "./mediaValidity.js";
@@ -49,6 +51,8 @@ export interface ProviderOutputDownloadRuntime {
   verified_blob_recovery_faults?: VerifiedBlobStorageRecoveryFaults;
   resolve_hostname?: (hostname: string) => Promise<Array<{ address: string; family: 4 | 6 }>>;
   fetch_pinned_address?: (url: URL, signal: AbortSignal, address: { address: string; family: 4 | 6 }) => Promise<Response>;
+  revalidate_execution_authority?: () => ProviderToolError | null;
+  activate_artifact?: (input: ActivateLocalMediaArtifactInput, db: M0Database) => RegisterMediaArtifactResult;
 }
 
 const DEFAULT_SAFETY: ProviderOutputDownloadSafety = {
@@ -151,7 +155,8 @@ async function fetchWithRedirects(
   initialUrl: URL,
   safety: ProviderOutputDownloadSafety,
   resolver: ((hostname: string) => Promise<Array<{ address: string; family: 4 | 6 }>>) | undefined,
-  fetchAddress: (url: URL, signal: AbortSignal, address: { address: string; family: 4 | 6 }) => Promise<Response>
+  fetchAddress: (url: URL, signal: AbortSignal, address: { address: string; family: 4 | 6 }) => Promise<Response>,
+  revalidate?: () => ProviderToolError | null
 ): Promise<{ response: Response; finalUrl: URL; cleanup: () => void } | { error: ProviderToolError }> {
   let currentUrl = initialUrl;
   for (let attempt = 0; attempt <= safety.redirect_limit; attempt += 1) {
@@ -160,9 +165,22 @@ async function fetchWithRedirects(
     let response: Response;
     try {
       const addresses = await abortable(resolvePublicAddresses(currentUrl.hostname, resolver), controller.signal);
+      const resolutionAuthorityError = revalidate?.();
+      if (resolutionAuthorityError) {
+        clearTimeout(timeout);
+        return { error: resolutionAuthorityError };
+      }
       response = await fetchFromValidatedAddresses(currentUrl, controller.signal, addresses, fetchAddress);
+      const fetchAuthorityError = revalidate?.();
+      if (fetchAuthorityError) {
+        clearTimeout(timeout);
+        void response.body?.cancel().catch(() => undefined);
+        return { error: fetchAuthorityError };
+      }
     } catch (error) {
       clearTimeout(timeout);
+      const failedAwaitAuthorityError = revalidate?.();
+      if (failedAwaitAuthorityError) return { error: failedAwaitAuthorityError };
       if (error instanceof PinnedHttpsError && error.code === "UNSAFE_NETWORK_TARGET") {
         return { error: providerError("PROVIDER_OUTPUT_URI_BLOCKED", "Provider output URL resolved to a private or local network address.") };
       }
@@ -178,6 +196,8 @@ async function fetchWithRedirects(
     if (response.status >= 300 && response.status < 400) {
       clearTimeout(timeout);
       await response.body?.cancel().catch(() => undefined);
+      const redirectAuthorityError = revalidate?.();
+      if (redirectAuthorityError) return { error: redirectAuthorityError };
       const location = response.headers.get("location");
       if (!location) {
         return { error: providerError("PROVIDER_OUTPUT_DOWNLOAD_FAILED", "Provider output redirect was missing a Location header.", true) };
@@ -192,6 +212,8 @@ async function fetchWithRedirects(
     if (!response.ok) {
       clearTimeout(timeout);
       await response.body?.cancel().catch(() => undefined);
+      const responseAuthorityError = revalidate?.();
+      if (responseAuthorityError) return { error: responseAuthorityError };
       return { error: providerError("PROVIDER_OUTPUT_DOWNLOAD_FAILED", `Provider output download returned HTTP ${response.status}.`, true) };
     }
 
@@ -201,7 +223,11 @@ async function fetchWithRedirects(
   return { error: providerError("PROVIDER_OUTPUT_DOWNLOAD_FAILED", "Provider output exceeded redirect limit.", true) };
 }
 
-async function readBoundedResponseBody(response: Response, maxBytes: number): Promise<{ body: Buffer } | { error: ProviderToolError }> {
+async function readBoundedResponseBody(
+  response: Response,
+  maxBytes: number,
+  revalidate?: () => ProviderToolError | null
+): Promise<{ body: Buffer } | { error: ProviderToolError }> {
   if (!response.body) return { error: providerError("PROVIDER_OUTPUT_DOWNLOAD_FAILED", "Provider output response had no body.", true) };
   const reader = response.body.getReader();
   const chunks: Buffer[] = [];
@@ -209,16 +235,25 @@ async function readBoundedResponseBody(response: Response, maxBytes: number): Pr
   try {
     for (;;) {
       const next = await reader.read();
+      const authorityError = revalidate?.();
+      if (authorityError) {
+        void reader.cancel("GENERATION_EXECUTION_AUTHORITY_STALE").catch(() => undefined);
+        return { error: authorityError };
+      }
       if (next.done) break;
       total += next.value.byteLength;
       if (total > maxBytes) {
         await reader.cancel("PROVIDER_OUTPUT_TOO_LARGE").catch(() => undefined);
+        const cancelAuthorityError = revalidate?.();
+        if (cancelAuthorityError) return { error: cancelAuthorityError };
         return { error: providerError("PROVIDER_OUTPUT_TOO_LARGE", "Provider output is larger than the configured maximum.") };
       }
       chunks.push(Buffer.from(next.value));
     }
     return { body: Buffer.concat(chunks, total) };
   } catch (error) {
+    const failedReadAuthorityError = revalidate?.();
+    if (failedReadAuthorityError) return { error: failedReadAuthorityError };
     return {
       error: providerError(
         "PROVIDER_OUTPUT_DOWNLOAD_FAILED",
@@ -254,13 +289,27 @@ export async function downloadProviderOutputToArtifact(
     };
   }
 
-  const fetched = await fetchWithRedirects(urlValidation.url, safety, runtime.resolve_hostname, runtime.fetch_pinned_address ?? pinnedHttpsFetch);
+  const fetched = await fetchWithRedirects(
+    urlValidation.url,
+    safety,
+    runtime.resolve_hostname,
+    runtime.fetch_pinned_address ?? pinnedHttpsFetch,
+    runtime.revalidate_execution_authority
+  );
   if ("error" in fetched) return { ok: false, error: fetched.error };
+  const fetchedAuthorityError = runtime.revalidate_execution_authority?.();
+  if (fetchedAuthorityError) {
+    fetched.cleanup();
+    void fetched.response.body?.cancel().catch(() => undefined);
+    return { ok: false, error: fetchedAuthorityError };
+  }
 
   const contentType = fetched.response.headers.get("content-type");
   if (!isAllowedContentType(contentType)) {
     fetched.cleanup();
     await fetched.response.body?.cancel().catch(() => undefined);
+    const cancelledBodyAuthorityError = runtime.revalidate_execution_authority?.();
+    if (cancelledBodyAuthorityError) return { ok: false, error: cancelledBodyAuthorityError };
     return { ok: false, error: providerError("PROVIDER_OUTPUT_INVALID_CONTENT_TYPE", "Provider output did not advertise a video-compatible content type.") };
   }
 
@@ -269,12 +318,16 @@ export async function downloadProviderOutputToArtifact(
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
     fetched.cleanup();
     await fetched.response.body?.cancel().catch(() => undefined);
+    const cancelledOversizeAuthorityError = runtime.revalidate_execution_authority?.();
+    if (cancelledOversizeAuthorityError) return { ok: false, error: cancelledOversizeAuthorityError };
     return { ok: false, error: providerError("PROVIDER_OUTPUT_TOO_LARGE", "Provider output is larger than the configured maximum.") };
   }
 
-  const downloaded = await readBoundedResponseBody(fetched.response, maxBytes);
+  const downloaded = await readBoundedResponseBody(fetched.response, maxBytes, runtime.revalidate_execution_authority);
   fetched.cleanup();
   if ("error" in downloaded) return { ok: false, error: downloaded.error };
+  const downloadedAuthorityError = runtime.revalidate_execution_authority?.();
+  if (downloadedAuthorityError) return { ok: false, error: downloadedAuthorityError };
   const body = downloaded.body;
 
   mkdirSync(storageDirectory.path, { recursive: true });
@@ -332,7 +385,15 @@ export async function downloadProviderOutputToArtifact(
       linked_objects: { project_id: input.project_id, shot_id: input.shot_id },
       source: { kind: "provider_output_file", provider: input.provider_name, provider_job_id: input.provider_job_id, sha256: "", external_url_host: fetched.finalUrl.hostname }
     };
-    const activated = activateLocalMediaArtifact({ artifact: preparedArtifact, source_path: tempPath, media_root: storageDirectory.path, after_file_placed: runtime.fault_injection_after_file_commit }, db);
+    const activationInput: ActivateLocalMediaArtifactInput = {
+      artifact: preparedArtifact,
+      source_path: tempPath,
+      media_root: storageDirectory.path,
+      after_file_placed: runtime.fault_injection_after_file_commit
+    };
+    const activated = runtime.activate_artifact
+      ? runtime.activate_artifact(activationInput, db)
+      : activateLocalMediaArtifact(activationInput, db);
     if (!activated.ok) return { ok: false, error: providerError(activated.error.code, activated.error.message) };
     return { ok: true, artifact: activated.artifact, ffprobe, output_url_hostname: fetched.finalUrl.hostname };
   } finally {

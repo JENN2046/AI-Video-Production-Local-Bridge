@@ -1,0 +1,97 @@
+{
+  "schema": "external-execution-integrity-thread-ledger-v1",
+  "source_failure_map": "docs/PR123_DELIVERY_STATE_FOUNDATION_FAILURE_MAP.md",
+  "migration": "0016",
+  "workbench_schema": "workbench-v2-11",
+  "status": "LOCAL_FIXTURE_COVERED",
+  "threads": [
+    {
+      "thread_id": "PRRT_kwDOTTDtUM6ZfJwv",
+      "semantics": "Provider submit, poll, and download awaits revalidate execution authority after returning.",
+      "tests": [
+        { "file": "tests/workbench-v2-domain.test.ts", "name": "rejected Provider awaits stay low-disclosure and preserve reconciliation rights" },
+        { "file": "tests/workbench-v2-domain.test.ts", "name": "a paid submit is persisted before post-await Project authority drift enters reconciliation" },
+        { "file": "tests/workbench-v2-domain.test.ts", "name": "post-poll SHOT drift preserves the retained task and blocks download" },
+        { "file": "tests/m1-provider-boundary.test.ts", "name": "M1 provider output downloader revalidates authority after DNS, fetch, and body awaits" }
+      ]
+    },
+    {
+      "thread_id": "PRRT_kwDOTTDtUM6ZfJww",
+      "semantics": "Media activation markers survive an outer transaction rollback and are cleaned only after the true commit.",
+      "tests": [
+        { "file": "tests/workbench-v2-domain.test.ts", "name": "Provider Artifact finalization rollback retains its marker and reconciliation binding" },
+        { "file": "tests/media-activation-integrity.test.ts", "name": "an outer transaction rollback cannot leave an unrecorded active file" }
+      ]
+    },
+    {
+      "thread_id": "PRRT_kwDOTTDtUM6ZfjJd",
+      "semantics": "The persistent worker checks receipt authority before Provider effects and again inside final persistence.",
+      "tests": [
+        { "file": "tests/workbench-v2-domain.test.ts", "name": "worker preserves a known paid task when a resumed capability drifts" },
+        { "file": "tests/workbench-v2-domain.test.ts", "name": "final activation transaction revalidates SHOT authority immediately before Artifact persistence" }
+      ]
+    },
+    {
+      "thread_id": "PRRT_kwDOTTDtUM6Z9w6i",
+      "semantics": "A successful paid submit persists the Provider task before a changed authority boundary can return.",
+      "tests": [
+        { "file": "tests/workbench-v2-domain.test.ts", "name": "a paid submit is persisted before post-await Project authority drift enters reconciliation" },
+        { "file": "tests/workbench-v2-domain.test.ts", "name": "provider task persistence failure enters manual reconciliation without losing the paid task ID" }
+      ]
+    },
+    {
+      "thread_id": "PRRT_kwDOTTDtUM6Z_11q",
+      "semantics": "Filesystem or database rollback preserves an auditable activation marker or recovery Journal.",
+      "tests": [
+        { "file": "tests/workbench-v2-domain.test.ts", "name": "Provider Artifact finalization rollback retains its marker and reconciliation binding" },
+        { "file": "tests/media-activation-integrity.test.ts", "name": "an outer transaction rollback cannot leave an unrecorded active file" }
+      ]
+    },
+    {
+      "thread_id": "PRRT_kwDOTTDtUM6aAoJM",
+      "semantics": "Async regeneration rechecks authority and commits Artifact, GenerationRun, and SHOT as one unit.",
+      "tests": [
+        { "file": "tests/m0-e-review-regeneration.test.ts", "name": "mock regeneration revalidates authority after await and writes no partial Artifact or Run" },
+        { "file": "tests/m0-e-review-regeneration.test.ts", "name": "M0-E revision_needed saves rejection and regeneration preserves old artifact" }
+      ]
+    },
+    {
+      "thread_id": "PRRT_kwDOTTDtUM6aDPTh",
+      "semantics": "Generation execution receipts freeze the Project video specification used by the Provider result.",
+      "tests": [
+        { "file": "tests/workbench-v2-domain.test.ts", "name": "a paid submit is persisted before post-await Project authority drift enters reconciliation" }
+      ]
+    },
+    {
+      "thread_id": "PRRT_kwDOTTDtUM6aD6D_",
+      "semantics": "The active Storyboard Package identity and immutable content are rebound from current authority before persistence.",
+      "tests": [
+        { "file": "tests/workbench-v2-domain.test.ts", "name": "post-poll Storyboard Package replacement preserves the retained task and frozen package receipt" }
+      ]
+    },
+    {
+      "thread_id": "PRRT_kwDOTTDtUM6aEawF",
+      "semantics": "A retained Provider task remains bound to its frozen SHOT and enters reconciliation on SHOT drift.",
+      "tests": [
+        { "file": "tests/workbench-v2-domain.test.ts", "name": "post-poll SHOT drift preserves the retained task and blocks download" },
+        { "file": "tests/workbench-v2-domain.test.ts", "name": "switching a persisted Provider task is rejected without changing recovery Artifact bindings" }
+      ]
+    },
+    {
+      "thread_id": "PRRT_kwDOTTDtUM6acFef",
+      "semantics": "G0 writes use a live transaction and preserve target and backup evidence when rollback authority is uncertain.",
+      "tests": [
+        { "file": "tests/workbench-v2-production-mutation-authority.test.ts", "name": "G0 prepared writes require a live owned transaction before creating filesystem state" },
+        { "file": "tests/workbench-v2-production-mutation-authority.test.ts", "name": "G0 retains target and backup evidence when commit outcome or database rollback is uncertain" }
+      ]
+    },
+    {
+      "thread_id": "PRRT_kwDOTTDtUM6asFkl",
+      "semantics": "Provider task and receipt remain reconcilable when Artifact activation finalization rolls back.",
+      "tests": [
+        { "file": "tests/workbench-v2-domain.test.ts", "name": "Provider Artifact finalization rollback retains its marker and reconciliation binding" },
+        { "file": "tests/workbench-v2-domain.test.ts", "name": "failed verified Blob recovery stays in manual reconciliation without polling or resubmitting" }
+      ]
+    }
+  ]
+}

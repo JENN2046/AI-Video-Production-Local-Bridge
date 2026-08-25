@@ -1,15 +1,58 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
-import { attachArtifactToShot, getMediaArtifact, registerMediaArtifact, validateActiveArtifactReference } from "./mediaArtifacts.js";
+import { attachArtifactToShot, cleanupCommittedMediaActivationMarkers, getMediaArtifact, registerMediaArtifact, validateActiveArtifactReference } from "./mediaArtifacts.js";
 import { getGenerationRun, saveGenerationRun, type Confirmation, type GenerationRun } from "./generation.js";
 import { requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import { getProject, getShot, saveShot, type Shot, type ToolError } from "./projects.js";
+import { getStoryboardPackage } from "./storyboardPackages.js";
 import { type ProviderExecutionRequest } from "./provider.js";
 import { MockVideoProviderAdapter } from "./videoProviderAdapters.js";
 import { refreshWorkbenchAssemblyReadiness, workbenchProductionMutationError } from "./workbenchDeliveryState.js";
 
 type ToolResult<T> = { ok: true } & T | { ok: false; error: ToolError };
+
+function regenerationAuthorityFingerprint(
+  db: M0Database,
+  shotId: string,
+  previousRunId: string
+): string | null {
+  const shot = getShot(db, shotId);
+  const project = shot ? getProject(db, shot.project_id) : null;
+  const previousRun = getGenerationRun(db, previousRunId);
+  const storyboardPackage = project?.active_storyboard_package_id
+    ? getStoryboardPackage(db, project.active_storyboard_package_id)
+    : null;
+  if (!shot || !project || !previousRun || !storyboardPackage
+    || previousRun.project_id !== project.project_id
+    || previousRun.shot_id !== shot.shot_id
+    || storyboardPackage.project_id !== project.project_id
+    || !storyboardPackage.approved_shot_snapshots.some((snapshot) => snapshot.shot_id === shot.shot_id)) return null;
+  const storyboard = validateActiveArtifactReference(db, {
+    artifact_id: shot.storyboard_image_artifact_id,
+    project_id: project.project_id,
+    shot_id: shot.shot_id,
+    role: "storyboard_image",
+    artifact_type: "image"
+  });
+  if (!storyboard.ok) return null;
+  return createHash("sha256").update(JSON.stringify({
+    project: {
+      project_id: project.project_id,
+      status: project.status,
+      video_spec: project.video_spec,
+      active_storyboard_package_id: project.active_storyboard_package_id
+    },
+    storyboard_package: storyboardPackage,
+    shot,
+    previous_run: previousRun,
+    storyboard_artifact: {
+      artifact_id: storyboard.artifact.artifact_id,
+      blob_id: storyboard.artifact.blob_id,
+      sha256: storyboard.artifact.metadata.sha256
+    }
+  })).digest("hex");
+}
 
 export interface RevisionInstruction {
   summary: string;
@@ -125,7 +168,8 @@ export async function regenerateShotVideo(
     provider_execution?: ProviderExecutionRequest;
     confirmation?: Confirmation;
   },
-  db = openM0Database()
+  db = openM0Database(),
+  runtime: { after_provider_await?: () => void } = {}
 ): Promise<ToolResult<{ run: GenerationRun; artifact_id: string; shot: Shot }>> {
   if (!hardGateConfirmed(input.confirmation)) {
     return { ok: false, error: { code: "HARD_GATE_CONFIRMATION_REQUIRED", message: "Regeneration requires hard_gate confirmation." } };
@@ -165,6 +209,10 @@ export async function regenerateShotVideo(
     artifact_type: "image"
   });
   if (!storyboard.ok) return { ok: false, error: storyboard.error };
+  const authorityFingerprint = regenerationAuthorityFingerprint(db, shot.shot_id, previousRun.run_id);
+  if (!authorityFingerprint) {
+    return { ok: false, error: { code: "GENERATION_EXECUTION_AUTHORITY_STALE", message: "Regeneration authority could not be frozen before Provider execution." } };
+  }
 
   const adapter = new MockVideoProviderAdapter();
   const attemptNumber = previousRun.versioning.attempt_number + 1;
@@ -205,54 +253,77 @@ export async function regenerateShotVideo(
   };
 
   const job = await adapter.submitGeneration();
+  runtime.after_provider_await?.();
   if (!job.ok) {
     return { ok: false, error: { code: "GENERATION_PROVIDER_ERROR", message: job.error.message } };
   }
-  const artifactResult = registerMediaArtifact(
-    {
-      artifact_type: "video",
-      role: "generated_clip",
-      source: {
-        kind: "fixture_path",
-        path: "video/mock_clip.mp4"
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    if (regenerationAuthorityFingerprint(db, shot.shot_id, previousRun.run_id) !== authorityFingerprint) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "GENERATION_EXECUTION_AUTHORITY_STALE", message: "Regeneration authority changed while awaiting Provider execution." } };
+    }
+    const currentShot = getShot(db, shot.shot_id);
+    const currentProject = getProject(db, project.project_id);
+    const currentPreviousRun = getGenerationRun(db, previousRun.run_id);
+    if (!currentShot || !currentProject || !currentPreviousRun) throw new Error("GENERATION_EXECUTION_AUTHORITY_STALE");
+    const artifactResult = registerMediaArtifact(
+      {
+        artifact_type: "video",
+        role: "generated_clip",
+        source: {
+          kind: "fixture_path",
+          path: "video/mock_clip.mp4"
+        },
+        linked_objects: {
+          project_id: project.project_id,
+          shot_id: shot.shot_id
+        },
+        metadata: {
+          duration_seconds: shot.duration_seconds,
+          aspect_ratio: project.video_spec.aspect_ratio,
+          width: 1080,
+          height: 1920
+        },
+        provenance: {
+          provider: "mock",
+          provider_job_id: job.provider_job_id
+        }
       },
-      linked_objects: {
-        project_id: project.project_id,
-        shot_id: shot.shot_id
-      },
-      metadata: {
-        duration_seconds: shot.duration_seconds,
-        aspect_ratio: project.video_spec.aspect_ratio,
-        width: 1080,
-        height: 1920
-      },
-      provenance: {
-        provider: "mock",
-        provider_job_id: job.provider_job_id
-      }
-    },
-    db
-  );
-  if (!artifactResult.ok) {
-    return { ok: false, error: { code: "GENERATION_PROVIDER_ERROR", message: artifactResult.error.message } };
+      db
+    );
+    if (!artifactResult.ok) {
+      db.exec("ROLLBACK");
+      return { ok: false, error: { code: "GENERATION_PROVIDER_ERROR", message: artifactResult.error.message } };
+    }
+    run.status = "succeeded";
+    run.output.artifact_ids = [artifactResult.artifact.artifact_id];
+    run.provider.provider_job_id = job.provider_job_id;
+    run.provider.provider_status = job.provider_status;
+
+    currentShot.video_prompt = input.updated_prompt;
+    currentShot.negative_prompt = input.updated_negative_prompt ?? currentShot.negative_prompt;
+    currentShot.generation_run_ids.push(run.run_id);
+    currentShot.status = "video_generated";
+    currentShot.clip_versions.push({
+      artifact_id: run.output.artifact_ids[0],
+      run_id: run.run_id,
+      attempt_number: attemptNumber,
+      review_status: "pending"
+    });
+    saveGenerationRun(db, run);
+    saveShot(db, currentShot);
+    db.exec("COMMIT");
+    cleanupCommittedMediaActivationMarkers(db, [artifactResult.artifact.artifact_id]);
+
+    return { ok: true, run, artifact_id: run.output.artifact_ids[0] ?? "", shot: currentShot };
+  } catch (error) {
+    try { db.exec("ROLLBACK"); } catch { /* transaction may already have rolled back */ }
+    return { ok: false, error: {
+      code: error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message)
+        ? error.message
+        : "GENERATION_REGENERATION_TRANSACTION_FAILED",
+      message: "Regeneration output could not be committed atomically."
+    } };
   }
-  run.status = "succeeded";
-  run.output.artifact_ids = [artifactResult.artifact.artifact_id];
-  run.provider.provider_job_id = job.provider_job_id;
-  run.provider.provider_status = job.provider_status;
-
-  shot.video_prompt = input.updated_prompt;
-  shot.negative_prompt = input.updated_negative_prompt ?? shot.negative_prompt;
-  shot.generation_run_ids.push(run.run_id);
-  shot.status = "video_generated";
-  shot.clip_versions.push({
-    artifact_id: run.output.artifact_ids[0],
-    run_id: run.run_id,
-    attempt_number: attemptNumber,
-    review_status: "pending"
-  });
-  saveGenerationRun(db, run);
-  saveShot(db, shot);
-
-  return { ok: true, run, artifact_id: run.output.artifact_ids[0] ?? "", shot };
 }

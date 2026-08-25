@@ -20,8 +20,8 @@ import {
 } from "../webgpt-v4/contracts.js";
 
 export const READONLY_SNAPSHOT_SCHEMA_VERSION = "readonly-snapshot-v4";
-export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-10";
-export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0015";
+export const READONLY_SNAPSHOT_REQUIRED_SCHEMA = "workbench-v2-11";
+export const READONLY_SNAPSHOT_REQUIRED_MIGRATION = "0016";
 // Snapshot v4 retains the last accepted activity-runtime source ledger plus
 // intervening foundation and assembly ledgers as verification-only inputs. A remote may
 // therefore keep serving an already signed v4 snapshot while its publisher is
@@ -32,6 +32,8 @@ export const READONLY_SNAPSHOT_FOUNDATION_SOURCE_SCHEMA = "workbench-v2-7";
 export const READONLY_SNAPSHOT_FOUNDATION_SOURCE_MIGRATION = "0012";
 export const READONLY_SNAPSHOT_ASSEMBLY_SOURCE_SCHEMA = "workbench-v2-9";
 export const READONLY_SNAPSHOT_ASSEMBLY_SOURCE_MIGRATION = "0014";
+export const READONLY_SNAPSHOT_DELIVERY_SOURCE_SCHEMA = "workbench-v2-10";
+export const READONLY_SNAPSHOT_DELIVERY_SOURCE_MIGRATION = "0015";
 export const READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA = "workbench-v2-5";
 export const READONLY_SNAPSHOT_LEGACY_SOURCE_MIGRATION = "0008";
 export const READONLY_SNAPSHOT_MAX_TTL_SECONDS = 24 * 60 * 60;
@@ -735,6 +737,7 @@ const readonlySnapshotShape = {
     READONLY_SNAPSHOT_PREVIOUS_SOURCE_SCHEMA,
     READONLY_SNAPSHOT_FOUNDATION_SOURCE_SCHEMA,
     READONLY_SNAPSHOT_ASSEMBLY_SOURCE_SCHEMA,
+    READONLY_SNAPSHOT_DELIVERY_SOURCE_SCHEMA,
     READONLY_SNAPSHOT_REQUIRED_SCHEMA
   ]),
   source_migration: z.enum([
@@ -742,6 +745,7 @@ const readonlySnapshotShape = {
     READONLY_SNAPSHOT_PREVIOUS_SOURCE_MIGRATION,
     READONLY_SNAPSHOT_FOUNDATION_SOURCE_MIGRATION,
     READONLY_SNAPSHOT_ASSEMBLY_SOURCE_MIGRATION,
+    READONLY_SNAPSHOT_DELIVERY_SOURCE_MIGRATION,
     READONLY_SNAPSHOT_REQUIRED_MIGRATION
   ]),
   source_version: z.string().min(1).max(100),
@@ -767,15 +771,17 @@ function validateSnapshotBindings(value: {
     && value.source_migration === READONLY_SNAPSHOT_FOUNDATION_SOURCE_MIGRATION;
   const sourcePairIsAssembly = value.source_schema === READONLY_SNAPSHOT_ASSEMBLY_SOURCE_SCHEMA
     && value.source_migration === READONLY_SNAPSHOT_ASSEMBLY_SOURCE_MIGRATION;
+  const sourcePairIsDelivery = value.source_schema === READONLY_SNAPSHOT_DELIVERY_SOURCE_SCHEMA
+    && value.source_migration === READONLY_SNAPSHOT_DELIVERY_SOURCE_MIGRATION;
   const sourcePairIsLegacy = value.source_schema === READONLY_SNAPSHOT_LEGACY_SOURCE_SCHEMA
     && value.source_migration === READONLY_SNAPSHOT_LEGACY_SOURCE_MIGRATION;
-  if (!sourcePairIsCurrent && !sourcePairIsAssembly && !sourcePairIsPrevious && !sourcePairIsFoundation && !sourcePairIsLegacy) {
+  if (!sourcePairIsCurrent && !sourcePairIsDelivery && !sourcePairIsAssembly && !sourcePairIsPrevious && !sourcePairIsFoundation && !sourcePairIsLegacy) {
     context.addIssue({ code: "custom", message: "Snapshot source schema and migration do not form a supported pair.", path: ["source_schema"] });
   }
-  if ((sourcePairIsCurrent || sourcePairIsAssembly) && value.projects.some((project) => project.delivery.workflow_state === undefined)) {
+  if ((sourcePairIsCurrent || sourcePairIsDelivery || sourcePairIsAssembly) && value.projects.some((project) => project.delivery.workflow_state === undefined)) {
     context.addIssue({ code: "custom", message: "Current snapshots require the durable delivery workflow state.", path: ["projects"] });
   }
-  if (sourcePairIsCurrent && value.projects.some((project) =>
+  if ((sourcePairIsCurrent || sourcePairIsDelivery) && value.projects.some((project) =>
     project.list_item_compact.summary.export_verification_state === undefined
       || project.list_item_full.summary.export_verification_state === undefined
       || project.delivery.export_verification_state === undefined

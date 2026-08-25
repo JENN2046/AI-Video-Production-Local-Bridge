@@ -22,7 +22,8 @@ export type WorkbenchProductionMutationKind =
   | "export_interruption"
   | "export_finalization"
   | "export_reuse"
-  | "closeout";
+  | "closeout"
+  | "generation_execution";
 
 export interface WorkbenchProductionMutationCapability {
   kind: WorkbenchProductionMutationKind;

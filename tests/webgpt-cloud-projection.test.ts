@@ -262,11 +262,11 @@ function stripMeta(result: ReturnType<SqliteReadonlyDataSource["listProductionPr
   return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
 }
 
-test("readonly projection requires migration 0015 and never upgrades an older database", () => {
+test("readonly projection requires migration 0016 and never upgrades an older database", () => {
   const root = mkdtempSync(join(tmpdir(), "readonly-projection-ledger-"));
   const sqlitePath = join(root, "app.sqlite");
   const db = new DatabaseSync(sqlitePath);
-  migrateThrough(db, "0014");
+  migrateThrough(db, "0015");
   db.close();
   const beforeDb = openM0DatabaseConnection(sqlitePath, { readOnly: true });
   const before = logicalManifest(beforeDb);
@@ -282,10 +282,10 @@ test("readonly projection requires migration 0015 and never upgrades an older da
     );
     const verify = openM0DatabaseConnection(sqlitePath, { readOnly: true });
     try {
-      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0015'").get() as { count: number }).count, 0);
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0016'").get() as { count: number }).count, 0);
       assert.equal((verify.prepare("SELECT COUNT(*) count FROM pragma_table_info('workbench_delivery_jobs') WHERE name = 'input_fingerprint'").get() as { count: number }).count, 1);
       assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'director_automation_grants'").get() as { count: number }).count, 1);
-      assert.equal((verify.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-9");
+      assert.equal((verify.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-10");
       assert.deepEqual(logicalManifest(verify), before);
     } finally {
       verify.close();
@@ -367,7 +367,7 @@ test("readonly Snapshot keeps legacy review authoritative over stale final appro
     created.project.exports.final_video_artifact_id = legacyFinalVideo.artifact_id;
     db.prepare("UPDATE projects SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?")
       .run(JSON.stringify(created.project), created.project_id);
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0012", "0013", "0014", "0015"]);
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0012", "0013", "0014", "0015", "0016"]);
 
     const snapshot = exportReadonlySnapshotFromDatabase({
       database_path: sqlitePath,
@@ -595,9 +595,13 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
   assert.equal(readonlySnapshotStatus(snapshot, new Date("2026-07-16T01:00:00.000Z")).freshness_status, "snapshot_expired");
 
   const currentSource = structuredClone(unsigned);
-  currentSource.source_schema = "workbench-v2-10";
-  currentSource.source_migration = "0015";
+  currentSource.source_schema = "workbench-v2-11";
+  currentSource.source_migration = "0016";
   assert.doesNotThrow(() => finalizeReadonlySnapshot(currentSource));
+  const deliverySource = structuredClone(currentSource);
+  deliverySource.source_schema = "workbench-v2-10";
+  deliverySource.source_migration = "0015";
+  assert.doesNotThrow(() => finalizeReadonlySnapshot(deliverySource));
   const assemblySource = structuredClone(currentSource);
   assemblySource.source_schema = "workbench-v2-9";
   assemblySource.source_migration = "0014";

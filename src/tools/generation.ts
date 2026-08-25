@@ -123,8 +123,16 @@ export function saveGenerationBatch(db: M0Database, batch: GenerationBatch): voi
 
 export function saveGenerationRun(db: M0Database, run: GenerationRun): void {
   db.prepare(`
-    INSERT OR REPLACE INTO generation_runs (run_id, batch_id, project_id, shot_id, run_type, status, data_json, updated_at)
+    INSERT INTO generation_runs (run_id, batch_id, project_id, shot_id, run_type, status, data_json, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(run_id) DO UPDATE SET
+      batch_id = excluded.batch_id,
+      project_id = excluded.project_id,
+      shot_id = excluded.shot_id,
+      run_type = excluded.run_type,
+      status = excluded.status,
+      data_json = excluded.data_json,
+      updated_at = CURRENT_TIMESTAMP
   `).run(run.run_id, run.batch_id, run.project_id, run.shot_id, run.run_type, run.status, JSON.stringify(run));
 }
 
@@ -313,12 +321,12 @@ export async function createGenerationRunFromPackageShot(
   input: PackageShotGenerationInput,
   db = openM0Database()
 ): Promise<PackageShotGenerationResult> {
-  if (input.provider_execution?.provider === "real" && input.allow_live_provider !== true) {
+  if (input.provider_execution?.provider === "real") {
     return {
       ok: false,
       error: {
-        code: "LIVE_PROVIDER_AUTHORIZATION_REQUIRED",
-        message: "Live provider submit requires a separate exact authorization path."
+        code: "PROVIDER_DISABLED",
+        message: "Legacy package-shot generation cannot call a real Provider. Use the receipt-backed V2 single-SHOT worker."
       }
     };
   }
@@ -411,8 +419,8 @@ export async function startStoryboardVideoGeneration(
           },
           credential: undefined
         };
-  if (selectedProvider.provider === "real" && input.allow_live_provider !== true) {
-    return { ok: false, error: { code: "PROVIDER_DISABLED", message: "Legacy batch generation cannot call a real provider. Use the V2 single-SHOT intent flow or an explicitly authorized canary." } };
+  if (selectedProvider.provider === "real") {
+    return { ok: false, error: { code: "PROVIDER_DISABLED", message: "Legacy batch generation cannot call a real Provider. Use the receipt-backed V2 single-SHOT worker." } };
   }
   const adapter = adapterForSelectedProvider(selectedProvider.provider_name, selectedProvider.credential);
 

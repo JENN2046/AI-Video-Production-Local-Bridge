@@ -181,9 +181,15 @@ test("existing workbench-v2-4 database is baselined without rewriting business r
     const after = db.prepare("SELECT data_json FROM projects WHERE project_id = 'project_existing'").get() as { data_json: string };
     assert.equal(result.baselined, true);
     assert.equal(after.data_json, before.data_json);
-    const backfilled = db.prepare(`SELECT j.state, e.to_state, e.reason_code FROM generation_jobs j
-      JOIN generation_job_events e ON e.job_id = j.job_id WHERE j.intent_id = 'intent_existing'`).get() as { state: string; to_state: string; reason_code: string };
-    assert.deepEqual({ ...backfilled }, { state: "polling", to_state: "polling", reason_code: "MIGRATION_BACKFILL" });
+    const backfilled = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE intent_id = 'intent_existing'")
+      .get() as { state: string; reconciliation_reason: string };
+    assert.deepEqual({ ...backfilled }, { state: "manual_reconciliation", reconciliation_reason: "GENERATION_EXECUTION_SNAPSHOT_MISSING" });
+    const backfillEvents = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = 'job_intent_existing' ORDER BY created_at, rowid")
+      .all() as Array<{ to_state: string; reason_code: string }>;
+    assert.deepEqual(backfillEvents.map((event) => ({ ...event })), [
+      { to_state: "polling", reason_code: "MIGRATION_BACKFILL" },
+      { to_state: "manual_reconciliation", reason_code: "GENERATION_EXECUTION_SNAPSHOT_MISSING" }
+    ]);
     assertSchemaCurrent(db);
     db.close();
   } finally {
@@ -385,9 +391,10 @@ test("database migrated through 0003 keeps its historical checksums and upgrades
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[1]), "52dc1311414cd88468542159d215adce443717b087e65d73d3f60859e5727c75");
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[2]), "161aa27dec915827c0ab6d46bc768ca2734c2efdf4bc45ae2fa1b2f4b564fef8");
     const result = runDatabaseMigrations(db);
-    assert.deepEqual(result.applied, ["0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015"]);
-    const event = db.prepare("SELECT to_state, reason_code FROM generation_job_events WHERE job_id = 'job_intent_legacy'").get() as { to_state: string; reason_code: string };
-    assert.deepEqual({ ...event }, { to_state: "polling", reason_code: "MIGRATION_BACKFILL" });
+    assert.deepEqual(result.applied, ["0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016"]);
+    const migratedJob = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = 'job_intent_legacy'")
+      .get() as { state: string; reconciliation_reason: string };
+    assert.deepEqual({ ...migratedJob }, { state: "manual_reconciliation", reconciliation_reason: "GENERATION_EXECUTION_SNAPSHOT_MISSING" });
     assertSchemaCurrent(db);
     db.close();
   } finally {
@@ -434,7 +441,7 @@ test("migration 0006 backfills active legacy Artifact facts from the verified Bl
     assert.equal(migrationChecksum(DATABASE_MIGRATIONS[4]), HISTORICAL_MIGRATION_0005_CHECKSUM);
     insertLedger.run(DATABASE_MIGRATIONS[4].id, DATABASE_MIGRATIONS[4].name, HISTORICAL_MIGRATION_0005_CHECKSUM);
     const migrated = runDatabaseMigrations(db);
-    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015"]);
+    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016"]);
 
     const after = JSON.parse((db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(artifact.artifact_id) as { data_json: string }).data_json) as typeof artifact;
     assert.equal(after.metadata.sha256, before.sha256);
@@ -479,7 +486,7 @@ test("migration accepts and canonicalizes the interim 0005 ledger checksum", () 
         && /Database schema version is workbench-v2-5|Missing database migration 0006/.test(error.message)
     );
     const migrated = runDatabaseMigrations(connection);
-    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015"]);
+    assert.deepEqual(migrated.applied, ["0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016"]);
     const normalized = connection.prepare("SELECT checksum FROM schema_migrations WHERE migration_id = '0005'").get() as { checksum: string };
     assert.equal(normalized.checksum, HISTORICAL_MIGRATION_0005_CHECKSUM);
     assertSchemaCurrent(connection);
@@ -795,6 +802,73 @@ test("provider task IDs are unique per provider at the database boundary", () =>
   }
 });
 
+test("generation execution receipts require their owner and keep identity, task, and history immutable", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "execution-receipt.sqlite");
+    migrateDatabase(sqlitePath);
+    const db = openM0Database(sqlitePath);
+    try {
+      db.exec("PRAGMA foreign_keys = OFF");
+      const insertReceipt = () => db.prepare(`INSERT INTO generation_execution_receipts
+        (intent_id, job_id, run_id, project_id, shot_id, storyboard_package_id, provider,
+         authority_fingerprint, authority_snapshot_json, state)
+        VALUES ('intent_receipt_boundary', 'job_receipt_boundary', 'run_receipt_boundary',
+          'project_receipt_boundary', 'shot_receipt_boundary', 'package_receipt_boundary', 'runninghub', ?, ?, 'reserved')`)
+        .run("a".repeat(64), JSON.stringify({ schema_version: "generation_execution_authority.v1" }));
+      assert.throws(insertReceipt, /GENERATION_EXECUTION_OWNER_REQUIRED/);
+      withWorkbenchProductionMutationAuthority(db, {
+        kind: "generation_execution",
+        project_id: "project_receipt_boundary",
+        object_id: "intent_receipt_boundary"
+      }, insertReceipt);
+
+      assert.throws(() => db.prepare(`UPDATE generation_execution_receipts
+        SET provider_status = 'DIRECT_SQL_BYPASS' WHERE intent_id = 'intent_receipt_boundary'`).run(),
+      /GENERATION_EXECUTION_OWNER_REQUIRED/);
+      assert.throws(() => withWorkbenchProductionMutationAuthority(db, {
+        kind: "generation_execution",
+        project_id: "project_receipt_boundary",
+        object_id: "intent_receipt_boundary"
+      }, () => db.prepare(`UPDATE generation_execution_receipts
+        SET authority_fingerprint = ? WHERE intent_id = 'intent_receipt_boundary'`).run("b".repeat(64))),
+      /GENERATION_EXECUTION_IDENTITY_IMMUTABLE/);
+
+      withWorkbenchProductionMutationAuthority(db, {
+        kind: "generation_execution",
+        project_id: "project_receipt_boundary",
+        object_id: "intent_receipt_boundary"
+      }, () => db.prepare(`UPDATE generation_execution_receipts
+        SET state = 'submitted', provider_task_id = 'task-receipt-boundary'
+        WHERE intent_id = 'intent_receipt_boundary'`).run());
+      assert.throws(() => withWorkbenchProductionMutationAuthority(db, {
+        kind: "generation_execution",
+        project_id: "project_receipt_boundary",
+        object_id: "intent_receipt_boundary"
+      }, () => db.prepare(`UPDATE generation_execution_receipts
+        SET provider_task_id = 'task-receipt-replacement'
+        WHERE intent_id = 'intent_receipt_boundary'`).run()),
+      /GENERATION_EXECUTION_TRANSITION_INVALID/);
+      assert.throws(() => db.prepare("DELETE FROM generation_execution_receipts WHERE intent_id = 'intent_receipt_boundary'").run(),
+        /GENERATION_EXECUTION_RECEIPT_IMMUTABLE/);
+
+      const retained = db.prepare(`SELECT state, provider_task_id, authority_fingerprint
+        FROM generation_execution_receipts WHERE intent_id = 'intent_receipt_boundary'`).get() as {
+          state: string; provider_task_id: string; authority_fingerprint: string;
+        };
+      assert.deepEqual({ ...retained }, {
+        state: "submitted",
+        provider_task_id: "task-receipt-boundary",
+        authority_fingerprint: "a".repeat(64)
+      });
+    } finally {
+      db.close();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("artifact persistence preserves the existing row on provider task conflicts", () => {
   const root = tempRoot();
   const mediaPath = join(paths.videoArtifactsRoot, `${basename(root)}-provider-conflict.mp4`);
@@ -901,4 +975,49 @@ test("migration checksum is deterministic", () => {
   assert.equal(migrationChecksum(DATABASE_MIGRATIONS[0]), migrationChecksum(DATABASE_MIGRATIONS[0]));
   assert.notEqual(migrationChecksum(DATABASE_MIGRATIONS[0]), migrationChecksum(DATABASE_MIGRATIONS[1]));
   assert.doesNotMatch(DATABASE_MIGRATIONS[1].canonical, /function\s+initializeWorkbenchV2Schema/);
+});
+
+test("migration 0016 rolls back every partial schema object when its final trigger conflicts", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "migration-0016-atomic.sqlite");
+    const db = new DatabaseSync(sqlitePath);
+    try {
+      const migration0016 = DATABASE_MIGRATIONS.at(-1);
+      assert.ok(migration0016);
+      assert.equal(migration0016.id, "0016");
+      assert.equal(migrationChecksum(migration0016), "7033e5d836a9ec4bebfde449f62120fcda0361e8fe5de1224fb00ca39b1e8cb9");
+      for (const migration of DATABASE_MIGRATIONS.slice(0, -1)) migration.apply(db);
+      db.exec(`CREATE TABLE schema_migrations (
+        migration_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        checksum TEXT NOT NULL,
+        applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`);
+      for (const migration of DATABASE_MIGRATIONS.slice(0, -1)) {
+        db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)")
+          .run(migration.id, migration.name, migrationChecksum(migration));
+      }
+      db.exec(`CREATE TRIGGER generation_execution_receipts_no_delete
+        BEFORE DELETE ON projects BEGIN SELECT RAISE(ABORT, 'SENTINEL_TRIGGER'); END;`);
+
+      assert.throws(() => runDatabaseMigrations(db), /generation_execution_receipts_no_delete/);
+      const version = db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string };
+      const ledger = db.prepare("SELECT migration_id FROM schema_migrations WHERE migration_id = '0016'").get();
+      const table = db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'generation_execution_receipts'").get();
+      const partialTriggers = db.prepare(`SELECT name FROM sqlite_schema WHERE type = 'trigger'
+        AND name LIKE 'generation_execution_receipts_%' AND name <> 'generation_execution_receipts_no_delete'`).all();
+      const sentinel = db.prepare(`SELECT sql FROM sqlite_schema WHERE type = 'trigger'
+        AND name = 'generation_execution_receipts_no_delete'`).get() as { sql: string };
+      assert.equal(version.value, "workbench-v2-10");
+      assert.equal(ledger, undefined);
+      assert.equal(table, undefined);
+      assert.deepEqual(partialTriggers, []);
+      assert.match(sentinel.sql, /SENTINEL_TRIGGER/);
+    } finally {
+      db.close();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

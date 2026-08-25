@@ -82,6 +82,7 @@
         "tests/workbench-v2-delivery-actions.test.ts",
         "tests/workbench-v2-delivery-state.test.ts",
         "tests/workbench-v2-domain.test.ts",
+        "tests/workbench-v2-external-execution-integrity.test.ts",
         "tests/workbench-v2-governance.test.ts",
         "tests/workbench-v2-inbox.test.ts",
         "tests/workbench-v2-production-mutation-authority.test.ts",
@@ -712,7 +713,7 @@
       "path": "tests/webgpt-cloud-projection.test.ts",
       "npm_script": "test:webgpt:cloud",
       "ci_step": "WebGPT cloud projection tests",
-      "case_name": "readonly projection requires migration 0015 and never upgrades an older database"
+      "case_name": "readonly projection requires migration 0016 and never upgrades an older database"
     },
     {
       "id": "readonly-projection-dto-parity",

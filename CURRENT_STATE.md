@@ -11,8 +11,9 @@ For the current source/runtime boundary, use the repository [README](README.md),
 the [Delivery State Foundation Closeout](docs/DELIVERY_STATE_FOUNDATION_CLOSEOUT_2026-08-21.md),
 the [Production Mutation Authority status](docs/PRODUCTION_MUTATION_AUTHORITY_2026-08-24.md),
 [Durable FFmpeg Assembly](docs/DURABLE_FFMPEG_ASSEMBLY_2026-08-25.md), and
-[Final Review, Export, and Closeout](docs/FINAL_REVIEW_EXPORT_CLOSEOUT_2026-08-25.md).
-Canonical source requires `workbench-v2-10` / ledger `0015`; the activity
+[Final Review, Export, and Closeout](docs/FINAL_REVIEW_EXPORT_CLOSEOUT_2026-08-25.md), and
+[External Execution Integrity](docs/EXTERNAL_EXECUTION_INTEGRITY_2026-08-25.md).
+Canonical source requires `workbench-v2-11` / ledger `0016`; the activity
 runtime's last explicitly accepted boundary remains `workbench-v2-6` / ledger
 `0011`, so current-main activity runtime acceptance is not established. The
 canonical source now contains durable local FFmpeg Assembly, Final Review,

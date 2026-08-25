@@ -4,8 +4,8 @@ This index separates current operating truth from historical implementation evid
 
 ## Current reconciliation
 
-This reconciliation follows canonical source at migration `0015` /
-`workbench-v2-10`. That is a source fact, not a new activity-database, runtime,
+This reconciliation follows canonical source at migration `0016` /
+`workbench-v2-11`. That is a source fact, not a new activity-database, runtime,
 Snapshot, Provider or delivery acceptance. The activity runtime remains accepted
 only at migration `0011` / `workbench-v2-6`.
 
@@ -36,6 +36,7 @@ used as current authority after PR #128.
 | Audit Production Mutation Authority and its 11 deferred review threads | [Production Mutation Authority](PRODUCTION_MUTATION_AUTHORITY_2026-08-24.md) |
 | Audit durable local FFmpeg Assembly and restart semantics | [Durable FFmpeg Assembly](DURABLE_FFMPEG_ASSEMBLY_2026-08-25.md) |
 | Audit Final Review, immutable Export, and exact Closeout | [Final Review, Export, and Closeout](FINAL_REVIEW_EXPORT_CLOSEOUT_2026-08-25.md) |
+| Audit Provider await, receipt, atomic finalization, and recovery integrity | [External Execution Integrity](EXTERNAL_EXECUTION_INTEGRITY_2026-08-25.md) |
 | Understand the active product scope and frozen surfaces | [Product Scope Freeze](PRODUCT_SCOPE_FREEZE.md) |
 | See the current Workbench core-loop gaps and S3 boundary | [Current Core Production Loop Gap Audit](CORE_PRODUCTION_LOOP_GAP_AUDIT.md) |
 | See the completed S3 readiness findings and exact follow-up gates | [Current Workbench Canary Readiness](../ops/reports/2026-07-30-current-workbench-canary-readiness.md) |
@@ -47,8 +48,8 @@ used as current authority after PR #128.
 
 ## Operator and historical runbooks
 
-- [Readonly MCP App Delivery](webgpt/READONLY_MCP_APP_DELIVERY_RUNBOOK.md) — historical acceptance and future revalidation boundary; current-main execution requires `0015` admission
-- [Unified ChatGPT Workspace Transport](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md) — historical transport/activity evidence and future revalidation boundary; current-main execution requires `0015` admission
+- [Readonly MCP App Delivery](webgpt/READONLY_MCP_APP_DELIVERY_RUNBOOK.md) — historical acceptance and future revalidation boundary; current-main execution requires `0016` admission
+- [Unified ChatGPT Workspace Transport](webgpt/UNIFIED_CHATGPT_WORKSPACE_TRANSPORT_RUNBOOK.md) — historical transport/activity evidence and future revalidation boundary; current-main execution requires `0016` admission
 - [Readonly Local Media Gateway](webgpt/READONLY_LOCAL_MEDIA_GATEWAY_RUNBOOK.md)
 - [WebGPT V4 legacy rollback reference](webgpt/WEBGPT_V4_RUNBOOK.md)
 - [Federated OAuth portability](READONLY_FEDERATED_OAUTH_PORTABILITY.md)
