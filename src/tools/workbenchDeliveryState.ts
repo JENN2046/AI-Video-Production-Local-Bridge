@@ -46,7 +46,34 @@ export interface WorkbenchDeliveryJobRecord {
   updated_at: string;
 }
 
-export type WorkbenchDeliverySummaryState = "not_ready" | "ready_to_assemble" | "final_review" | "delivered";
+export interface WorkbenchExportRecord {
+  export_id: string;
+  project_id: string;
+  artifact_id: string;
+  relative_path: string;
+  sha256: string;
+  size_bytes: number;
+  created_at: string;
+}
+
+export interface WorkbenchCloseoutReceipt {
+  event_id: string;
+  project_id: string;
+  artifact_id: string | null;
+  export_id: string | null;
+  reason_code: string;
+  created_at: string;
+}
+
+export type WorkbenchDeliverySummaryState =
+  | "not_ready"
+  | "ready_to_assemble"
+  | "final_review"
+  | "verification_required"
+  | "delivery_invalid"
+  | "delivered";
+
+export type WorkbenchExportVerificationState = "not_applicable" | "unverified" | "verified" | "failed";
 
 export type WorkbenchProductionMutationCode =
   | "PROJECT_NOT_FOUND"
@@ -163,6 +190,40 @@ export function getActiveWorkbenchDeliveryJob(
   return row as WorkbenchDeliveryJobRecord | undefined ?? null;
 }
 
+export function getLatestRetryableWorkbenchDeliveryJob(
+  db: M0Database,
+  projectId: string,
+  jobType: WorkbenchDeliveryJobType
+): WorkbenchDeliveryJobRecord | null {
+  const row = db.prepare(`SELECT ${DELIVERY_JOB_PUBLIC_COLUMNS}
+    FROM workbench_delivery_jobs
+    WHERE project_id = ? AND job_type = ?
+    ORDER BY created_at DESC, rowid DESC LIMIT 1`)
+    .get(projectId, jobType) as WorkbenchDeliveryJobRecord | undefined;
+  return row && (row.state === "failed" || row.state === "interrupted") ? row : null;
+}
+
+export function getLatestWorkbenchExport(db: M0Database, projectId: string): WorkbenchExportRecord | null {
+  const row = db.prepare(`
+    SELECT export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at
+    FROM workbench_exports
+    WHERE project_id = ?
+    ORDER BY created_at DESC, export_id DESC
+    LIMIT 1
+  `).get(projectId) as WorkbenchExportRecord | undefined;
+  return row ? { ...row, size_bytes: Number(row.size_bytes) } : null;
+}
+
+export function getWorkbenchCloseoutReceipt(db: M0Database, projectId: string): WorkbenchCloseoutReceipt | null {
+  return db.prepare(`
+    SELECT event_id, project_id, artifact_id, export_id, reason_code, created_at
+    FROM workbench_delivery_events
+    WHERE project_id = ? AND event_type = 'closeout'
+    ORDER BY created_at DESC, event_id DESC
+    LIMIT 1
+  `).get(projectId) as WorkbenchCloseoutReceipt | undefined ?? null;
+}
+
 export function assertWorkbenchProductionWriteAllowed(
   db: M0Database,
   projectId: string
@@ -264,8 +325,15 @@ export function refreshWorkbenchAssemblyReadiness(db: M0Database, projectId: str
   }
 }
 
-export function projectWorkbenchDeliverySummaryState(state: WorkbenchDeliveryWorkflowState): WorkbenchDeliverySummaryState {
-  if (state === "closed") return "delivered";
+export function projectWorkbenchDeliverySummaryState(
+  state: WorkbenchDeliveryWorkflowState,
+  exportVerification: WorkbenchExportVerificationState = "not_applicable"
+): WorkbenchDeliverySummaryState {
+  if (state === "closed") {
+    if (exportVerification === "verified") return "delivered";
+    if (exportVerification === "failed") return "delivery_invalid";
+    return "verification_required";
+  }
   if (state === "ready_to_assemble" || state === "assembling") return "ready_to_assemble";
   if (["final_review", "revision_requested", "approved", "exported", "legacy_review_required"].includes(state)) return "final_review";
   return "not_ready";

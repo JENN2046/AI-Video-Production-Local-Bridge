@@ -381,7 +381,7 @@ test("migration 0011 preserves 0010 proposal evidence and adds the immutable imp
       VALUES ('event_compiled_legacy_0010', 'proposal_legacy_0010', 'compiled', 'DIRECTOR_HISTORICAL_COMPILED', 'director_automation_grant', 'grant_legacy_0010', ?)`)
       .run(now.toISOString());
 
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0011", "0012", "0013", "0014"]);
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0011", "0012", "0013", "0014", "0015"]);
     assert.doesNotThrow(() => assertSchemaCurrent(db));
     assert.equal((db.prepare("SELECT kind FROM director_proposals WHERE proposal_id = 'proposal_legacy_0010'").get() as { kind: string }).kind, "creative_brief");
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM director_proposal_events WHERE proposal_id = 'proposal_legacy_0010' AND event_type = 'compiled' AND receipt_id = 'grant_legacy_0010'").get() as { count: number }).count, 1);

@@ -1,15 +1,15 @@
 # Unified ChatGPT Workspace Transport Runbook
 
-Status: `HISTORICAL_EXTERNAL_TRANSPORT_AND_ACTIVITY_GOLDEN_PATH_PASS — retain this runbook as commit-scoped evidence and a future revalidation boundary. Current-main execution requires separate ledger 0014 admission and runtime acceptance.`
+Status: `HISTORICAL_EXTERNAL_TRANSPORT_AND_ACTIVITY_GOLDEN_PATH_PASS — retain this runbook as commit-scoped evidence and a future revalidation boundary. Current-main execution requires separate ledger 0015 admission and runtime acceptance.`
 
 This is the operational companion to the [Unified Workspace contract](../UNIFIED_CHATGPT_WORKSPACE_MCP.md). The bounded Auth0, Render, ChatGPT App, Bridge and activity-database stages described here have passed once. It remains the recovery and revalidation boundary; it does **not** authorize a new Auth0, Render, ChatGPT, DNS, database or Provider change.
 
 Current-state override: canonical source requires
-`workbench-v2-9` / ledger `0014`; the activity runtime's last accepted boundary
+`workbench-v2-10` / ledger `0015`; the activity runtime's last accepted boundary
 remains `workbench-v2-6` / ledger `0011`. Earlier external PASS results remain
 bounded to their recorded commits, and the Bridge lifecycle narrative below is
 historical rather than current runtime status. Do not start or recover a Bridge
-against current main until the target database has separate `0011 → 0014` admission
+against current main until the target database has separate `0011 → 0015` admission
 and the exact source/runtime combination is accepted.
 
 ## Target and rollback topology
@@ -88,7 +88,7 @@ AI_VIDEO_WORKSPACE_DB_PATH
 
 The dedicated `WEBGPT_DIRECTOR_BRIDGE_KEY_B64` is a secret, not ordinary runtime configuration: retain it only as a local DPAPI-protected value and a Render secret. The Remote runtime rejects a DPAPI pointer and receives the Base64 value only as a Render secret; the local Bridge rejects the Base64 value and receives only `WEBGPT_DIRECTOR_BRIDGE_KEY_DPAPI_PATH` to decrypt under DPAPI `CurrentUser`. Never place the Base64 value in a preflight, receipt, status command, log, process arguments, or repository file.
 
-All-or-nothing configuration is intentional. A partial OAuth, publisher or bridge group fails closed. `WEBGPT_DIRECTOR_REMOTE_ORIGIN` is the exact unified public HTTPS origin for the outbound local bridge, not a filesystem path or local listener. `AI_VIDEO_WORKSPACE_DB_PATH` is injected only into the local Bridge process. Historical acceptance used `workbench-v2-6` / ledger `0011`; any current-main revalidation must instead use an authorized isolated or activity database separately admitted at `workbench-v2-9` / ledger `0014`. Do not place its value in receipts, logs, process arguments, or repository files.
+All-or-nothing configuration is intentional. A partial OAuth, publisher or bridge group fails closed. `WEBGPT_DIRECTOR_REMOTE_ORIGIN` is the exact unified public HTTPS origin for the outbound local bridge, not a filesystem path or local listener. `AI_VIDEO_WORKSPACE_DB_PATH` is injected only into the local Bridge process. Historical acceptance used `workbench-v2-6` / ledger `0011`; any current-main revalidation must instead use an authorized isolated or activity database separately admitted at `workbench-v2-10` / ledger `0015`. Do not place its value in receipts, logs, process arguments, or repository files.
 
 ## Stage 1 smoke acceptance
 
@@ -193,7 +193,7 @@ If the Widget reports the bridge as unavailable, preserve the low-disclosure sta
 
 ## Stage 2 — isolated owner golden path
 
-The recorded historical Stage 2 used an isolated database at ledger `0011`. Do not repeat that instruction against current main. A future revalidation must use an independently admitted `workbench-v2-9` / ledger `0014` database. The Stage 1 deployed HTTPS Unified Remote must remain available at the exact configured `WEBGPT_DIRECTOR_REMOTE_ORIGIN`; do not start `npm run start:webgpt:workspace` locally for this step, because that local test host is HTTP and is not a valid Bridge origin. Start the local Bridge only for an explicitly authorized bounded test:
+The recorded historical Stage 2 used an isolated database at ledger `0011`. Do not repeat that instruction against current main. A future revalidation must use an independently admitted `workbench-v2-10` / ledger `0015` database. The Stage 1 deployed HTTPS Unified Remote must remain available at the exact configured `WEBGPT_DIRECTOR_REMOTE_ORIGIN`; do not start `npm run start:webgpt:workspace` locally for this step, because that local test host is HTTP and is not a valid Bridge origin. Start the local Bridge only for an explicitly authorized bounded test:
 
 ```powershell
 npm run start:director:bridge

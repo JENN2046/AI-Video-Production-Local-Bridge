@@ -161,3 +161,128 @@ describe("manual generation reconciliation", () => {
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ decision: "abandon", reason: "Human verified no Provider task exists.", human_confirmation: true });
   });
 });
+
+describe("delivery closeout workspace", () => {
+  const projectId = "project_delivery_ui";
+  const artifactId = "artifact_final_ui";
+  const clipArtifact = {
+    artifact_id: "artifact_clip_ui", artifact_type: "video", role: "generated_clip", status: "active",
+    storage: { uri: "", mime_type: "video/mp4", filename: "clip.mp4" },
+    metadata: { width: 320, height: 180, duration_seconds: 1, aspect_ratio: "16:9", sha256: "a".repeat(64) },
+    linked_objects: { project_id: projectId, shot_id: "shot_delivery_ui" },
+    source: { kind: "provider_output_file", provider: "mock", provider_job_id: "fixture", sha256: "a".repeat(64), external_url_host: "" }
+  };
+  const finalArtifact = {
+    ...clipArtifact,
+    artifact_id: artifactId,
+    role: "final_video",
+    storage: { ...clipArtifact.storage, filename: "final.mp4" },
+    linked_objects: { project_id: projectId, shot_id: "" }
+  };
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  function workspace(state: "ready_to_assemble" | "final_review" | "approved" | "exported") {
+    const hasFinal = state !== "ready_to_assemble";
+    const approved = state === "approved" || state === "exported";
+    return {
+      project: { project_id: projectId, title: "Delivery UI", status: "video_review", project_type: "fixture", brief: {}, video_spec: { aspect_ratio: "16:9", resolution: "320x180", duration_seconds: 1 }, shot_ids: ["shot_delivery_ui"], active_storyboard_package_id: "", generation_batch_ids: [], exports: { final_video_artifact_id: hasFinal ? artifactId : "" } },
+      meta: { project_id: projectId, classification: "production", lifecycle: "active", pinned: false, last_opened_at: null, created_at: "2026-08-13T00:00:00.000Z", updated_at: "2026-08-13T00:00:00.000Z", next_action_override: null, next_action_priority: null, next_action_expires_at: null, next_action_project_status: null, next_action_updated_at: null },
+      workspace: "delivery",
+      workflow_state: state,
+      ready_for_assembly: true,
+      accepted_clips: [{ shot_id: "shot_delivery_ui", order: 1, artifact_id: clipArtifact.artifact_id, artifact: clipArtifact }],
+      assembly_preflight: { ready: true, tooling_checked: false, contract_version: "final-assembly-v1", input_fingerprint: "b".repeat(64), target: { width: 320, height: 180, fps: 30, video_codec: "h264", audio_codec: "aac" }, shots: [], expected_duration_seconds: 1, blockers: [] },
+      active_job: null,
+      retryable_jobs: { assembly: null, export: null },
+      final_versions: hasFinal ? [{ artifact_id: artifactId, created_at: "2026-08-13T00:00:00.000Z", assembly_job_id: "delivery_job_ui", assembled_at: "2026-08-13T00:00:00.000Z", artifact: finalArtifact, is_current: true, is_approved: approved }] : [],
+      current_final_version: hasFinal ? { artifact_id: artifactId, created_at: "2026-08-13T00:00:00.000Z", assembly_job_id: "delivery_job_ui", assembled_at: "2026-08-13T00:00:00.000Z", artifact: finalArtifact, is_current: true, is_approved: approved } : null,
+      final_review: { current_artifact_id: hasFinal ? artifactId : null, approved_artifact_id: approved ? artifactId : null, decision_required: state === "final_review" },
+      latest_export: state === "exported" ? { export_id: "export_delivery_ui", project_id: projectId, artifact_id: artifactId, relative_path: `data/exports/${projectId}/final.mp4`, sha256: "c".repeat(64), size_bytes: 1024, created_at: "2026-08-13T00:00:00.000Z" } : null,
+      closeout_receipt: null,
+      final_artifact: hasFinal ? finalArtifact : null
+    };
+  }
+
+  function renderDelivery(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>) {
+    vi.stubGlobal("fetch", fetchMock);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={[`/v2/projects/${projectId}/delivery`]}><Routes><Route path="/v2/projects/:id/:workspace" element={<ProjectWorkspacePage />} /></Routes></MemoryRouter></QueryClientProvider>);
+  }
+
+  it("requires a tool preflight and explicit confirmation before queueing assembly", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      if (url === `/api/v2/projects/${projectId}/delivery` && (!init?.method || init.method === "GET")) return new Response(JSON.stringify({ ok: true, data: workspace("ready_to_assemble") }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === "/api/v2/shell") return new Response(JSON.stringify({ ok: true, data: { action_nonce: "delivery-nonce" } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.endsWith("/delivery/assembly/preflight") && init?.method === "POST") return new Response(JSON.stringify({ ok: true, data: { ...workspace("ready_to_assemble").assembly_preflight, tooling_checked: true } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.endsWith("/delivery/assembly") && init?.method === "POST") return new Response(JSON.stringify({ ok: true, data: { job: { job_id: "delivery_job_ui", state: "queued" }, preflight: { ...workspace("ready_to_assemble").assembly_preflight, tooling_checked: true } } }), { status: 202, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });
+    });
+    renderDelivery(fetchMock);
+    expect(await screen.findByRole("heading", { name: "1. 装配准备" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "2. 最终版本栈" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "3. 终审" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "4. 导出与结案" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "装配预检" }));
+    fireEvent.click(screen.getByRole("button", { name: "运行预检" }));
+    await screen.findByText("FFmpeg / FFprobe 已验证");
+    const queue = screen.getByRole("button", { name: "确认并排队装配" });
+    expect(queue).toBeDisabled();
+    fireEvent.click(screen.getByLabelText(/我确认用此输入指纹/));
+    fireEvent.click(queue);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => String(input).endsWith("/delivery/assembly") && init?.method === "POST")).toBe(true));
+    const call = fetchMock.mock.calls.find(([input, init]) => String(input).endsWith("/delivery/assembly") && init?.method === "POST");
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ input_fingerprint: "b".repeat(64), human_confirmation: true });
+  });
+
+  it("submits only selected SHOTs for targeted final-review regeneration", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      if (url === `/api/v2/projects/${projectId}/delivery` && (!init?.method || init.method === "GET")) return new Response(JSON.stringify({ ok: true, data: workspace("final_review") }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === "/api/v2/shell") return new Response(JSON.stringify({ ok: true, data: { action_nonce: "delivery-nonce" } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.endsWith("/delivery/final-review") && init?.method === "POST") return new Response(JSON.stringify({ ok: true, data: { decision: "regenerate_shots", regeneration_requests: [{}] } }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });
+    });
+    renderDelivery(fetchMock);
+    fireEvent.click(await screen.findByRole("button", { name: "定向 SHOT 返工" }));
+    fireEvent.click(screen.getByLabelText(/SHOT 001 · shot_delivery_ui/));
+    fireEvent.change(screen.getByLabelText("返工原因（必填）"), { target: { value: "Motion continuity needs correction." } });
+    fireEvent.click(screen.getByLabelText(/我确认该决定针对当前最终 Artifact/));
+    fireEvent.click(screen.getByRole("button", { name: "确认终审决定" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => String(input).endsWith("/delivery/final-review") && init?.method === "POST")).toBe(true));
+    const call = fetchMock.mock.calls.find(([input, init]) => String(input).endsWith("/delivery/final-review") && init?.method === "POST");
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+      artifact_id: artifactId,
+      decision: "regenerate_shots",
+      shot_ids: ["shot_delivery_ui"],
+      reason: "Motion continuity needs correction.",
+      human_confirmation: true
+    });
+  });
+
+  it("requires the exact closeout phrase and sends it without implicit export", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      if (url === `/api/v2/projects/${projectId}/delivery` && (!init?.method || init.method === "GET")) return new Response(JSON.stringify({ ok: true, data: workspace("exported") }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url === "/api/v2/shell") return new Response(JSON.stringify({ ok: true, data: { action_nonce: "delivery-nonce" } }), { status: 200, headers: { "content-type": "application/json" } });
+      if (url.endsWith("/delivery/closeout") && init?.method === "POST") return new Response(JSON.stringify({ ok: true, data: { delivery: { workflow_state: "closed" } } }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: false, error: { code: "NOT_FOUND", message: url } }), { status: 404, headers: { "content-type": "application/json" } });
+    });
+    renderDelivery(fetchMock);
+    fireEvent.click(await screen.findByRole("button", { name: "确认结案" }));
+    const close = screen.getByRole("button", { name: "永久关闭生产写入" });
+    expect(close).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/输入固定短语/), { target: { value: "确认" } });
+    expect(close).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/输入固定短语/), { target: { value: "确认结案" } });
+    fireEvent.click(close);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => String(input).endsWith("/delivery/closeout") && init?.method === "POST")).toBe(true));
+    const call = fetchMock.mock.calls.find(([input, init]) => String(input).endsWith("/delivery/closeout") && init?.method === "POST");
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ confirmation_phrase: "确认结案" });
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/delivery/export"))).toBe(false);
+  });
+});

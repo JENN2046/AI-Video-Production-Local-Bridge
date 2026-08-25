@@ -48,7 +48,7 @@ test("migration 0008 creates immutable issuer bindings and preserves append-only
   try {
     const result = runDatabaseMigrations(db);
     assert.ok(result.applied.includes("0008"));
-    assert.equal(result.applied.at(-1), "0014");
+    assert.equal(result.applied.at(-1), "0015");
     assertSchemaCurrent(db);
     createProductionProject(db);
     registerWebGptPrincipal(db, PRINCIPAL, "TEST_BOOTSTRAP");
@@ -125,7 +125,7 @@ test("an existing 0007 database applies 0008 through 0011 without guessing issue
       db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)")
         .run(migration.id, migration.name, migrationChecksum(migration));
     }
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0008", "0009", "0010", "0011", "0012", "0013", "0014"]);
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015"]);
     assertSchemaCurrent(db);
     assert.equal((db.prepare("SELECT COUNT(*) AS count FROM webgpt_auth_principal_bindings").get() as { count: number }).count, 0);
   } finally {

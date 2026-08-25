@@ -219,6 +219,30 @@ export type {
   AssemblyResult
 } from "./tools/assembly.js";
 export {
+  CLOSEOUT_CONFIRMATION_PHRASE,
+  FINAL_EXPORT_CONTRACT_VERSION,
+  closeoutWorkbenchDelivery,
+  decideWorkbenchFinalReview,
+  getWorkbenchExportIntegrityStatus,
+  inspectInterruptedWorkbenchExportEvidence,
+  interruptedWorkbenchExportArtifactId,
+  listWorkbenchFinalVersions,
+  queueWorkbenchExport,
+  refreshWorkbenchDeliveryAssemblyReadiness,
+  resolveWorkbenchExportDownload,
+  runWorkbenchExportJob,
+  startWorkbenchExportJob
+} from "./tools/workbenchDelivery.js";
+export type {
+  WorkbenchDeliveryDependencies,
+  WorkbenchDeliveryResult,
+  WorkbenchExportIntegrityStatus,
+  WorkbenchExportSnapshot,
+  WorkbenchExportVerificationState,
+  WorkbenchFinalReviewDecision,
+  WorkbenchFinalVersionRecord
+} from "./tools/workbenchDelivery.js";
+export {
   findFfprobeExecutable,
   summarizeMp4Validations,
   validateMp4File

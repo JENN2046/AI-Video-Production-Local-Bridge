@@ -111,7 +111,9 @@ export const WEBGPT_V4_NEXT_ACTION_SCHEMA = z.object({
 }).strict();
 export const WEBGPT_V4_SUMMARY_SCHEMA = z.object({
   shot_count: z.number().int(), accepted_count: z.number().int(), active_run_count: z.number().int(), blocker_count: z.number().int(),
-  blocker_reason: z.string(), review_pending_count: z.number().int(), delivery_state: z.enum(["not_ready", "ready_to_assemble", "final_review", "delivered"]),
+  blocker_reason: z.string(), review_pending_count: z.number().int(),
+  delivery_state: z.enum(["not_ready", "ready_to_assemble", "final_review", "verification_required", "delivery_invalid", "delivered"]),
+  export_verification_state: z.enum(["not_applicable", "unverified", "verified", "failed"]).optional(),
   next_action: WEBGPT_V4_NEXT_ACTION_SCHEMA, risk: z.enum(["blocked", "attention", "clear"])
 }).strict();
 export const WEBGPT_V4_PAGE_SCHEMA = z.object({ limit: z.number().int(), offset: z.number().int(), total: z.number().int(), has_more: z.boolean(), next_offset: z.number().int().nullable() }).strict();
@@ -131,7 +133,8 @@ export const WEBGPT_V4_REVIEW_NOTE_SCHEMA = z.object({
 }).strict();
 
 const compactListSummarySchema = WEBGPT_V4_SUMMARY_SCHEMA.pick({
-  shot_count: true, accepted_count: true, blocker_count: true, review_pending_count: true, delivery_state: true, next_action: true, risk: true
+  shot_count: true, accepted_count: true, blocker_count: true, review_pending_count: true,
+  delivery_state: true, export_verification_state: true, next_action: true, risk: true
 }).strict();
 export const WEBGPT_V4_COMPACT_PROJECT_LIST_ITEM_SCHEMA = z.object({
   project: WEBGPT_V4_COMPACT_PROJECT_SCHEMA, lifecycle: z.enum(["active", "archived"]), pinned: z.boolean(), updated_at: isoInstantSchema, summary: compactListSummarySchema
@@ -184,7 +187,7 @@ export const WEBGPT_V4_REVIEW_PACKAGE_DATA_SCHEMA = z.discriminatedUnion("detail
   z.object({ detail: z.literal("full"), package_state: z.enum(["not_available", "available"]), reviewable: z.boolean(), reason_code: z.enum(["NO_GENERATED_CLIP", "REVIEW_STATE_INCONSISTENT"]).nullable(), shot: WEBGPT_V4_SHOT_SCHEMA, versions: z.array(clipVersionSchema.extend({ artifact: WEBGPT_V4_ARTIFACT_SCHEMA }).strict()), notes: z.array(WEBGPT_V4_REVIEW_NOTE_SCHEMA), notes_total: z.number().int(), selected_artifact_id: z.string().nullable() }).strict()
 ]);
 const deliveryWorkflowStateSchema = z.enum(["not_ready", "ready_to_assemble", "assembling", "final_review", "revision_requested", "approved", "exported", "closed", "legacy_review_required"]);
-export const WEBGPT_V4_DELIVERY_DATA_SCHEMA = z.object({ project_id: z.string(), project_status: projectStatusSchema, workflow_state: deliveryWorkflowStateSchema.optional(), shots_total: z.number().int(), shots_accepted: z.number().int(), ready_for_assembly: z.boolean(), readiness_checks: z.array(readinessCheckSchema), final_artifact: WEBGPT_V4_ARTIFACT_SCHEMA.nullable(), final_artifact_reason_code: z.string().nullable(), delivered: z.boolean() }).strict();
+export const WEBGPT_V4_DELIVERY_DATA_SCHEMA = z.object({ project_id: z.string(), project_status: projectStatusSchema, workflow_state: deliveryWorkflowStateSchema.optional(), shots_total: z.number().int(), shots_accepted: z.number().int(), ready_for_assembly: z.boolean(), readiness_checks: z.array(readinessCheckSchema), final_artifact: WEBGPT_V4_ARTIFACT_SCHEMA.nullable(), final_artifact_reason_code: z.string().nullable(), export_verification_state: z.enum(["not_applicable", "unverified", "verified", "failed"]).optional(), export_verification_reason_code: z.enum(["EXPORT_NOT_APPLICABLE", "EXPORT_INTEGRITY_UNVERIFIED", "EXPORT_INTEGRITY_VERIFIED", "EXPORT_INTEGRITY_FAILED"]).optional(), delivered: z.boolean() }).strict();
 export const WEBGPT_V4_CLOSEOUT_DATA_SCHEMA = WEBGPT_V4_DELIVERY_DATA_SCHEMA.extend({ evidence: z.object({ source: z.literal("sqlite_structured_summary"), webgpt_audit_events: z.number().int(), raw_reports_exposed: z.literal(false) }).strict() }).strict();
 
 export const WEBGPT_V4_READ_OUTPUT_SCHEMAS = {
@@ -313,7 +316,9 @@ export function publicSummary(value: unknown, compact = false): UnknownRecord {
   const item = record(value);
   const shared = {
     shot_count: item.shot_count, accepted_count: item.accepted_count, blocker_count: item.blocker_count,
-    review_pending_count: item.review_pending_count, delivery_state: item.delivery_state, next_action: nextAction(item.next_action), risk: item.risk
+    review_pending_count: item.review_pending_count, delivery_state: item.delivery_state,
+    export_verification_state: item.export_verification_state,
+    next_action: nextAction(item.next_action), risk: item.risk
   };
   return compact ? shared : { ...shared, active_run_count: item.active_run_count, blocker_reason: item.blocker_reason };
 }
@@ -447,6 +452,8 @@ export function readDelivery(result: WebGptV4Result<unknown>, closeout = false):
     readiness_checks: records(data.readiness_checks).map((item) => ({ ...item, artifact_id: nullableId(item.artifact_id) })),
     final_artifact: data.final_artifact ? publicArtifact(data.final_artifact) : null,
     final_artifact_reason_code: data.final_artifact ? null : (typeof data.final_artifact_reason_code === "string" && data.final_artifact_reason_code ? data.final_artifact_reason_code : "FINAL_ARTIFACT_NOT_CREATED"),
+    export_verification_state: data.export_verification_state,
+    export_verification_reason_code: data.export_verification_reason_code,
     delivered: data.delivered,
     ...(closeout ? { evidence: data.evidence } : {})
   });

@@ -177,17 +177,17 @@ test("legacy review durable state overrides stale delivered next-action projecti
     assert.equal(summary?.delivery_state, "final_review");
     assert.equal(summary?.next_action.source, "derived");
     assert.deepEqual(summary?.next_action.derived, {
-      label: "最终审查",
-      reason_code: "final_review",
-      priority: "high"
+      label: "复核历史交付",
+      reason_code: "legacy_review_required",
+      priority: "urgent"
     });
-    assert.equal(summary?.next_action.reason_code, "final_review");
+    assert.equal(summary?.next_action.reason_code, "legacy_review_required");
 
     const workspace = getWorkbenchProjectWorkspace("legacy_projection", "overview", db, { touch_last_opened: false });
     assert.equal(workspace.ok, true);
     if (!workspace.ok) throw new Error("LEGACY_WORKSPACE_FIXTURE_FAILED");
     const workspaceSummary = workspace.data.summary as { next_action: { reason_code: string } };
-    assert.equal(workspaceSummary.next_action.reason_code, "final_review");
+    assert.equal(workspaceSummary.next_action.reason_code, "legacy_review_required");
   } finally {
     db.close();
   }

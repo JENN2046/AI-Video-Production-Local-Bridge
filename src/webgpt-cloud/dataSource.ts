@@ -4,6 +4,7 @@ import { assertSchemaCurrent, SchemaMigrationRequiredError } from "../storage/mi
 import { openM0DatabaseConnection, type M0Database } from "../storage/sqlite.js";
 import { getProject, getShot, type Project } from "../tools/projects.js";
 import { validateActiveArtifactReference, type ArtifactReferenceRequirement } from "../tools/mediaArtifacts.js";
+import { getWorkbenchExportIntegrityStatus } from "../tools/workbenchDelivery.js";
 import {
   readDelivery,
   readProjectContext,
@@ -275,8 +276,17 @@ export function exportReadonlySnapshotFromDatabase(
       ORDER BY p.principal_id`).all(input.issuer_hash) as Array<{ principal_id: string }>).map((principal) => ({
         principal_id: principal.principal_id,
         project_ids: authorizedWebGptProjectIds(db, principal.principal_id, input.issuer_hash)
-      }));
+    }));
     const projectIds = [...new Set(principals.flatMap((principal) => principal.project_ids))];
+    for (const projectId of projectIds) {
+      const integrity = getWorkbenchExportIntegrityStatus(db, projectId, "full");
+      if (integrity.state === "failed") {
+        throw new ReadonlyProjectionError(
+          "READONLY_PROJECTION_EXPORT_INTEGRITY_FAILED",
+          "Readonly projection refused a project whose current Export failed integrity verification."
+        );
+      }
+    }
 
     const listFor = (detail: WebGptV4Detail): ProjectListData => allPages(
       (pageOffset) => readProjectList(listProductionProjects({ include_archived: true, limit: 100, offset: pageOffset }, db, "readonly_export", projectIds), detail),

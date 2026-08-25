@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { accessSync, constants, existsSync, lstatSync, statSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -94,7 +94,10 @@ export function validateMp4File(filePath: string): Mp4ValidationResult {
   }
 
   try {
-    readFileSync(filePath);
+    accessSync(filePath, constants.R_OK);
+    if (lstatSync(filePath).isSymbolicLink() || !statSync(filePath).isFile()) {
+      throw new Error("MP4 path is not a regular file.");
+    }
   } catch (error) {
     return {
       status: "FAIL",

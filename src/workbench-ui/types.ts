@@ -145,7 +145,8 @@ export interface ProjectSummary {
   blocker_codes: string[];
   blocker_reason: string;
   review_pending_count: number;
-  delivery_state: "not_ready" | "ready_to_assemble" | "final_review" | "delivered";
+  delivery_state: "not_ready" | "ready_to_assemble" | "final_review" | "verification_required" | "delivery_invalid" | "delivered";
+  export_verification_state: "not_applicable" | "unverified" | "verified" | "failed";
   next_action: ProjectNextAction;
   risk: "blocked" | "attention" | "clear";
 }
@@ -190,6 +191,68 @@ export interface MediaArtifact {
   source: { kind: string; provider: string; provider_job_id: string; sha256: string; external_url_host: string };
 }
 
+export type DeliveryWorkflowState = "not_ready" | "ready_to_assemble" | "assembling" | "final_review" | "revision_requested" | "approved" | "exported" | "closed" | "legacy_review_required";
+
+export interface DeliveryJob {
+  job_id: string;
+  project_id: string;
+  job_type: "assembly" | "export";
+  state: "queued" | "running" | "succeeded" | "failed" | "interrupted";
+  input_fingerprint: string | null;
+  retry_of_job_id: string | null;
+  output_artifact_id: string | null;
+  export_id: string | null;
+  terminal_event_id: string | null;
+  error_code: string;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  updated_at: string;
+}
+
+export interface AssemblyPreflight {
+  ready: boolean;
+  tooling_checked: boolean;
+  contract_version: "final-assembly-v1";
+  input_fingerprint: string;
+  target: { width: number; height: number; fps: 30; video_codec: "h264"; audio_codec: "aac" } | null;
+  shots: Array<{ shot_id: string; order: number; artifact_id: string; blob_sha256: string; duration_seconds: number; source_duration_seconds: number }>;
+  expected_duration_seconds: number;
+  blockers: Array<{ code: string; shot_id?: string; order?: number }>;
+}
+
+export interface FinalVersion {
+  artifact_id: string;
+  created_at: string;
+  assembly_job_id: string | null;
+  assembled_at: string | null;
+  artifact: MediaArtifact | null;
+  is_current: boolean;
+  is_approved: boolean;
+}
+
+export interface WorkbenchExport {
+  export_id: string;
+  project_id: string;
+  artifact_id: string;
+  relative_path: string;
+  sha256: string;
+  size_bytes: number;
+  created_at: string;
+  verification_state?: "not_applicable" | "unverified" | "verified" | "failed";
+  verification_reason_code?: string;
+  verified_at?: string | null;
+}
+
+export interface CloseoutReceipt {
+  event_id: string;
+  project_id: string;
+  artifact_id: string | null;
+  export_id: string | null;
+  reason_code: string;
+  created_at: string;
+}
+
 export interface WorkspaceData {
   project: Project;
   meta: ProjectMeta;
@@ -206,9 +269,20 @@ export interface WorkspaceData {
   review_notes?: ReviewNote[];
   metrics?: Record<string, number>;
   blockers?: Array<Record<string, unknown>>;
+  workflow_state?: DeliveryWorkflowState;
   ready_for_assembly?: boolean;
-  accepted_clips?: Array<{ shot_id: string; order: number; artifact: MediaArtifact | null }>;
+  readiness_checks?: Array<{ shot_id: string; artifact_id: string; ok: boolean; reason_code: string }>;
+  accepted_clips?: Array<{ shot_id: string; order: number; artifact_id: string; artifact: MediaArtifact | null; reference_error_code?: string }>;
+  assembly_preflight?: AssemblyPreflight;
+  active_job?: DeliveryJob | null;
+  retryable_jobs?: { assembly: DeliveryJob | null; export: DeliveryJob | null };
+  final_versions?: FinalVersion[];
+  current_final_version?: FinalVersion | null;
+  final_review?: { current_artifact_id: string | null; approved_artifact_id: string | null; decision_required: boolean };
+  latest_export?: WorkbenchExport | null;
+  closeout_receipt?: CloseoutReceipt | null;
   final_artifact?: MediaArtifact | null;
+  final_artifact_reason_code?: string;
 }
 
 export interface ReconciliationItem {
