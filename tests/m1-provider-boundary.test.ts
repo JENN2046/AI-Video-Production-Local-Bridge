@@ -48,6 +48,7 @@ import {
   verifyMediaArtifactBytes
 } from "../src/index.js";
 import type { MediaArtifact } from "../src/index.js";
+import { withWorkbenchProductionMutationAuthority } from "../src/storage/productionMutationAuthority.js";
 
 const FAKE_SECRET = "M1_TEST_SECRET_DO_NOT_LOG_123";
 
@@ -181,6 +182,21 @@ function setupProviderBlobRecovery(
   assert.equal(activated.ok, true, activated.ok ? undefined : activated.error.code);
   if (!activated.ok) throw new Error("PROVIDER_RECOVERY_ARTIFACT_SETUP_FAILED");
   return { artifact: activated.artifact, project_id: created.project_id, shot_id: shot.shot_id };
+}
+
+function setupProviderOutputTarget(db: ReturnType<typeof openM0Database>, title: string) {
+  const created = createProject({ title }, db);
+  assert.equal(created.ok, true);
+  if (!created.ok) throw new Error("PROVIDER_OUTPUT_PROJECT_SETUP_FAILED");
+  const shot = buildStoryboardApprovedShot({
+    project_id: created.project_id,
+    order: 1,
+    duration_seconds: 2,
+    storyboard_image_artifact_id: "",
+    video_prompt: "Provider output boundary fixture"
+  });
+  saveShot(db, shot);
+  return { project_id: created.project_id, shot_id: shot.shot_id };
 }
 
 test("M1 provider registry keeps mock default and exposes two real ports", () => {
@@ -850,12 +866,13 @@ test("M1 provider output downloader retries every validated public address", asy
   const fixtureBytes = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
   const attempts: string[] = [];
   try {
+    const target = setupProviderOutputTarget(db, "Provider address fallback");
     const result = await downloadProviderOutputToArtifact({
       url: "https://cdn.example.test/output.mp4",
       provider_name: "runninghub",
       provider_job_id: "address-fallback-task",
-      project_id: "project_address_fallback",
-      shot_id: "shot_address_fallback",
+      project_id: target.project_id,
+      shot_id: target.shot_id,
       duration_seconds: 2,
       aspect_ratio: "9:16",
       storage_directory: root
@@ -1018,6 +1035,9 @@ test("M1 provider output registration supports final_video artifacts inside app 
   const sourceDirectory = join(paths.mediaRoot, "provider-output-final-video-source");
 
   try {
+    const project = createProject({ title: "Provider final video registration" }, db);
+    assert.equal(project.ok, true);
+    if (!project.ok) return;
     mkdirSync(sourceDirectory, { recursive: true });
     const sourceFile = join(sourceDirectory, "source.mp4");
     writeFileSync(sourceFile, readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4")));
@@ -1027,7 +1047,7 @@ test("M1 provider output registration supports final_video artifacts inside app 
         artifact_type: "video",
         role: "final_video",
         source: { kind: "provider_output_file", path: sourceFile, mime_type: "video/mp4" },
-        linked_objects: { project_id: "project_final_video_test" },
+        linked_objects: { project_id: project.project_id },
         metadata: { duration_seconds: 2, aspect_ratio: "9:16" },
         provenance: { provider: "local_assembly" }
       },
@@ -1049,6 +1069,7 @@ test("M1 provider output registration supports final_video artifacts inside app 
 test("M1 provider output downloader saves ffprobe-valid local artifact without persisting URL", async () => {
   const db = openM0Database();
   try {
+    const target = setupProviderOutputTarget(db, "Provider output download");
     const fixtureBytes = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
     const storageDirectory = join(paths.mediaRoot, "provider-canary", "m1-r0-runway-canary-test");
     mkdirSync(storageDirectory, { recursive: true });
@@ -1056,8 +1077,8 @@ test("M1 provider output downloader saves ffprobe-valid local artifact without p
         url: "https://cdn.example.test/generated/output.mp4?signature=secret",
         provider_name: "runway",
         provider_job_id: "runway_job_test",
-        project_id: "project_test",
-        shot_id: "shot_test",
+        project_id: target.project_id,
+        shot_id: target.shot_id,
         duration_seconds: 2,
         aspect_ratio: "9:16",
         storage_directory: storageDirectory
@@ -1257,10 +1278,12 @@ test("explicit Provider recovery rejects different bytes and arbitrary Artifact 
       metadata: { ...fixture.artifact.metadata, duration_seconds: null, sha256: "" },
       source: { ...fixture.artifact.source, provider_job_id: "", sha256: "" }
     };
-    db.prepare(`INSERT INTO media_artifacts
-      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
-      VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)`)
-      .run(arbitraryArtifact.artifact_id, fixture.project_id, fixture.shot_id, JSON.stringify(arbitraryArtifact));
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "artifact", project_id: fixture.project_id, object_id: arbitraryArtifact.artifact_id
+    }, () => db.prepare(`INSERT INTO media_artifacts
+        (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+        VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)`)
+      .run(arbitraryArtifact.artifact_id, fixture.project_id, fixture.shot_id, JSON.stringify(arbitraryArtifact)));
     const arbitrary = await downloadProviderOutputToArtifact({
       ...base,
       provider_job_id: "local_recovery_arbitrary_artifact",

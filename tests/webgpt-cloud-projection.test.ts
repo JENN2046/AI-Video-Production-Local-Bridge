@@ -217,7 +217,7 @@ function configureFiveStageFixture(sqlitePath: string, projectId: string): void 
       review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
     });
 
-    const draft = base("shot_cloud_stage_draft", 1);
+    const draft = base(project.shot_ids[0] ?? "shot_cloud_stage_draft", 1);
     const ready = base("shot_cloud_stage_ready", 2);
     ready.status = "storyboard_approved";
     ready.storyboard_image_artifact_id = storyboard(ready.shot_id);
@@ -241,7 +241,6 @@ function configureFiveStageFixture(sqlitePath: string, projectId: string): void 
     accepted.review = { approval_status: "approved", rejection_reasons: [], latest_revision_instruction: null };
 
     const shots = [draft, ready, pending, rejected, accepted];
-    db.prepare("DELETE FROM shots WHERE project_id = ?").run(projectId);
     for (const shot of shots) saveShot(db, shot);
     project.shot_ids = shots.map((shot) => shot.shot_id);
     saveProject(db, project);
@@ -259,13 +258,13 @@ function stripMeta(result: ReturnType<SqliteReadonlyDataSource["listProductionPr
   return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error };
 }
 
-test("readonly projection requires migration 0012 and never upgrades an older database", () => {
+test("readonly projection requires migration 0013 and never upgrades an older database", () => {
   const root = mkdtempSync(join(tmpdir(), "readonly-projection-ledger-"));
   const sqlitePath = join(root, "app.sqlite");
   const db = openM0Database(sqlitePath);
   db.exec(`
     DROP TABLE workbench_delivery_state;
-    DELETE FROM schema_migrations WHERE migration_id = '0012';
+    DELETE FROM schema_migrations WHERE migration_id = '0013';
   `);
   db.close();
   try {
@@ -279,7 +278,7 @@ test("readonly projection requires migration 0012 and never upgrades an older da
     );
     const verify = openM0DatabaseConnection(sqlitePath, { readOnly: true });
     try {
-      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0012'").get() as { count: number }).count, 0);
+      assert.equal((verify.prepare("SELECT COUNT(*) count FROM schema_migrations WHERE migration_id = '0013'").get() as { count: number }).count, 0);
       assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'director_automation_grants'").get() as { count: number }).count, 1);
       assert.equal((verify.prepare("SELECT COUNT(*) count FROM sqlite_schema WHERE type = 'table' AND name = 'workbench_delivery_state'").get() as { count: number }).count, 0);
     } finally {
@@ -307,45 +306,62 @@ test("readonly Snapshot keeps legacy review authoritative over stale final appro
     const clip = registerMediaArtifact({
       artifact_type: "video",
       role: "generated_clip",
-      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
-      linked_objects: { project_id: created.project_id, shot_id: "shot_readonly_legacy" }
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" }
     }, db);
     const storyboard = registerMediaArtifact({
       artifact_type: "image",
       role: "storyboard_image",
-      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" },
-      linked_objects: { project_id: created.project_id, shot_id: "shot_readonly_legacy" }
+      source: { kind: "fixture_path", path: "provider-canary/m1-r0/shot_001_canary_720x1280.png" }
     }, db);
     const finalVideo = registerMediaArtifact({
       artifact_type: "video",
       role: "final_video",
-      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
-      linked_objects: { project_id: created.project_id }
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" }
     }, db);
     assert.equal(clip.ok, true);
     assert.equal(storyboard.ok, true);
     assert.equal(finalVideo.ok, true);
     if (!clip.ok || !storyboard.ok || !finalVideo.ok) throw new Error("LEGACY_READONLY_MEDIA_FIXTURE_FAILED");
-    saveShot(db, {
+    const bindLegacyArtifact = (source: typeof clip.artifact, suffix: string, shotId: string) => {
+      const artifact = {
+        ...source,
+        artifact_id: `${source.artifact_id}_${suffix}`,
+        linked_objects: { project_id: created.project_id, shot_id: shotId }
+      };
+      db.prepare(`INSERT INTO media_artifacts
+        (artifact_id, project_id, shot_id, role, artifact_type, status, data_json, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
+        .run(artifact.artifact_id, created.project_id, shotId || null, artifact.role, artifact.artifact_type, artifact.status, JSON.stringify(artifact));
+      db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)")
+        .run(artifact.artifact_id, artifact.blob_id);
+      return artifact;
+    };
+    const legacyClip = bindLegacyArtifact(clip.artifact, "legacy_clip", "shot_readonly_legacy");
+    const legacyStoryboard = bindLegacyArtifact(storyboard.artifact, "legacy_storyboard", "shot_readonly_legacy");
+    const legacyFinalVideo = bindLegacyArtifact(finalVideo.artifact, "legacy_final", "");
+    const legacyShot: Shot = {
       shot_id: "shot_readonly_legacy",
       project_id: created.project_id,
       order: 1,
       status: "approved",
       duration_seconds: 2,
       description: "Legacy accepted SHOT",
-      storyboard_image_artifact_id: storyboard.artifact.artifact_id,
+      storyboard_image_artifact_id: legacyStoryboard.artifact_id,
       video_prompt: "Legacy readonly fixture",
       negative_prompt: "",
       generation_run_ids: [],
-      accepted_clip_artifact_id: clip.artifact.artifact_id,
-      clip_versions: [{ artifact_id: clip.artifact.artifact_id, run_id: "", attempt_number: 1, review_status: "approved" }],
+      accepted_clip_artifact_id: legacyClip.artifact_id,
+      clip_versions: [{ artifact_id: legacyClip.artifact_id, run_id: "", attempt_number: 1, review_status: "approved" }],
       review: { approval_status: "approved", rejection_reasons: [], latest_revision_instruction: null }
-    });
+    };
+    db.prepare("INSERT INTO shots (shot_id, project_id, data_json, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)")
+      .run(legacyShot.shot_id, legacyShot.project_id, JSON.stringify(legacyShot));
     created.project.shot_ids = ["shot_readonly_legacy"];
     created.project.status = "final_approved";
-    created.project.exports.final_video_artifact_id = finalVideo.artifact.artifact_id;
-    saveProject(db, created.project);
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0012"]);
+    created.project.exports.final_video_artifact_id = legacyFinalVideo.artifact_id;
+    db.prepare("UPDATE projects SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?")
+      .run(JSON.stringify(created.project), created.project_id);
+    assert.deepEqual(runDatabaseMigrations(db).applied, ["0012", "0013"]);
 
     const snapshot = exportReadonlySnapshotFromDatabase({
       database_path: sqlitePath,
@@ -363,6 +379,19 @@ test("readonly Snapshot keeps legacy review authoritative over stale final appro
     const overview = projected.contexts.find((context) => context.workspace === "overview");
     assert.ok(overview);
     assert.equal(overview.full.summary.next_action.reason_code, "final_review");
+    const delivery = projected.contexts.find((context) => context.workspace === "delivery");
+    assert.ok(delivery && "final_artifact_reason_code" in delivery.compact && "final_artifact_reason_code" in delivery.full);
+    assert.equal(delivery.compact.final_artifact_reason_code, null);
+    assert.equal(delivery.full.final_artifact_reason_code, null);
+    assert.equal(delivery.full.final_artifact?.artifact_id, legacyFinalVideo.artifact_id);
+    assert.equal(projected.media_bindings.some((binding) => binding.artifact_id === legacyFinalVideo.artifact_id
+      && binding.role === "final_video" && binding.shot_id === null), true);
+    const sqliteSource = new SqliteReadonlyDataSource(db, actor.principal_id, actor.issuer_hash!);
+    const snapshotSource = new SnapshotReadonlyDataSource(snapshot, actor.principal_id, actor.issuer_hash!);
+    assert.deepEqual(
+      stripMeta(snapshotSource.getProjectContext({ project_id: created.project_id, workspace: "delivery", detail: "full" }, "legacy-final")),
+      stripMeta(sqliteSource.getProjectContext({ project_id: created.project_id, workspace: "delivery", detail: "full" }, "legacy-final"))
+    );
   } finally {
     db.close();
     rmSync(root, { recursive: true, force: true });
@@ -373,27 +402,6 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
   const root = mkdtempSync(join(tmpdir(), "readonly-projection-parity-"));
   const sqlitePath = join(root, "app.sqlite");
   const fixture = createFixture(sqlitePath);
-  const fixtureDb = openM0Database(sqlitePath);
-  try {
-    const project = getProject(fixtureDb, fixture.project_id);
-    assert.ok(project);
-    const registered = registerMediaArtifact({
-      artifact_type: "video",
-      role: "final_video",
-      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
-      linked_objects: { project_id: fixture.project_id }
-    }, fixtureDb);
-    assert.equal(registered.ok, true);
-    if (!registered.ok) throw new Error("final video projection fixture registration failed");
-    project.status = "final_approved";
-    project.exports.final_video_artifact_id = registered.artifact.artifact_id;
-    saveProject(fixtureDb, project);
-    fixtureDb.prepare(`UPDATE workbench_delivery_state
-      SET workflow_state = 'closed', current_final_artifact_id = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE project_id = ?`).run(registered.artifact.artifact_id, fixture.project_id);
-  } finally {
-    fixtureDb.close();
-  }
   const beforeDb = openM0DatabaseConnection(sqlitePath, { readOnly: true });
   const before = logicalManifest(beforeDb);
   beforeDb.close();
@@ -407,23 +415,9 @@ test("SQLite and Snapshot readonly adapters preserve six-tool DTO parity and dat
   });
   const deliveryContext = snapshot.projects[0]!.contexts.find((context) => context.workspace === "delivery");
   assert.ok(deliveryContext && "final_artifact_reason_code" in deliveryContext.compact && "final_artifact_reason_code" in deliveryContext.full);
-  assert.equal(deliveryContext.compact.final_artifact_reason_code, null);
-  assert.equal(deliveryContext.full.final_artifact_reason_code, null);
-  assert.deepEqual(snapshot.projects[0]!.media_bindings.map((binding) => ({
-    artifact_id: binding.artifact_id,
-    project_id: binding.project_id,
-    shot_id: binding.shot_id,
-    role: binding.role,
-    mime_type: binding.mime_type,
-    status: binding.status
-  })), [{
-    artifact_id: snapshot.projects[0]!.delivery.final_artifact!.artifact_id,
-    project_id: fixture.project_id,
-    shot_id: null,
-    role: "final_video",
-    mime_type: "video/mp4",
-    status: "active"
-  }]);
+  assert.equal(deliveryContext.compact.final_artifact_reason_code, "FINAL_ARTIFACT_NOT_CREATED");
+  assert.equal(deliveryContext.full.final_artifact_reason_code, "FINAL_ARTIFACT_NOT_CREATED");
+  assert.deepEqual(snapshot.projects[0]!.media_bindings, []);
   assert.doesNotMatch(JSON.stringify(snapshot), /"(?:local_path|provider_payload|actor_hash|subject|idempotency_key)":/);
   const db = openM0DatabaseConnection(sqlitePath, { readOnly: true });
   try {
@@ -595,13 +589,17 @@ test("snapshot fingerprint uses deterministic JCS input and server time remains 
   assert.equal(readonlySnapshotStatus(snapshot, new Date("2026-07-16T01:00:00.000Z")).freshness_status, "snapshot_expired");
 
   const currentSource = structuredClone(unsigned);
-  currentSource.source_schema = "workbench-v2-7";
-  currentSource.source_migration = "0012";
+  currentSource.source_schema = "workbench-v2-8";
+  currentSource.source_migration = "0013";
   assert.doesNotThrow(() => finalizeReadonlySnapshot(currentSource));
   const previousSource = structuredClone(currentSource);
   previousSource.source_schema = "workbench-v2-6";
   previousSource.source_migration = "0011";
   assert.doesNotThrow(() => finalizeReadonlySnapshot(previousSource));
+  const foundationSource = structuredClone(currentSource);
+  foundationSource.source_schema = "workbench-v2-7";
+  foundationSource.source_migration = "0012";
+  assert.doesNotThrow(() => finalizeReadonlySnapshot(foundationSource));
   const crossedSource = structuredClone(currentSource);
   crossedSource.source_migration = "0008";
   assert.throws(() => finalizeReadonlySnapshot(crossedSource), /supported pair/i);

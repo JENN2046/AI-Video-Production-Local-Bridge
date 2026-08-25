@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { openM0Database, type M0Database } from "../src/storage/sqlite.js";
+import { withWorkbenchProductionMutationAuthority } from "../src/storage/productionMutationAuthority.js";
 import { confirmWorkbenchGeneration } from "../src/tools/workbenchGeneration.js";
 import { decideWorkbenchPendingAction, transitionWorkbenchDraft } from "../src/tools/workbenchInbox.js";
 import { saveWorkbenchPendingActionRecord } from "../src/tools/workbenchInboxStore.js";
@@ -75,22 +76,22 @@ function teardown(context: TestContext): void {
 
 const actor = actorFromSubject("auth0|jenn", ["projects.read", "shots.write", "reviews.write", "proposals.write", "generation.prepare"]);
 
-test("project-scoped reads fail closed when structured columns and JSON bindings drift", () => {
+test("direct SHOT drift is rejected and project-scoped artifact reads fail closed on stored binding drift", () => {
   const context = setup();
   try {
     const foreignProjectId = context.testProject.project_id;
     const driftedShot = { ...context.productionShot, project_id: foreignProjectId, description: "foreign body must not escape" };
-    context.db.prepare("UPDATE shots SET data_json = ? WHERE shot_id = ?").run(JSON.stringify(driftedShot), context.productionShot.shot_id);
+    assert.throws(
+      () => context.db.prepare("UPDATE shots SET data_json = ? WHERE shot_id = ?").run(JSON.stringify(driftedShot), context.productionShot.shot_id),
+      /WORKBENCH_SHOT_PRODUCTION_AUTHORITY_REQUIRED/
+    );
 
     const shots = listProductionProjectShots({ project_id: context.production.project_id }, context.db);
-    assert.equal(shots.ok, false);
-    if (!shots.ok) assert.equal(shots.error.code, "WEBGPT_V4_DATA_INTEGRITY_VIOLATION");
+    assert.equal(shots.ok, true);
 
     const workspace = getProductionProjectContext({ project_id: context.production.project_id, workspace: "storyboard" }, context.db);
-    assert.equal(workspace.ok, false);
-    if (!workspace.ok) assert.equal(workspace.error.code, "WEBGPT_V4_DATA_INTEGRITY_VIOLATION");
+    assert.equal(workspace.ok, true);
 
-    context.db.prepare("UPDATE shots SET data_json = ? WHERE shot_id = ?").run(JSON.stringify(context.productionShot), context.productionShot.shot_id);
     const artifact = {
       artifact_id: "artifact_drifted", artifact_type: "image", role: "storyboard_image", status: "active",
       storage: { uri: join(context.root, "drifted.png"), mime_type: "image/png", filename: "drifted.png" },
@@ -98,8 +99,10 @@ test("project-scoped reads fail closed when structured columns and JSON bindings
       linked_objects: { project_id: foreignProjectId, shot_id: context.productionShot.shot_id },
       source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: "drifted", external_url_host: "" }
     };
-    context.db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)")
-      .run(artifact.artifact_id, context.production.project_id, context.productionShot.shot_id, JSON.stringify(artifact));
+    withWorkbenchProductionMutationAuthority(context.db, {
+      kind: "artifact", project_id: context.production.project_id, object_id: artifact.artifact_id
+    }, () => context.db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)")
+      .run(artifact.artifact_id, context.production.project_id, context.productionShot.shot_id, JSON.stringify(artifact)));
     const media = listProductionProjectMedia({ project_id: context.production.project_id }, context.db);
     assert.equal(media.ok, false);
     if (!media.ok) assert.equal(media.error.code, "WEBGPT_V4_DATA_INTEGRITY_VIOLATION");
@@ -117,7 +120,7 @@ test("project context ignores project_id keys inside free-form business metadata
       client_reference: { project_id: "external-client-project" },
       provider_metadata: { project_id: "provider-side-project" }
     };
-    context.db.prepare("UPDATE projects SET data_json = ? WHERE project_id = ?").run(JSON.stringify(project), context.production.project_id);
+    saveProject(context.db, project as unknown as Project);
 
     const result = getProductionProjectContext({ project_id: context.production.project_id, workspace: "storyboard" }, context.db);
     assert.equal(result.ok, true, JSON.stringify(result));
@@ -136,8 +139,10 @@ test("project context rejects an artifact whose JSON id drifts from its bound sl
       linked_objects: { project_id: context.production.project_id, shot_id: context.productionShot.shot_id },
       source: { kind: "provider_download", provider: "fixture", provider_job_id: "fixture-task", sha256: "slot-drift", external_url_host: "" }
     };
-    context.db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES ('artifact_slot_a', ?, ?, 'generated_clip', 'video', 'active', ?)")
-      .run(context.production.project_id, context.productionShot.shot_id, JSON.stringify(artifact));
+    withWorkbenchProductionMutationAuthority(context.db, {
+      kind: "artifact", project_id: context.production.project_id, object_id: "artifact_slot_a"
+    }, () => context.db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES ('artifact_slot_a', ?, ?, 'generated_clip', 'video', 'active', ?)")
+      .run(context.production.project_id, context.productionShot.shot_id, JSON.stringify(artifact)));
     saveShot(context.db, { ...context.productionShot, accepted_clip_artifact_id: "artifact_slot_a" });
 
     const result = getProductionProjectContext({ project_id: context.production.project_id, workspace: "delivery" }, context.db);
@@ -160,8 +165,10 @@ test("project context rejects an artifact whose JSON shot binding drifts within 
       linked_objects: { project_id: context.production.project_id, shot_id: secondShot.shot_id },
       source: { kind: "provider_download", provider: "fixture", provider_job_id: "fixture-shot-task", sha256: "shot-drift", external_url_host: "" }
     };
-    context.db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?)")
-      .run(artifact.artifact_id, context.production.project_id, context.productionShot.shot_id, JSON.stringify(artifact));
+    withWorkbenchProductionMutationAuthority(context.db, {
+      kind: "artifact", project_id: context.production.project_id, object_id: artifact.artifact_id
+    }, () => context.db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?)")
+      .run(artifact.artifact_id, context.production.project_id, context.productionShot.shot_id, JSON.stringify(artifact)));
     saveShot(context.db, { ...context.productionShot, accepted_clip_artifact_id: artifact.artifact_id });
 
     const result = getProductionProjectContext({ project_id: context.production.project_id, workspace: "delivery" }, context.db);
@@ -184,8 +191,10 @@ test("storyboard context binds artifact map entries to the referencing shot", ()
       linked_objects: { project_id: context.production.project_id, shot_id: secondShot.shot_id },
       source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: "storyboard-owner", external_url_host: "" }
     };
-    context.db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)")
-      .run(artifact.artifact_id, context.production.project_id, secondShot.shot_id, JSON.stringify(artifact));
+    withWorkbenchProductionMutationAuthority(context.db, {
+      kind: "artifact", project_id: context.production.project_id, object_id: artifact.artifact_id
+    }, () => context.db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)")
+      .run(artifact.artifact_id, context.production.project_id, secondShot.shot_id, JSON.stringify(artifact)));
     saveShot(context.db, { ...context.productionShot, storyboard_image_artifact_id: artifact.artifact_id });
 
     const result = getProductionProjectContext({ project_id: context.production.project_id, workspace: "storyboard" }, context.db);
@@ -214,8 +223,10 @@ test("workspace artifacts reject role, type, and status drift from structured co
         source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: item.suffix, external_url_host: "" },
         ...item.change
       };
-      context.db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)")
-        .run(artifactId, context.production.project_id, context.productionShot.shot_id, JSON.stringify(artifact));
+      withWorkbenchProductionMutationAuthority(context.db, {
+        kind: "artifact", project_id: context.production.project_id, object_id: artifactId
+      }, () => context.db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)")
+        .run(artifactId, context.production.project_id, context.productionShot.shot_id, JSON.stringify(artifact)));
       saveShot(context.db, { ...context.productionShot, storyboard_image_artifact_id: artifactId });
 
       const result = getProductionProjectContext({ project_id: context.production.project_id, workspace: "storyboard" }, context.db);
@@ -281,7 +292,7 @@ test("public SHOT and empty review DTOs expose normalized operational semantics"
   }
 });
 
-test("delivery project context accepts null final reason when a valid final export exists", () => {
+test("public Project writes cannot manufacture final approval or a final Artifact projection", () => {
   const context = setup();
   try {
     const registered = registerMediaArtifact({
@@ -294,19 +305,12 @@ test("delivery project context accepts null final reason when a valid final expo
     if (!registered.ok) throw new Error("final video fixture registration failed");
     context.production.status = "final_approved";
     context.production.exports.final_video_artifact_id = registered.artifact.artifact_id;
-    saveProject(context.db, context.production);
-
-    for (const detail of ["compact", "full"] as const) {
-      const result = readProjectContext(
-        getProductionProjectContext({ project_id: context.production.project_id, workspace: "delivery" }, context.db),
-        detail
-      );
-      assert.equal(result.ok, true, JSON.stringify(result));
-      if (!result.ok) continue;
-      const delivery = result.data as { final_artifact: { artifact_id: string } | null; final_artifact_reason_code: string | null };
-      assert.equal(delivery.final_artifact?.artifact_id, registered.artifact.artifact_id);
-      assert.equal(delivery.final_artifact_reason_code, null);
-    }
+    assert.throws(() => saveProject(context.db, context.production), { code: "PRODUCTION_MUTATION_REJECTED" });
+    const stored = context.db.prepare("SELECT data_json FROM projects WHERE project_id = ?")
+      .get(context.production.project_id) as { data_json: string };
+    const persisted = JSON.parse(stored.data_json) as Project;
+    assert.notEqual(persisted.status, "final_approved");
+    assert.equal(persisted.exports.final_video_artifact_id, "");
   } finally {
     teardown(context);
   }
@@ -342,7 +346,7 @@ test("five-stage readonly fixture keeps SHOT, review package, and project summar
       review: { approval_status: "pending", rejection_reasons: [], latest_revision_instruction: null }
     });
 
-    const draft = base("shot_stage_draft", 1);
+    const draft = base(context.productionShot.shot_id, 1);
     const ready = base("shot_stage_ready", 2);
     ready.status = "storyboard_approved";
     ready.storyboard_image_artifact_id = storyboard(ready.shot_id);
@@ -366,7 +370,6 @@ test("five-stage readonly fixture keeps SHOT, review package, and project summar
     accepted.review = { approval_status: "approved", rejection_reasons: [], latest_revision_instruction: null };
 
     const staged = [draft, ready, pending, rejected, accepted];
-    context.db.prepare("DELETE FROM shots WHERE shot_id = ?").run(context.productionShot.shot_id);
     for (const shot of staged) saveShot(context.db, shot);
     context.production.shot_ids = staged.map((shot) => shot.shot_id);
     saveProject(context.db, context.production);
@@ -532,6 +535,7 @@ test("review and delivery guards reject same-project wrong-SHOT and tampered art
 
     context.production.status = "video_review";
     saveProject(context.db, context.production);
+    context.productionShot.status = "approved";
     context.productionShot.accepted_clip_artifact_id = first.artifact.artifact_id;
     context.productionShot.review.approval_status = "approved";
     saveShot(context.db, context.productionShot);
@@ -544,13 +548,14 @@ test("review and delivery guards reject same-project wrong-SHOT and tampered art
     if (incompleteWorkbench.ok) {
       assert.equal(incompleteWorkbench.data.ready_for_assembly, false);
       const summary = incompleteWorkbench.data.summary as { blocker_count: number; blocker_reason: string; next_action: { source: string; label: string; reason_code: string }; risk: string };
-      assert.equal(summary.blocker_reason.includes("采纳片段无效"), false);
+      assert.equal(summary.blocker_reason.includes("采纳片段无效"), false, summary.blocker_reason);
       assert.deepEqual(
         { source: summary.next_action.source, label: summary.next_action.label, reason_code: summary.next_action.reason_code },
         { source: "override", label: "继续人工审片", reason_code: "manual_override" }
       );
       assert.notEqual(summary.risk, "blocked");
     }
+    secondShot.status = "approved";
     secondShot.clip_versions = [{ artifact_id: second.artifact.artifact_id, run_id: "run_second", attempt_number: 1, review_status: "approved" }];
     secondShot.accepted_clip_artifact_id = second.artifact.artifact_id;
     secondShot.review.approval_status = "approved";

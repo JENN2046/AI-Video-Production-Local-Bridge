@@ -205,7 +205,7 @@ test("M1.5 rollback retains activation recovery evidence when file cleanup fails
     );
     assert.equal(result.ok, false);
     if (result.ok) return;
-    assert.equal(result.error.code, "HANDOFF_FREEZE_FAILED");
+    assert.equal(result.error.code, "HANDOFF_RECOVERY_REQUIRED");
     assert.equal(result.report.imported_artifacts.length, 1);
     const imported = result.report.imported_artifacts[0];
     assert.equal(existsSync(imported.storage_uri), true);

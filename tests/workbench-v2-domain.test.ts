@@ -7,6 +7,7 @@ import test from "node:test";
 import { deriveProjectOperationalSummary, deriveShotOperationalState, type ShotOperationalFacts } from "../src/packages/domain/operationalState.js";
 import { databaseLogicalManifest, migrateDatabase } from "../src/storage/databaseGovernance.js";
 import { DATABASE_MIGRATIONS } from "../src/storage/migrations.js";
+import { withWorkbenchProductionMutationAuthority } from "../src/storage/productionMutationAuthority.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import { WORKBENCH_V2_SCHEMA_VERSION } from "../src/storage/workbenchV2Schema.js";
 import { saveGenerationRun, type GenerationRun } from "../src/tools/generation.js";
@@ -34,7 +35,7 @@ import {
   resumeWorkbenchGenerationJobs,
   runWorkbenchGenerationOnce
 } from "../src/tools/workbenchGeneration.js";
-import { activateLocalMediaArtifact, registerMediaArtifact, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
+import { activateLocalMediaArtifact, persistMediaArtifact, registerMediaArtifact, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { downloadProviderOutputToArtifact } from "../src/tools/providerOutputDownloader.js";
 import type { ProviderPollOptions, VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
 
@@ -967,14 +968,9 @@ test("manual reconciliation keeps archive, terminal project, and Provider task o
     const terminalProject = getProject(db, terminalFixture.project_id);
     assert.ok(terminalProject);
     terminalProject.status = "final_approved";
-    saveProject(db, terminalProject);
-    const terminal = reconcileGenerationJob(terminalFixture.job_id, {
-      decision: "abandon",
-      reason: "Final project must reject production reconciliation.",
-      human_confirmation: true
-    }, db);
-    assert.equal(terminal.ok, false);
-    if (!terminal.ok) assert.equal(terminal.error.code, "GENERATION_RECONCILIATION_CONTEXT_STALE");
+    assert.throws(() => saveProject(db, terminalProject), (error: unknown) =>
+      error instanceof Error && "code" in error && error.code === "PRODUCTION_MUTATION_REJECTED");
+    assert.notEqual(getProject(db, terminalFixture.project_id)?.status, "final_approved");
 
     const ownerFixture = seedMigratedLegacyReconciliation(db, "owner", { apply_migration: false });
     const contenderFixture = seedMigratedLegacyReconciliation(db, "contender", { apply_migration: false });
@@ -1259,33 +1255,23 @@ test("Workbench project summary keeps missing storyboard inputs ahead of clip re
   }
 });
 
-test("Workbench list, dashboard, and workspace fail closed on project row and JSON id drift", () => {
+test("database authority prevents Project row and JSON id drift", () => {
   const db = openM0Database(":memory:");
   try {
     const created = createWorkbenchProject({ title: "Project binding drift", classification: "production" }, db);
     assert.equal(created.ok, true);
     if (!created.ok) return;
-    db.prepare(`UPDATE projects SET data_json = json_set(data_json, '$.project_id', 'project_wrong_binding') WHERE project_id = ?`)
-      .run(created.data.project.project_id);
-
-    const listed = listWorkbenchProjects({ scope: "daily" }, db);
-    const blocked = listed.items.find((item) => item.project.project_id === created.data.project.project_id);
-    assert.equal(blocked?.project.title, "Project data integrity error");
-    assert.equal(blocked?.risk, "blocked");
-    assert.equal(blocked?.next_action.reason_code, "operational_data_integrity");
-    assert.deepEqual(blocked?.blocker_codes, ["PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION"]);
-
-    const dashboard = getWorkbenchDashboard(db) as { totals: { blocked_projects: number } };
-    assert.equal(dashboard.totals.blocked_projects, 1);
-    const workspace = getWorkbenchProjectWorkspace(created.data.project.project_id, "overview", db);
-    assert.equal(workspace.ok, false);
-    if (!workspace.ok) assert.equal(workspace.error.code, "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION");
+    assert.throws(() => db.prepare(`UPDATE projects
+      SET data_json = json_set(data_json, '$.project_id', 'project_wrong_binding')
+      WHERE project_id = ?`).run(created.data.project.project_id),
+    /WORKBENCH_(?:PRODUCTION_OWNER_REQUIRED|PROJECT_BINDING_INVALID)/);
+    assert.equal(getProject(db, created.data.project.project_id)?.project_id, created.data.project.project_id);
   } finally {
     db.close();
   }
 });
 
-test("operational facts fail closed when a referenced Artifact JSON binding drifts from its row", () => {
+test("database authority prevents a referenced Artifact JSON binding from drifting", () => {
   const db = openM0Database(":memory:");
   try {
     const created = createWorkbenchProject({ title: "Artifact drift guard", classification: "production" }, db);
@@ -1311,35 +1297,12 @@ test("operational facts fail closed when a referenced Artifact JSON binding drif
     saveShot(db, shot);
     created.data.project.shot_ids = [shot.shot_id];
     saveProject(db, created.data.project);
-    db.prepare(`
+    assert.throws(() => db.prepare(`
       UPDATE media_artifacts
       SET data_json = json_set(data_json, '$.linked_objects.shot_id', 'shot_other_same_project')
       WHERE artifact_id = ?
-    `).run(registered.artifact.artifact_id);
-
-    assert.throws(
-      () => collectProjectOperationalBundles(db, [created.data.project]),
-      /ARTIFACT_OPERATIONAL_FACT_INVALID/
-    );
-    const listed = listWorkbenchProjects({ scope: "daily" }, db);
-    const blocked = listed.items.find((item) => item.project.project_id === created.data.project.project_id);
-    assert.equal(blocked?.risk, "blocked");
-    assert.equal(blocked?.next_action.reason_code, "operational_data_integrity");
-    assert.deepEqual(blocked?.blocker_codes, ["PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION"]);
-    const workspace = getWorkbenchProjectWorkspace(created.data.project.project_id, "overview", db);
-    assert.equal(workspace.ok, false);
-    if (!workspace.ok) assert.equal(workspace.error.code, "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION");
-
-    // The project JSON can itself have an empty/stale shot list while the
-    // structured shots table still contains the corrupt row. Dashboard totals
-    // must count the project-level integrity blocker even when blocked_shot_count
-    // therefore falls back to zero.
-    db.prepare(`UPDATE projects SET data_json = json_set(data_json, '$.shot_ids', json('[]')) WHERE project_id = ?`)
-      .run(created.data.project.project_id);
-    const dashboard = getWorkbenchDashboard(db) as { totals: { blocked_projects: number } };
-    assert.equal(dashboard.totals.blocked_projects, 1);
-    const relisted = listWorkbenchProjects({ scope: "daily" }, db).items.find((item) => item.project.project_id === created.data.project.project_id);
-    assert.equal(relisted?.next_action.reason_code, "operational_data_integrity");
+    `).run(registered.artifact.artifact_id), /WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE/);
+    assert.doesNotThrow(() => collectProjectOperationalBundles(db, [created.data.project]));
   } finally {
     db.close();
   }
@@ -1569,19 +1532,23 @@ test("generation preflight enforces official estimate, balance gate, budget and 
     saveProject(db, projectResult.project);
     db.prepare("UPDATE generation_jobs SET state = 'manual_reconciliation', reconciliation_reason = 'PROVIDER_SUBMIT_OUTCOME_UNKNOWN' WHERE job_id = ?")
       .run(secondConfirmed.data.job_id);
-    db.prepare("INSERT INTO media_artifacts (artifact_id, project_id, shot_id, role, artifact_type, status, data_json) VALUES ('artifact_cross_provider', ?, ?, 'generated_clip', 'video', 'active', ?)")
-      .run(projectResult.project_id, shot.shot_id, JSON.stringify({ artifact_id: "artifact_cross_provider", source: { provider: "runway", provider_job_id: "cross-provider-task" }, linked_objects: { project_id: projectResult.project_id, shot_id: shot.shot_id } }));
+    const crossProviderArtifact = registerMediaArtifact({
+      artifact_type: "video",
+      role: "generated_clip",
+      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
+      linked_objects: { project_id: projectResult.project_id, shot_id: shot.shot_id }
+    }, db);
+    assert.equal(crossProviderArtifact.ok, true);
+    if (!crossProviderArtifact.ok) return;
+    crossProviderArtifact.artifact.source.provider = "runway";
+    crossProviderArtifact.artifact.source.provider_job_id = "cross-provider-task";
+    persistMediaArtifact(db, crossProviderArtifact.artifact);
     const crossProviderTask = reconcileGenerationJob(secondConfirmed.data.job_id, { decision: "attach_existing_task", provider_task_id: "cross-provider-task", human_confirmation: true }, db);
     assert.equal(crossProviderTask.ok, false);
     if (!crossProviderTask.ok) assert.equal(crossProviderTask.error.code, "PROVIDER_TASK_ALREADY_OWNED");
     const reusedTask = reconcileGenerationJob(secondConfirmed.data.job_id, { decision: "attach_existing_task", provider_task_id: "existing-task-123", human_confirmation: true }, db);
     assert.equal(reusedTask.ok, false);
     if (!reusedTask.ok) assert.equal(reusedTask.error.code, "PROVIDER_TASK_ALREADY_OWNED");
-    projectResult.project.status = "final_approved";
-    saveProject(db, projectResult.project);
-    const staleProject = reconcileGenerationJob(secondConfirmed.data.job_id, { decision: "abandon", reason: "Reject stale project context.", human_confirmation: true }, db);
-    assert.equal(staleProject.ok, false);
-    if (!staleProject.ok) assert.equal(staleProject.error.code, "GENERATION_RECONCILIATION_CONTEXT_STALE");
     projectResult.project.status = "video_review";
     saveProject(db, projectResult.project);
     db.prepare("UPDATE workbench_project_meta SET lifecycle = 'archived' WHERE project_id = ?").run(projectResult.project_id);
@@ -2778,6 +2745,7 @@ test("switching Provider tasks retires the prior recovery artifacts without chan
   const sqlitePath = join(root, "app.sqlite");
   const mediaRoot = join(root, "media");
   const videoFixture = resolve("fixtures/video/mock_clip.mp4");
+  let dbForCleanup: ReturnType<typeof openM0Database> | null = null;
   try {
     const prepared = await prepareConfirmedGeneration(sqlitePath, "Retire recovery before Provider task switch");
     const previousTaskId = "task-recovery-switch-previous";
@@ -2793,6 +2761,7 @@ test("switching Provider tasks retires the prior recovery artifacts without chan
     );
 
     const db = openM0Database(sqlitePath);
+    dbForCleanup = db;
     const activateRecoveryArtifact = (artifactId: string, providerJobId: string) => activateLocalMediaArtifact({
       artifact: {
         artifact_id: artifactId,
@@ -2872,34 +2841,33 @@ test("switching Provider tasks retires the prior recovery artifacts without chan
     assert.equal(recoveryAfterRejectedIdentity.provider_output_recovery.provider_task_id, previousTaskId);
     assert.equal(recoveryAfterRejectedIdentity.provider_output_recovery.local_identity, localIdentity);
 
-    db.prepare("UPDATE media_artifacts SET status = 'inaccessible' WHERE artifact_id = ?")
-      .run(replacementArtifact.artifact.artifact_id);
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "artifact", project_id: prepared.project_id, object_id: replacementArtifact.artifact.artifact_id
+    }, () => db.prepare("UPDATE media_artifacts SET status = 'inaccessible' WHERE artifact_id = ?")
+      .run(replacementArtifact.artifact.artifact_id));
     const rejectedUnsafeRetirement = reconcileGenerationJob(prepared.job_id, {
       decision: "attach_existing_task",
       provider_task_id: nextTaskId,
       human_confirmation: true
     }, db, { env: prepared.env, now: () => new Date(wallMs + 750) });
     assert.equal(rejectedUnsafeRetirement.ok, false);
-    if (!rejectedUnsafeRetirement.ok) {
-      assert.equal(rejectedUnsafeRetirement.error.code, "ARTIFACT_RECOVERY_RETIRE_FAILED");
-    }
+    if (!rejectedUnsafeRetirement.ok) assert.equal(rejectedUnsafeRetirement.error.code, "ARTIFACT_RECOVERY_RETIRE_FAILED");
     const stateAfterRejectedRetirement = db.prepare(`SELECT
         (SELECT provider_task_id FROM generation_intents WHERE intent_id = ?) AS provider_task_id,
         (SELECT data_json FROM generation_intents WHERE intent_id = ?) AS intent_data_json,
         (SELECT status FROM media_artifacts WHERE artifact_id = ?) AS invalid_status,
         (SELECT status FROM media_artifacts WHERE artifact_id = ?) AS replacement_status`)
-      .get(
-        prepared.intent_id,
-        prepared.intent_id,
-        invalidArtifact.artifact.artifact_id,
-        replacementArtifact.artifact.artifact_id
-      ) as { provider_task_id: string; intent_data_json: string; invalid_status: string; replacement_status: string };
+      .get(prepared.intent_id, prepared.intent_id, invalidArtifact.artifact.artifact_id, replacementArtifact.artifact.artifact_id) as {
+        provider_task_id: string; intent_data_json: string; invalid_status: string; replacement_status: string;
+      };
     assert.equal(stateAfterRejectedRetirement.provider_task_id, previousTaskId);
     assert.equal("provider_output_recovery" in JSON.parse(stateAfterRejectedRetirement.intent_data_json), true);
     assert.equal(stateAfterRejectedRetirement.invalid_status, "active");
     assert.equal(stateAfterRejectedRetirement.replacement_status, "inaccessible");
-    db.prepare("UPDATE media_artifacts SET status = 'active' WHERE artifact_id = ?")
-      .run(replacementArtifact.artifact.artifact_id);
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "artifact", project_id: prepared.project_id, object_id: replacementArtifact.artifact.artifact_id
+    }, () => db.prepare("UPDATE media_artifacts SET status = 'active' WHERE artifact_id = ?")
+      .run(replacementArtifact.artifact.artifact_id));
 
     const switched = reconcileGenerationJob(prepared.job_id, {
       decision: "attach_existing_task",
@@ -2944,6 +2912,7 @@ test("switching Provider tasks retires the prior recovery artifacts without chan
     assert.deepEqual(blobBindingsAfter, blobBindingsBefore);
     assert.equal(activeGeneratedClips.count, 0);
   } finally {
+    try { dbForCleanup?.close(); } catch { /* already closed */ }
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -2953,6 +2922,7 @@ test("abandoning Provider recovery retires its artifacts atomically without chan
   const sqlitePath = join(root, "app.sqlite");
   const mediaRoot = join(root, "media");
   const videoFixture = resolve("fixtures/video/mock_clip.mp4");
+  let dbForCleanup: ReturnType<typeof openM0Database> | null = null;
   try {
     const prepared = await prepareConfirmedGeneration(sqlitePath, "Retire recovery before human abandon");
     const taskId = "task-recovery-abandon";
@@ -2967,6 +2937,7 @@ test("abandoning Provider recovery retires its artifacts atomically without chan
     );
 
     const db = openM0Database(sqlitePath);
+    dbForCleanup = db;
     const activateRecoveryArtifact = (artifactId: string, providerJobId: string) => activateLocalMediaArtifact({
       artifact: {
         artifact_id: artifactId,
@@ -3030,44 +3001,36 @@ test("abandoning Provider recovery retires its artifacts atomically without chan
       invalidArtifact.artifact.artifact_id,
       replacementArtifact.artifact.artifact_id
     ) as Array<{ artifact_id: string; blob_id: string }>;
-    db.prepare("UPDATE media_artifacts SET status = 'inaccessible' WHERE artifact_id = ?")
-      .run(replacementArtifact.artifact.artifact_id);
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "artifact", project_id: prepared.project_id, object_id: replacementArtifact.artifact.artifact_id
+    }, () => db.prepare("UPDATE media_artifacts SET status = 'inaccessible' WHERE artifact_id = ?")
+      .run(replacementArtifact.artifact.artifact_id));
     const rejectedUnsafeAbandon = reconcileGenerationJob(prepared.job_id, {
       decision: "abandon",
       reason: "Reject unsafe recovery retirement.",
       human_confirmation: true
     }, db, { env: prepared.env, now: () => new Date(wallMs + 500) });
     assert.equal(rejectedUnsafeAbandon.ok, false);
-    if (!rejectedUnsafeAbandon.ok) {
-      assert.equal(rejectedUnsafeAbandon.error.code, "ARTIFACT_RECOVERY_RETIRE_FAILED");
-    }
+    if (!rejectedUnsafeAbandon.ok) assert.equal(rejectedUnsafeAbandon.error.code, "ARTIFACT_RECOVERY_RETIRE_FAILED");
     const stateAfterRejectedAbandon = db.prepare(`SELECT
         (SELECT status FROM generation_intents WHERE intent_id = ?) AS intent_status,
         (SELECT data_json FROM generation_intents WHERE intent_id = ?) AS intent_data_json,
         (SELECT state FROM generation_jobs WHERE job_id = ?) AS job_state,
         (SELECT status FROM media_artifacts WHERE artifact_id = ?) AS invalid_status,
         (SELECT status FROM media_artifacts WHERE artifact_id = ?) AS replacement_status`)
-      .get(
-        prepared.intent_id,
-        prepared.intent_id,
-        prepared.job_id,
-        invalidArtifact.artifact.artifact_id,
-        replacementArtifact.artifact.artifact_id
-      ) as {
-        intent_status: string;
-        intent_data_json: string;
-        job_state: string;
-        invalid_status: string;
-        replacement_status: string;
+      .get(prepared.intent_id, prepared.intent_id, prepared.job_id, invalidArtifact.artifact.artifact_id,
+        replacementArtifact.artifact.artifact_id) as {
+        intent_status: string; intent_data_json: string; job_state: string; invalid_status: string; replacement_status: string;
       };
     assert.equal(stateAfterRejectedAbandon.intent_status, "running");
     assert.equal("provider_output_recovery" in JSON.parse(stateAfterRejectedAbandon.intent_data_json), true);
     assert.equal(stateAfterRejectedAbandon.job_state, "manual_reconciliation");
     assert.equal(stateAfterRejectedAbandon.invalid_status, "active");
     assert.equal(stateAfterRejectedAbandon.replacement_status, "inaccessible");
-    db.prepare("UPDATE media_artifacts SET status = 'active' WHERE artifact_id = ?")
-      .run(replacementArtifact.artifact.artifact_id);
-
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "artifact", project_id: prepared.project_id, object_id: replacementArtifact.artifact.artifact_id
+    }, () => db.prepare("UPDATE media_artifacts SET status = 'active' WHERE artifact_id = ?")
+      .run(replacementArtifact.artifact.artifact_id));
     const abandoned = reconcileGenerationJob(prepared.job_id, {
       decision: "abandon",
       reason: "Human abandoned the recovered Provider output.",
@@ -3114,6 +3077,7 @@ test("abandoning Provider recovery retires its artifacts atomically without chan
     assert.deepEqual(blobBindingsAfter, blobBindingsBefore);
     assert.equal(activeGeneratedClips.count, 0);
   } finally {
+    try { dbForCleanup?.close(); } catch { /* already closed */ }
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -3984,12 +3948,26 @@ test("provider output registration is idempotent by provider task ID", async () 
   const db = openM0Database(sqlitePath);
   try {
     const fixture = readFileSync(resolve("fixtures/video/mock_clip.mp4"));
+    const created = createProject({ title: "Provider output idempotency" }, db);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    const shot = buildStoryboardApprovedShot({
+      shot_id: "shot_idempotent",
+      project_id: created.project_id,
+      order: 1,
+      duration_seconds: 2,
+      storyboard_image_artifact_id: "",
+      video_prompt: "Provider output idempotency fixture"
+    });
+    saveShot(db, shot);
+    created.project.shot_ids = [shot.shot_id];
+    saveProject(db, created.project);
     const input = {
       url: "https://cdn.example.test/output.mp4",
       provider_name: "runninghub",
       provider_job_id: "task-idempotent-1",
-      project_id: "project_idempotent",
-      shot_id: "shot_idempotent",
+      project_id: created.project_id,
+      shot_id: shot.shot_id,
       duration_seconds: 2,
       aspect_ratio: "9:16",
       storage_directory: join(root, "media")

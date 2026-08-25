@@ -4,8 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { createProject, openM0Database } from "../src/index.js";
 import { DATABASE_MIGRATIONS, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
-import { registerMediaArtifact } from "../src/tools/mediaArtifacts.js";
-import { getProject, saveProject, saveShot } from "../src/tools/projects.js";
+import { withWorkbenchProductionMutationAuthority } from "../src/storage/productionMutationAuthority.js";
 import { getWorkbenchDeliveryState } from "../src/tools/workbenchDeliveryState.js";
 import { getWorkbenchProjectSummary, getWorkbenchProjectWorkspace } from "../src/tools/workbenchV2.js";
 
@@ -26,6 +25,21 @@ function migrateThrough0011(db: DatabaseSync): void {
       db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)")
         .run(migration.id, migration.name, migrationChecksum(migration));
     }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function migrateExact0012(db: DatabaseSync): void {
+  const migration = DATABASE_MIGRATIONS.find((item) => item.id === "0012");
+  assert.ok(migration);
+  db.exec("BEGIN EXCLUSIVE");
+  try {
+    migration.apply(db);
+    db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)")
+      .run(migration.id, migration.name, migrationChecksum(migration));
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
@@ -98,7 +112,7 @@ test("legacy backfill preserves the bound final Artifact identity", () => {
     insertFinalArtifact(db, "legacy_bound", "artifact_legacy_a");
     insertFinalArtifact(db, "legacy_bound", "artifact_legacy_b");
     insertFinalArtifact(db, "legacy_other", "artifact_legacy_cross_project");
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0012"]);
+    migrateExact0012(db);
     const state = getWorkbenchDeliveryState(db, "legacy_bound");
     assert.equal(state?.workflow_state, "legacy_review_required");
     assert.equal(state?.current_final_artifact_id, "artifact_legacy_a");
@@ -148,35 +162,7 @@ test("legacy review durable state overrides stale delivered next-action projecti
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('legacy_projection', ?)")
       .run(projectJson("legacy_projection", "final_approved", "artifact_legacy_projection"));
     insertFinalArtifact(db, "legacy_projection", "artifact_legacy_projection");
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0012"]);
-
-    const clip = registerMediaArtifact({
-      artifact_type: "video",
-      role: "generated_clip",
-      source: { kind: "fixture_path", path: "video/mock_clip.mp4" },
-      linked_objects: { project_id: "legacy_projection", shot_id: "shot_legacy_projection" }
-    }, db);
-    assert.equal(clip.ok, true);
-    if (!clip.ok) throw new Error("LEGACY_CLIP_FIXTURE_FAILED");
-    saveShot(db, {
-      shot_id: "shot_legacy_projection",
-      project_id: "legacy_projection",
-      order: 1,
-      status: "approved",
-      duration_seconds: 2,
-      description: "Legacy accepted SHOT",
-      storyboard_image_artifact_id: "",
-      video_prompt: "Legacy projection fixture",
-      negative_prompt: "",
-      generation_run_ids: [],
-      accepted_clip_artifact_id: clip.artifact.artifact_id,
-      clip_versions: [{ artifact_id: clip.artifact.artifact_id, run_id: "", attempt_number: 1, review_status: "approved" }],
-      review: { approval_status: "approved", rejection_reasons: [], latest_revision_instruction: null }
-    });
-    const project = getProject(db, "legacy_projection");
-    assert.ok(project);
-    project.shot_ids = ["shot_legacy_projection"];
-    saveProject(db, project);
+    migrateExact0012(db);
 
     const summary = getWorkbenchProjectSummary("legacy_projection", db);
     assert.equal(summary?.delivery_state, "final_review");
@@ -259,8 +245,10 @@ test("new Project initialization rejects a terminal delivery projection", () => 
   try {
     const canonicalProject = createCurrentProject(db, "canonical initial state");
     assert.equal(getWorkbenchDeliveryState(db, canonicalProject)?.workflow_state, "not_ready");
-    assert.throws(() => db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('new_terminal', ?)")
-      .run(projectJson("new_terminal", "final_approved")), /WORKBENCH_NEW_PROJECT_DELIVERY_STATE_INVALID/);
+    assert.throws(() => withWorkbenchProductionMutationAuthority(db, {
+      kind: "project_content", project_id: "new_terminal", object_id: "new_terminal"
+    }, () => db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('new_terminal', ?)")
+      .run(projectJson("new_terminal", "final_approved"))), /WORKBENCH_NEW_PROJECT_DELIVERY_STATE_INVALID/);
     assert.equal((db.prepare("SELECT COUNT(*) count FROM projects WHERE project_id = 'new_terminal'").get() as { count: number }).count, 0);
     assert.equal((db.prepare("SELECT COUNT(*) count FROM workbench_delivery_state WHERE project_id = 'new_terminal'").get() as { count: number }).count, 0);
   } finally {
@@ -274,7 +262,7 @@ test("pointerless legacy final approval backfills to not_ready", () => {
     migrateThrough0011(db);
     db.prepare("INSERT INTO projects (project_id, data_json) VALUES ('legacy_pointerless', ?)")
       .run(projectJson("legacy_pointerless", "final_approved"));
-    assert.deepEqual(runDatabaseMigrations(db).applied, ["0012"]);
+    migrateExact0012(db);
     const state = getWorkbenchDeliveryState(db, "legacy_pointerless");
     assert.equal(state?.workflow_state, "not_ready");
     assert.equal(state?.current_final_artifact_id, null);

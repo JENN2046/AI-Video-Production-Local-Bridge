@@ -10,6 +10,7 @@ import {
 import { directorMinorToProviderAmount, directorProviderAmountToMinor } from "../director/currency.js";
 import { legacyProposalMatchesDirectorCapability, selectVerifiedDirectorCapability } from "../director/providerCapability.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
+import { withWorkbenchProductionMutationAuthority } from "../storage/productionMutationAuthority.js";
 import { getGenerationRun, saveGenerationRun, type GenerationRun } from "./generation.js";
 import { requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import { validateActiveArtifactReference, type MediaArtifact } from "./mediaArtifacts.js";
@@ -2111,17 +2112,19 @@ function retireProviderOutputRecoveryArtifacts(
     });
 
     for (const target of archivedTargets) {
-      const archived = db.prepare(`UPDATE media_artifacts
-        SET status = 'archived', data_json = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE artifact_id = ? AND project_id = ? AND shot_id = ? AND status = ? AND data_json = ?`)
-        .run(
-          target.data_json,
-          target.row.artifact_id,
-          intent.project_id,
-          intent.shot_id,
-          target.row.status,
-          target.row.data_json
-        ) as { changes: number | bigint };
+      const archived = withWorkbenchProductionMutationAuthority(db, {
+        kind: "artifact", project_id: intent.project_id, object_id: target.row.artifact_id
+      }, () => db.prepare(`UPDATE media_artifacts
+          SET status = 'archived', data_json = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE artifact_id = ? AND project_id = ? AND shot_id = ? AND status = ? AND data_json = ?`)
+          .run(
+            target.data_json,
+            target.row.artifact_id,
+            intent.project_id,
+            intent.shot_id,
+            target.row.status,
+            target.row.data_json
+          )) as { changes: number | bigint };
       if (Number(archived.changes) !== 1) throw new Error("ARTIFACT_RECOVERY_RETIRE_UPDATE_FAILED");
     }
     return { ok: true };
@@ -2201,11 +2204,15 @@ function rebindRecoveredProviderOutput(
     replacementSource.local_recovery_identity = recovery.local_identity;
     replacementData.source = replacementSource;
 
-    const detached = db.prepare("UPDATE media_artifacts SET status = 'archived', data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?")
-      .run(JSON.stringify(invalidData), recovery.invalid_artifact_id) as { changes: number | bigint };
+    const detached = withWorkbenchProductionMutationAuthority(db, {
+      kind: "artifact", project_id: intent.project_id, object_id: recovery.invalid_artifact_id
+    }, () => db.prepare("UPDATE media_artifacts SET status = 'archived', data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?")
+      .run(JSON.stringify(invalidData), recovery.invalid_artifact_id)) as { changes: number | bigint };
     if (Number(detached.changes) !== 1) throw new Error("ARTIFACT_RECOVERY_DETACH_FAILED");
-    const rebound = db.prepare("UPDATE media_artifacts SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?")
-      .run(JSON.stringify(replacementData), replacementArtifactId) as { changes: number | bigint };
+    const rebound = withWorkbenchProductionMutationAuthority(db, {
+      kind: "artifact", project_id: intent.project_id, object_id: replacementArtifactId
+    }, () => db.prepare("UPDATE media_artifacts SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?")
+      .run(JSON.stringify(replacementData), replacementArtifactId)) as { changes: number | bigint };
     if (Number(rebound.changes) !== 1) throw new Error("ARTIFACT_RECOVERY_REBIND_FAILED");
     persistProviderOutputRecovery(db, intent.intent_id, null);
     db.exec("COMMIT");

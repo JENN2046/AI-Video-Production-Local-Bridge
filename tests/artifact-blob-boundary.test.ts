@@ -91,9 +91,9 @@ test("identical bytes deduplicate blobs while project and SHOT Artifacts remain 
     db.prepare(`INSERT INTO media_blobs
       (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
       VALUES ('blob_alternate_verified', ?, 1, 'image/png', 'synthetic-test-only', 'verified', '{}')`).run("f".repeat(64));
-    assert.throws(() => db.prepare("UPDATE media_artifact_blobs SET blob_id = 'blob_alternate_verified' WHERE artifact_id = ?").run(scopedA.artifact.artifact_id), /MEDIA_ARTIFACT_BLOB_IMMUTABLE/);
+    assert.throws(() => db.prepare("UPDATE media_artifact_blobs SET blob_id = 'blob_alternate_verified' WHERE artifact_id = ?").run(scopedA.artifact.artifact_id), /(?:WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE|MEDIA_ARTIFACT_BLOB_IMMUTABLE)/);
     assert.throws(() => db.prepare("DELETE FROM media_artifact_blobs WHERE artifact_id = ?").run(scopedA.artifact.artifact_id), /MEDIA_ARTIFACT_BLOB_IMMUTABLE/);
-    assert.throws(() => db.prepare("UPDATE media_artifacts SET status = 'pending_upload' WHERE artifact_id = ?").run(scopedA.artifact.artifact_id), /INVALID_ARTIFACT_STATUS_TRANSITION/);
+    assert.throws(() => db.prepare("UPDATE media_artifacts SET status = 'pending_upload' WHERE artifact_id = ?").run(scopedA.artifact.artifact_id), /(?:WORKBENCH_DELIVERY_ARTIFACT_IMMUTABLE|INVALID_ARTIFACT_STATUS_TRANSITION)/);
 
     const workbench = getWorkbenchProjectWorkspace(first.project.project_id, "storyboard", db, { touch_last_opened: false });
     assert.equal(workbench.ok, true);
@@ -311,7 +311,7 @@ test("v2-4 migration derives Blob facts from local bytes and fails closed on str
         .run(candidate.artifact_id, candidate.role, candidate.artifact_type, candidate.status, JSON.stringify(candidate));
     }
     const result = runDatabaseMigrations(db);
-    assert.deepEqual(result.applied, ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012"]);
+    assert.deepEqual(result.applied, ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013"]);
     const migrated = getMediaArtifact(db, artifact.artifact_id);
     assert.equal(migrated?.status, "active");
     const blob = migrated ? getMediaBlob(db, migrated.blob_id) : null;

@@ -7,6 +7,8 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { migrateDatabase } from "../src/storage/databaseGovernance.js";
+import { withWorkbenchProductionMutationAuthority } from "../src/storage/productionMutationAuthority.js";
+import { openM0DatabaseConnection } from "../src/storage/sqlite.js";
 import { saveProject, saveShot, type Project, type Shot } from "../src/tools/projects.js";
 import {
   confirmGeneration,
@@ -58,8 +60,7 @@ function createFixture(): Fixture {
   writeFileSync(imagePath, PNG);
   const sqlitePath = join(dataRoot, "app.sqlite");
   migrateDatabase(sqlitePath);
-  const db = new DatabaseSync(sqlitePath);
-  db.exec("PRAGMA foreign_keys = ON");
+  const db = openM0DatabaseConnection(sqlitePath);
 
   const project: Project = {
     project_id: PROJECT_ID,
@@ -73,7 +74,7 @@ function createFixture(): Fixture {
     generation_batch_ids: [],
     exports: { final_video_artifact_id: "" }
   };
-  saveProject(db, project);
+  saveProject(db, { ...project, status: "draft", shot_ids: [], active_storyboard_package_id: "" });
   db.prepare("UPDATE workbench_project_meta SET classification = 'production', lifecycle = 'active' WHERE project_id = ?").run(PROJECT_ID);
 
   const shot: Shot = {
@@ -98,24 +99,30 @@ function createFixture(): Fixture {
     (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
     VALUES (?, ?, ?, 'image/png', ?, 'verified', ?)`)
     .run(BLOB_ID, sha256, PNG.length, imagePath, JSON.stringify({ media_root: mediaRoot }));
-  db.prepare(`INSERT INTO media_artifacts
-    (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
-    VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)`)
-    .run(ARTIFACT_ID, PROJECT_ID, SHOT_ID, JSON.stringify({
-      artifact_id: ARTIFACT_ID,
-      blob_id: BLOB_ID,
-      artifact_type: "image",
-      role: "storyboard_image",
-      status: "active",
-      storage: { uri: imagePath, mime_type: "image/png", filename: "storyboard.png" },
-      metadata: { width: 1, height: 1, duration_seconds: null, aspect_ratio: "9:16", sha256 },
-      linked_objects: { project_id: PROJECT_ID, shot_id: SHOT_ID },
-      source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256, external_url_host: "" }
-    }));
-  db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(ARTIFACT_ID, BLOB_ID);
+  withWorkbenchProductionMutationAuthority(db, {
+    kind: "artifact", project_id: PROJECT_ID, object_id: ARTIFACT_ID
+  }, () => {
+    db.prepare(`INSERT INTO media_artifacts
+      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+      VALUES (?, ?, ?, 'storyboard_image', 'image', 'active', ?)`)
+      .run(ARTIFACT_ID, PROJECT_ID, SHOT_ID, JSON.stringify({
+        artifact_id: ARTIFACT_ID,
+        blob_id: BLOB_ID,
+        artifact_type: "image",
+        role: "storyboard_image",
+        status: "active",
+        storage: { uri: imagePath, mime_type: "image/png", filename: "storyboard.png" },
+        metadata: { width: 1, height: 1, duration_seconds: null, aspect_ratio: "9:16", sha256 },
+        linked_objects: { project_id: PROJECT_ID, shot_id: SHOT_ID },
+        source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256, external_url_host: "" }
+      }));
+    db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(ARTIFACT_ID, BLOB_ID);
+  });
 
-  db.prepare(`INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json)
-    VALUES (?, ?, ?)`)
+  withWorkbenchProductionMutationAuthority(db, {
+    kind: "storyboard_package", project_id: PROJECT_ID, object_id: PACKAGE_ID
+  }, () => db.prepare(`INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json)
+      VALUES (?, ?, ?)`)
     .run(PACKAGE_ID, PROJECT_ID, JSON.stringify({
       storyboard_package_id: PACKAGE_ID,
       project_id: PROJECT_ID,
@@ -130,9 +137,39 @@ function createFixture(): Fixture {
         negative_prompt: shot.negative_prompt
       }],
       user_approval: { storyboard_approved: true }
-    }));
+    })));
+  saveProject(db, project);
 
   return { root, sqlitePath, mediaRoot, imagePath, db };
+}
+
+function persistFixtureShotDrift(fixture: Fixture, shot: Shot): void {
+  saveShot(fixture.db, shot);
+}
+
+function persistFixtureArtifactDrift(fixture: Fixture, artifactId: string, dataJson: string): void {
+  const row = fixture.db.prepare("SELECT project_id FROM media_artifacts WHERE artifact_id = ?")
+    .get(artifactId) as { project_id: string };
+  withWorkbenchProductionMutationAuthority(fixture.db, {
+    kind: "artifact", project_id: row.project_id, object_id: artifactId
+  }, () => fixture.db.prepare("UPDATE media_artifacts SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?")
+    .run(dataJson, artifactId));
+}
+
+function persistCorruptedPackage(fixture: { db: DatabaseSync }, packageId: string, dataJson: string): void {
+  // This is an isolated corruption fixture. Production 0013 makes packages
+  // immutable, so remove that one guard only while injecting the row, then
+  // restore the exact schema object before the read/runtime boundary executes.
+  const trigger = fixture.db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'workbench_storyboard_packages_no_update'")
+    .get() as { sql: string } | undefined;
+  if (!trigger?.sql) throw new Error("PACKAGE_IMMUTABILITY_TRIGGER_MISSING");
+  fixture.db.exec("DROP TRIGGER IF EXISTS workbench_storyboard_packages_no_update");
+  try {
+    fixture.db.prepare("UPDATE storyboard_packages SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE storyboard_package_id = ?")
+      .run(dataJson, packageId);
+  } finally {
+    fixture.db.exec(trigger.sql);
+  }
 }
 
 function closeFixture(fixture: Fixture): void {
@@ -289,21 +326,25 @@ function addUnrelatedWorldDrift(fixture: Fixture): void {
     (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
     VALUES (?, ?, 26, 'application/octet-stream', ?, 'unverified', ?)`)
     .run(unrelatedBlobId, unrelatedSha256, unrelatedPath, JSON.stringify({ media_root: fixture.mediaRoot }));
-  fixture.db.prepare(`INSERT INTO media_artifacts
-    (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
-    VALUES (?, ?, ?, 'storyboard_image', 'image', 'archived', ?)`)
-    .run(unrelatedArtifactId, unrelatedProjectId, unrelatedShotId, JSON.stringify({
-      artifact_id: unrelatedArtifactId,
-      blob_id: unrelatedBlobId,
-      artifact_type: "image",
-      role: "storyboard_image",
-      status: "archived",
-      storage: { uri: unrelatedPath, mime_type: "application/octet-stream", filename: "unrelated-promotion.bin" },
-      metadata: { width: 0, height: 0, duration_seconds: null, aspect_ratio: "", sha256: unrelatedSha256 },
-      linked_objects: { project_id: unrelatedProjectId, shot_id: unrelatedShotId },
-      source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: unrelatedSha256, external_url_host: "" }
-    }));
-  fixture.db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(unrelatedArtifactId, unrelatedBlobId);
+  withWorkbenchProductionMutationAuthority(fixture.db, {
+    kind: "artifact", project_id: unrelatedProjectId, object_id: unrelatedArtifactId
+  }, () => {
+    fixture.db.prepare(`INSERT INTO media_artifacts
+      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+      VALUES (?, ?, ?, 'storyboard_image', 'image', 'archived', ?)`)
+      .run(unrelatedArtifactId, unrelatedProjectId, unrelatedShotId, JSON.stringify({
+        artifact_id: unrelatedArtifactId,
+        blob_id: unrelatedBlobId,
+        artifact_type: "image",
+        role: "storyboard_image",
+        status: "archived",
+        storage: { uri: unrelatedPath, mime_type: "application/octet-stream", filename: "unrelated-promotion.bin" },
+        metadata: { width: 0, height: 0, duration_seconds: null, aspect_ratio: "", sha256: unrelatedSha256 },
+        linked_objects: { project_id: unrelatedProjectId, shot_id: unrelatedShotId },
+        source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: unrelatedSha256, external_url_host: "" }
+      }));
+    fixture.db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(unrelatedArtifactId, unrelatedBlobId);
+  });
 }
 
 test("IS2.5 prepare compiles one GenerationPlan and confirm writes the canonical intent atomically", () => {
@@ -438,8 +479,7 @@ test("P1 preflight terminalizes stale SHOT and project inputs before returning",
         const row = fixture.db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(SHOT_ID) as { data_json: string };
         const shot = JSON.parse(row.data_json) as Shot;
         shot.video_prompt = "A preflight-drifted prompt.";
-        fixture.db.prepare("UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE shot_id = ?")
-          .run(JSON.stringify(shot), SHOT_ID);
+        persistFixtureShotDrift(fixture, shot);
       } else {
         const row = fixture.db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(PROJECT_ID) as { data_json: string };
         const project = JSON.parse(row.data_json) as Project;
@@ -478,14 +518,12 @@ test("P1 package, Artifact, and Provider capability drift before preflight termi
         const row = fixture.db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(PACKAGE_ID) as { data_json: string };
         const storyboardPackage = JSON.parse(row.data_json) as { approved_shot_snapshots: Array<{ video_prompt: string }> };
         storyboardPackage.approved_shot_snapshots[0].video_prompt = "A package-drifted frozen prompt.";
-        fixture.db.prepare("UPDATE storyboard_packages SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE storyboard_package_id = ?")
-          .run(JSON.stringify(storyboardPackage), PACKAGE_ID);
+        persistCorruptedPackage(fixture, PACKAGE_ID, JSON.stringify(storyboardPackage));
       } else if (drift === "artifact") {
         const row = fixture.db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(ARTIFACT_ID) as { data_json: string };
         const artifact = JSON.parse(row.data_json) as { linked_objects: { shot_id: string } };
         artifact.linked_objects.shot_id = "other_preflight_shot";
-        fixture.db.prepare("UPDATE media_artifacts SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?")
-          .run(JSON.stringify(artifact), ARTIFACT_ID);
+        persistFixtureArtifactDrift(fixture, ARTIFACT_ID, JSON.stringify(artifact));
       } else {
         const row = fixture.db.prepare("SELECT data_json FROM projects WHERE project_id = ?").get(PROJECT_ID) as { data_json: string };
         const project = JSON.parse(row.data_json) as Project;
@@ -521,8 +559,7 @@ test("P1 preflight stale remains historical across restart and requires a new pr
     const shotRow = fixture.db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(SHOT_ID) as { data_json: string };
     const shot = JSON.parse(shotRow.data_json) as Shot;
     shot.video_prompt = "A restart-safe replacement prompt.";
-    fixture.db.prepare("UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE shot_id = ?")
-      .run(JSON.stringify(shot), SHOT_ID);
+    persistFixtureShotDrift(fixture, shot);
     const preflight = await preflightWorkbenchGeneration({
       project_id: PROJECT_ID,
       shot_id: SHOT_ID,
@@ -538,10 +575,9 @@ test("P1 preflight stale remains historical across restart and requires a new pr
     const packageRow = fixture.db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(PACKAGE_ID) as { data_json: string };
     const storyboardPackage = JSON.parse(packageRow.data_json) as { approved_shot_snapshots: Array<{ video_prompt: string }> };
     storyboardPackage.approved_shot_snapshots[0].video_prompt = shot.video_prompt;
-    fixture.db.prepare("UPDATE storyboard_packages SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE storyboard_package_id = ?")
-      .run(JSON.stringify(storyboardPackage), PACKAGE_ID);
+    persistCorruptedPackage(fixture, PACKAGE_ID, JSON.stringify(storyboardPackage));
 
-    const restartedDb = new DatabaseSync(fixture.sqlitePath);
+    const restartedDb = openM0DatabaseConnection(fixture.sqlitePath);
     try {
       restartedDb.exec("PRAGMA foreign_keys = ON");
       assert.equal(generationRightConflict(restartedDb), null);
@@ -618,20 +654,17 @@ test("P1 promotion retires shot, package, and persisted Artifact drift as a stal
         const row = fixture.db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(SHOT_ID) as { data_json: string };
         const shot = JSON.parse(row.data_json) as Shot;
         shot.video_prompt = "A promotion-drifted prompt.";
-        fixture.db.prepare("UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE shot_id = ?")
-          .run(JSON.stringify(shot), SHOT_ID);
+        persistFixtureShotDrift(fixture, shot);
       } else if (drift === "package") {
         const row = fixture.db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(PACKAGE_ID) as { data_json: string };
         const storyboardPackage = JSON.parse(row.data_json) as { approved_shot_snapshots: Array<{ video_prompt: string }> };
         storyboardPackage.approved_shot_snapshots[0].video_prompt = "A promotion-drifted frozen prompt.";
-        fixture.db.prepare("UPDATE storyboard_packages SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE storyboard_package_id = ?")
-          .run(JSON.stringify(storyboardPackage), PACKAGE_ID);
+        persistCorruptedPackage(fixture, PACKAGE_ID, JSON.stringify(storyboardPackage));
       } else {
         const row = fixture.db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(ARTIFACT_ID) as { data_json: string };
         const artifact = JSON.parse(row.data_json) as { linked_objects: { shot_id: string } };
         artifact.linked_objects.shot_id = "other_promotion_shot";
-        fixture.db.prepare("UPDATE media_artifacts SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?")
-          .run(JSON.stringify(artifact), ARTIFACT_ID);
+        persistFixtureArtifactDrift(fixture, ARTIFACT_ID, JSON.stringify(artifact));
       }
       const promoted = confirmWorkbenchGeneration({
         intent_id: admitted.data.intent.intent_id,
@@ -662,8 +695,7 @@ test("P1 promotion detects stale facts before preflight authorization and releas
     const row = fixture.db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(SHOT_ID) as { data_json: string };
     const shot = JSON.parse(row.data_json) as Shot;
     shot.video_prompt = "A stale-before-preflight prompt.";
-    fixture.db.prepare("UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE shot_id = ?")
-      .run(JSON.stringify(shot), SHOT_ID);
+    persistFixtureShotDrift(fixture, shot);
     const promoted = confirmWorkbenchGeneration({
       intent_id: admitted.data.intent.intent_id,
       budget_limit_value: 10,
@@ -713,7 +745,7 @@ test("P1 stale reservation is retained as history and requires a new prepare/con
     const shotRow = fixture.db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(SHOT_ID) as { data_json: string };
     const shot = JSON.parse(shotRow.data_json) as Shot;
     shot.video_prompt = "A replacement-ready prompt.";
-    fixture.db.prepare("UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE shot_id = ?").run(JSON.stringify(shot), SHOT_ID);
+    persistFixtureShotDrift(fixture, shot);
     const stale = confirmWorkbenchGeneration({ intent_id: admitted.data.intent.intent_id, budget_limit_value: 10, cost_confirmed: true, human_confirmation: true }, fixture.db, dependencies);
     assert.equal(stale.ok, false);
     if (stale.ok) throw new Error("stale reservation unexpectedly promoted");
@@ -722,8 +754,7 @@ test("P1 stale reservation is retained as history and requires a new prepare/con
     const packageRow = fixture.db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(PACKAGE_ID) as { data_json: string };
     const storyboardPackage = JSON.parse(packageRow.data_json) as { approved_shot_snapshots: Array<{ video_prompt: string }> };
     storyboardPackage.approved_shot_snapshots[0].video_prompt = shot.video_prompt;
-    fixture.db.prepare("UPDATE storyboard_packages SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE storyboard_package_id = ?")
-      .run(JSON.stringify(storyboardPackage), PACKAGE_ID);
+    persistCorruptedPackage(fixture, PACKAGE_ID, JSON.stringify(storyboardPackage));
     const replacement = confirmT2Fixture(fixture);
     assert.notEqual(replacement.confirmed.data.intent.intent_id, admitted.data.intent.intent_id);
     assert.equal(intentCount(fixture.db), 2);
@@ -785,19 +816,17 @@ test("IS2.5 confirmation rejects SHOT, package, and persisted Artifact binding d
         const row = fixture.db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(SHOT_ID) as { data_json: string };
         const shot = JSON.parse(row.data_json) as Shot;
         shot.video_prompt = "A drifted prompt.";
-        fixture.db.prepare("UPDATE shots SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE shot_id = ?").run(JSON.stringify(shot), SHOT_ID);
+        persistFixtureShotDrift(fixture, shot);
       } else if (drift === "package") {
         const row = fixture.db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?").get(PACKAGE_ID) as { data_json: string };
         const storyboardPackage = JSON.parse(row.data_json) as { approved_shot_snapshots: Array<{ video_prompt: string }> };
         storyboardPackage.approved_shot_snapshots[0].video_prompt = "A drifted frozen prompt.";
-        fixture.db.prepare("UPDATE storyboard_packages SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE storyboard_package_id = ?")
-          .run(JSON.stringify(storyboardPackage), PACKAGE_ID);
+        persistCorruptedPackage(fixture, PACKAGE_ID, JSON.stringify(storyboardPackage));
       } else {
         const row = fixture.db.prepare("SELECT data_json FROM media_artifacts WHERE artifact_id = ?").get(ARTIFACT_ID) as { data_json: string };
         const artifact = JSON.parse(row.data_json) as { linked_objects: { shot_id: string } };
         artifact.linked_objects.shot_id = "other_shot";
-        fixture.db.prepare("UPDATE media_artifacts SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE artifact_id = ?")
-          .run(JSON.stringify(artifact), ARTIFACT_ID);
+        persistFixtureArtifactDrift(fixture, ARTIFACT_ID, JSON.stringify(artifact));
       }
       const confirmed = confirmGeneration(prepared.data.plan, fixture.db);
       assert.equal(confirmed.ok, false, drift);
@@ -852,21 +881,25 @@ test("IS2.5 confirmation ignores unrelated world drift while retaining the selec
       (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
       VALUES (?, ?, 19, 'application/octet-stream', ?, 'unverified', ?)`)
       .run(unrelatedBlobId, unrelatedSha256, unrelatedPath, JSON.stringify({ media_root: fixture.mediaRoot }));
-    fixture.db.prepare(`INSERT INTO media_artifacts
-      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
-      VALUES (?, ?, ?, 'storyboard_image', 'image', 'archived', ?)`)
-      .run(unrelatedArtifactId, unrelatedProjectId, unrelatedShotId, JSON.stringify({
-        artifact_id: unrelatedArtifactId,
-        blob_id: unrelatedBlobId,
-        artifact_type: "image",
-        role: "storyboard_image",
-        status: "archived",
-        storage: { uri: unrelatedPath, mime_type: "application/octet-stream", filename: "unrelated.bin" },
-        metadata: { width: 0, height: 0, duration_seconds: null, aspect_ratio: "", sha256: unrelatedSha256 },
-        linked_objects: { project_id: unrelatedProjectId, shot_id: unrelatedShotId },
-        source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: unrelatedSha256, external_url_host: "" }
-      }));
-    fixture.db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(unrelatedArtifactId, unrelatedBlobId);
+    withWorkbenchProductionMutationAuthority(fixture.db, {
+      kind: "artifact", project_id: unrelatedProjectId, object_id: unrelatedArtifactId
+    }, () => {
+      fixture.db.prepare(`INSERT INTO media_artifacts
+        (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+        VALUES (?, ?, ?, 'storyboard_image', 'image', 'archived', ?)`)
+        .run(unrelatedArtifactId, unrelatedProjectId, unrelatedShotId, JSON.stringify({
+          artifact_id: unrelatedArtifactId,
+          blob_id: unrelatedBlobId,
+          artifact_type: "image",
+          role: "storyboard_image",
+          status: "archived",
+          storage: { uri: unrelatedPath, mime_type: "application/octet-stream", filename: "unrelated.bin" },
+          metadata: { width: 0, height: 0, duration_seconds: null, aspect_ratio: "", sha256: unrelatedSha256 },
+          linked_objects: { project_id: unrelatedProjectId, shot_id: unrelatedShotId },
+          source: { kind: "fixture_path", provider: "", provider_job_id: "", sha256: unrelatedSha256, external_url_host: "" }
+        }));
+      fixture.db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(unrelatedArtifactId, unrelatedBlobId);
+    });
     const confirmed = confirmGeneration(prepared.data.plan, fixture.db);
     assert.equal(confirmed.ok, true, confirmed.ok ? "" : confirmed.error.code);
     assert.equal(intentCount(fixture.db), 1);
@@ -879,7 +912,7 @@ test("IS2.5 active-generation race and repeated confirmation admit at most one i
   const first = createFixture();
   try {
     const prepared = prepareFixture(first);
-    const secondDb = new DatabaseSync(first.sqlitePath);
+    const secondDb = openM0DatabaseConnection(first.sqlitePath);
     secondDb.exec("PRAGMA foreign_keys = ON");
     try {
       const firstConfirmed = confirmGeneration(prepared.data.plan, first.db);
@@ -1018,16 +1051,17 @@ test("P1 first-submit workers terminalize current Project and Package authority 
           .get(PACKAGE_ID) as { data_json: string };
         const storyboardPackage = JSON.parse(row.data_json) as { user_approval: { storyboard_approved: boolean } };
         storyboardPackage.user_approval.storyboard_approved = false;
-        fixture.db.prepare("UPDATE storyboard_packages SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE storyboard_package_id = ?")
-          .run(JSON.stringify(storyboardPackage), PACKAGE_ID);
+        persistCorruptedPackage(fixture, PACKAGE_ID, JSON.stringify(storyboardPackage));
       } else {
         const replacementId = `${PACKAGE_ID}_replacement`;
         const row = fixture.db.prepare("SELECT data_json FROM storyboard_packages WHERE storyboard_package_id = ?")
           .get(PACKAGE_ID) as { data_json: string };
         const replacement = JSON.parse(row.data_json) as Record<string, unknown>;
         replacement.storyboard_package_id = replacementId;
-        fixture.db.prepare("INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json) VALUES (?, ?, ?)")
-          .run(replacementId, PROJECT_ID, JSON.stringify(replacement));
+        withWorkbenchProductionMutationAuthority(fixture.db, {
+          kind: "storyboard_package", project_id: PROJECT_ID, object_id: replacementId
+        }, () => fixture.db.prepare("INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json) VALUES (?, ?, ?)")
+          .run(replacementId, PROJECT_ID, JSON.stringify(replacement)));
         const project = JSON.parse((fixture.db.prepare("SELECT data_json FROM projects WHERE project_id = ?")
           .get(PROJECT_ID) as { data_json: string }).data_json) as Project;
         project.active_storyboard_package_id = replacementId;
@@ -1243,8 +1277,7 @@ test("durable GenerationPlan keeps authority revalidation required after marker 
           .get(PACKAGE_ID) as { data_json: string };
         const storyboardPackage = JSON.parse(row.data_json) as { user_approval: { storyboard_approved: boolean } };
         storyboardPackage.user_approval.storyboard_approved = false;
-        fixture.db.prepare("UPDATE storyboard_packages SET data_json = ?, updated_at = CURRENT_TIMESTAMP WHERE storyboard_package_id = ?")
-          .run(JSON.stringify(storyboardPackage), PACKAGE_ID);
+        persistCorruptedPackage(fixture, PACKAGE_ID, JSON.stringify(storyboardPackage));
       } else {
         fixture.db.prepare("UPDATE workbench_project_meta SET classification = 'test', updated_at = CURRENT_TIMESTAMP WHERE project_id = ?")
           .run(PROJECT_ID);
@@ -1394,7 +1427,7 @@ function createAuthorityFactsFixture(packageSnapshots: unknown[]): AuthorityFact
   mkdirSync(dataRoot, { recursive: true });
   const sqlitePath = join(dataRoot, "app.sqlite");
   migrateDatabase(sqlitePath);
-  const db = new DatabaseSync(sqlitePath);
+  const db = openM0DatabaseConnection(sqlitePath);
   const project: Project = {
     project_id: "p1",
     title: "Authority facts fixture",
@@ -1407,7 +1440,7 @@ function createAuthorityFactsFixture(packageSnapshots: unknown[]): AuthorityFact
     generation_batch_ids: [],
     exports: { final_video_artifact_id: "" }
   };
-  saveProject(db, project);
+  saveProject(db, { ...project, status: "draft", shot_ids: [], active_storyboard_package_id: "" });
   db.prepare("UPDATE workbench_project_meta SET classification = 'production', lifecycle = 'active' WHERE project_id = ?").run("p1");
   for (const [index, shotId] of ["s1", "s2", "s3"].entries()) {
     const shot: Shot = {
@@ -1427,14 +1460,17 @@ function createAuthorityFactsFixture(packageSnapshots: unknown[]): AuthorityFact
     };
     saveShot(db, shot);
   }
-  db.prepare("INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json) VALUES (?, ?, ?)")
+  withWorkbenchProductionMutationAuthority(db, {
+    kind: "storyboard_package", project_id: "p1", object_id: "pkg1"
+  }, () => db.prepare("INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json) VALUES (?, ?, ?)")
     .run("pkg1", "p1", JSON.stringify({
       storyboard_package_id: "pkg1",
       project_id: "p1",
       status: "approved_for_video_generation",
       approved_shot_snapshots: packageSnapshots,
       user_approval: { storyboard_approved: true }
-    }));
+    })));
+  saveProject(db, project);
   return { root, db };
 }
 
@@ -1447,9 +1483,21 @@ test("storyboard package relational identity drift fails closed at the canonical
   const root = mkdtempSync(join(tmpdir(), "t2-authority-package-"));
   const sqlitePath = join(root, "app.sqlite");
   migrateDatabase(sqlitePath);
-  const db = new DatabaseSync(sqlitePath);
+  const db = openM0DatabaseConnection(sqlitePath);
   try {
-    db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run("p1", JSON.stringify({ project_id: "p1" }));
+    saveProject(db, {
+      project_id: "p1",
+      title: "Package identity corruption fixture",
+      project_type: "m0_video_loop",
+      status: "draft",
+      brief: {},
+      video_spec: { duration_seconds: 15, aspect_ratio: "9:16", resolution: "480p" },
+      shot_ids: [],
+      active_storyboard_package_id: "",
+      generation_batch_ids: [],
+      exports: { final_video_artifact_id: "" }
+    });
+    db.exec("DROP TRIGGER workbench_storyboard_packages_insert_authority");
     db.prepare("INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json) VALUES (?, ?, ?)")
       .run("pkg_record", "p1", JSON.stringify({ storyboard_package_id: "pkg_json", project_id: "p1" }));
     assert.equal(getStoryboardPackage(db, "pkg_record"), null);
@@ -1501,8 +1549,7 @@ test("product admission facts reject package identity drift before eligibility",
     { shot_id: "s3", order: 3, duration_seconds: 6, storyboard_image_artifact_id: "a3", video_prompt: "prompt-s3" }
   ]);
   try {
-    fixture.db.prepare("UPDATE storyboard_packages SET data_json = ? WHERE storyboard_package_id = ?")
-      .run(JSON.stringify({ storyboard_package_id: "pkg_other", project_id: "p1", status: "approved_for_video_generation", approved_shot_snapshots: [], user_approval: { storyboard_approved: true } }), "pkg1");
+    persistCorruptedPackage(fixture, "pkg1", JSON.stringify({ storyboard_package_id: "pkg_other", project_id: "p1", status: "approved_for_video_generation", approved_shot_snapshots: [], user_approval: { storyboard_approved: true } }));
     const read = readGenerationAdmissionFacts(fixture.db, "p1", "s1", { verify_media: false });
     assert.equal(read.ok, true);
     if (read.ok) {

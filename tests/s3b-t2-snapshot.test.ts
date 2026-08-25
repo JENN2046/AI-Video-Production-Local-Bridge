@@ -6,6 +6,10 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { migrateDatabase } from "../src/storage/databaseGovernance.js";
+import {
+  installWorkbenchProductionMutationAuthority,
+  withWorkbenchProductionMutationAuthority
+} from "../src/storage/productionMutationAuthority.js";
 import { parseCanonicalClipVersion } from "../src/tools/s3bT2Normalize.js";
 import { createInvalidGovernedMediaEvidence, createValidGovernedMediaEvidence } from "../src/tools/s3bT2MediaEvidence.js";
 import { captureT2RawSnapshot, T2SnapshotError } from "../src/tools/s3bT2Snapshot.js";
@@ -26,6 +30,7 @@ function fixture(): Fixture {
 function withWritableDatabase(sqlitePath: string, callback: (db: DatabaseSync) => void): void {
   const db = new DatabaseSync(sqlitePath);
   try {
+    installWorkbenchProductionMutationAuthority(db);
     db.exec("PRAGMA foreign_keys = ON");
     callback(db);
   } finally {
@@ -34,8 +39,10 @@ function withWritableDatabase(sqlitePath: string, callback: (db: DatabaseSync) =
 }
 
 function insertProject(db: DatabaseSync, projectId = "project_t2_fixture"): void {
-  db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
-    .run(projectId, JSON.stringify({ project_id: projectId, title: "fixture" }));
+  withWorkbenchProductionMutationAuthority(db, {
+    kind: "project_content", project_id: projectId, object_id: projectId
+  }, () => db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+    .run(projectId, JSON.stringify({ project_id: projectId, title: "fixture" })));
 }
 
 function insertGenerationIntent(db: DatabaseSync): void {
@@ -54,6 +61,7 @@ function captureWithConcurrentCommit(
   trigger: "after_active_intent_count" | "after_projects_rowset"
 ): { snapshot: ReturnType<typeof captureT2RawSnapshot>; writerCommitted: boolean } {
   const writer = new DatabaseSync(f.sqlitePath);
+  installWorkbenchProductionMutationAuthority(writer);
   writer.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = OFF");
   const mode = writer.prepare("PRAGMA journal_mode").get() as { journal_mode: string };
   assert.equal(mode.journal_mode.toLowerCase(), "wal");

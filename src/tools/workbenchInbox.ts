@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
+import { withWorkbenchProductionMutationAuthority } from "../storage/productionMutationAuthority.js";
 import { attachArtifactToShot, createScopedArtifactFromBlob, validateAcceptedClipReference, validateActiveArtifactReference } from "./mediaArtifacts.js";
 import { createProject, getProject, getShot, listProjectShots, saveProject, saveShot, type Project, type Shot } from "./projects.js";
 import { saveStoryboardPackage, type StoryboardPackage } from "./storyboardPackages.js";
@@ -17,6 +18,7 @@ import {
   type WorkbenchDraftRecord,
   type WorkbenchPendingActionRecord
 } from "./workbenchInboxStore.js";
+import { assertWorkbenchContentMutationAllowed, workbenchProductionMutationError } from "./workbenchDeliveryState.js";
 
 interface ImportIndexRow {
   relative_path: string;
@@ -127,8 +129,8 @@ export function transitionWorkbenchDraft(
   if (input.action === "request_revision" && (note.length < 1 || note.length > 500)) {
     return { ok: false, error: { code: "INVALID_FIELD", message: "Revision note must contain 1 to 500 characters.", field: "note" } };
   }
-  db.exec("BEGIN IMMEDIATE");
   try {
+    db.exec("BEGIN IMMEDIATE");
     const updatedAt = new Date().toISOString();
     if (input.action === "request_revision") {
       const next = saveWorkbenchDraftRecord({ ...draft, status: "revision_needed", revision_note: note, updated_at: updatedAt }, db);
@@ -163,8 +165,13 @@ export function transitionWorkbenchDraft(
     db.exec("COMMIT");
     return { ok: true, data: { draft: next, ...promoted } };
   } catch (error) {
-    db.exec("ROLLBACK");
-    const domain = error instanceof InboxDomainError ? error : new InboxDomainError("DRAFT_APPLY_BLOCKED", error instanceof Error ? error.message : "Draft apply failed.");
+    if ((db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+    const mapped = workbenchProductionMutationError(error);
+    const domain = error instanceof InboxDomainError
+      ? error
+      : mapped.code !== "PRODUCTION_MUTATION_REJECTED"
+        ? new InboxDomainError(mapped.code, mapped.message)
+        : new InboxDomainError("DRAFT_APPLY_BLOCKED", "Draft apply failed before its changes could commit.");
     return { ok: false, error: { code: domain.code, message: domain.message, field: domain.field } };
   }
 }
@@ -354,8 +361,8 @@ export function decideWorkbenchPendingAction(
   if (input.decision === "reject" && (reason.length < 1 || reason.length > 500)) {
     return { ok: false, error: { code: "INVALID_FIELD", message: "Rejection reason must contain 1 to 500 characters.", field: "reason" } };
   }
-  db.exec("BEGIN IMMEDIATE");
   try {
+    db.exec("BEGIN IMMEDIATE");
     const updatedAt = new Date().toISOString();
     if (input.decision === "reject") {
       const next = saveWorkbenchPendingActionRecord({
@@ -382,8 +389,13 @@ export function decideWorkbenchPendingAction(
     db.exec("COMMIT");
     return { ok: true, data: { action: next } };
   } catch (error) {
-    db.exec("ROLLBACK");
-    const domain = error instanceof InboxDomainError ? error : new InboxDomainError("PENDING_ACTION_EXECUTION_FAILED", error instanceof Error ? error.message : "Pending action execution failed.");
+    if ((db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+    const mapped = workbenchProductionMutationError(error);
+    const domain = error instanceof InboxDomainError
+      ? error
+      : mapped.code !== "PRODUCTION_MUTATION_REJECTED"
+        ? new InboxDomainError(mapped.code, mapped.message)
+        : new InboxDomainError("PENDING_ACTION_EXECUTION_FAILED", "Pending action failed before its changes could commit.");
     return { ok: false, error: { code: domain.code, message: domain.message, field: domain.field } };
   }
 }
@@ -448,11 +460,23 @@ function executePendingAction(action: WorkbenchPendingActionRecord, requestedPro
     }
     const requestId = `regeneration_${randomUUID()}`;
     const createdAt = new Date().toISOString();
-    const data = { ...action.payload, request_id: requestId, project_id: projectId, shot_id: shot.shot_id, artifact_id: artifact.artifact.artifact_id, status: "draft", created_at: createdAt };
-    db.prepare(`
-      INSERT INTO regeneration_requests (request_id, project_id, shot_id, artifact_id, previous_run_id, status, data_json, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)
-    `).run(requestId, projectId, shot.shot_id, artifact.artifact.artifact_id, String(action.payload.previous_run_id ?? ""), JSON.stringify(data), createdAt, createdAt);
+    const previousRunId = String(action.payload.previous_run_id ?? "");
+    const data = {
+      ...action.payload,
+      request_id: requestId,
+      project_id: projectId,
+      shot_id: shot.shot_id,
+      artifact_id: artifact.artifact.artifact_id,
+      previous_run_id: previousRunId,
+      status: "draft",
+      created_at: createdAt
+    };
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "regeneration_request", project_id: projectId, object_id: requestId
+    }, () => db.prepare(`
+        INSERT INTO regeneration_requests (request_id, project_id, shot_id, artifact_id, previous_run_id, status, data_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)
+      `).run(requestId, projectId, shot.shot_id, artifact.artifact.artifact_id, previousRunId, JSON.stringify(data), createdAt, createdAt));
     return { project_id: projectId, result: data, effects: { app_ready_truth_changed: true } };
   }
   if (action.tool === "request_webgpt_final_assembly_plan") {
@@ -526,8 +550,8 @@ function writableProject(projectId: string, db: M0Database): Project {
   if (!projectId) throw new InboxDomainError("PENDING_ACTION_TARGET_REQUIRED", "Target project is required.", "target_project_id");
   const project = getProject(db, projectId);
   if (!project) throw new InboxDomainError("PROJECT_NOT_FOUND", `Project not found: ${projectId}`, "target_project_id");
-  const meta = db.prepare("SELECT lifecycle FROM workbench_project_meta WHERE project_id = ?").get(projectId) as { lifecycle: string } | undefined;
-  if (meta?.lifecycle === "archived") throw new InboxDomainError("PROJECT_ARCHIVED", "Archived projects are read-only.", "target_project_id");
+  const writable = assertWorkbenchContentMutationAllowed(db, projectId);
+  if (!writable.ok) throw new InboxDomainError(writable.error.code, writable.error.message, "target_project_id");
   return project;
 }
 

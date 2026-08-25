@@ -1,6 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
+import { withWorkbenchProductionMutationAuthority } from "../storage/productionMutationAuthority.js";
 import { attachArtifactToShot, createScopedArtifactFromBlob, getMediaArtifact, verifyMediaArtifactBytes } from "./mediaArtifacts.js";
 import { requireProjectShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import {
@@ -14,6 +15,12 @@ import {
   type ToolError
 } from "./projects.js";
 import { isNineSixteenAspectRatio } from "./importClassifier.js";
+import {
+  assertWorkbenchContentMutationAllowed,
+  throwWorkbenchProductionMutationError,
+  WorkbenchProductionMutationError,
+  workbenchProductionMutationError
+} from "./workbenchDeliveryState.js";
 
 export interface ApprovedShotSnapshot {
   shot_id?: string;
@@ -89,10 +96,33 @@ function validateSnapshot(snapshot: ApprovedShotSnapshot, index: number, db: M0D
 }
 
 export function saveStoryboardPackage(db: M0Database, storyboardPackage: StoryboardPackage): void {
-  db.prepare(`
-    INSERT OR REPLACE INTO storyboard_packages (storyboard_package_id, project_id, data_json, updated_at)
-    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-  `).run(storyboardPackage.storyboard_package_id, storyboardPackage.project_id, JSON.stringify(storyboardPackage));
+  try {
+    const serialized = JSON.stringify(storyboardPackage);
+    const contentHash = createHash("sha256").update(serialized).digest("hex");
+    const existing = db.prepare(`
+      SELECT project_id, data_json FROM storyboard_packages WHERE storyboard_package_id = ?
+    `).get(storyboardPackage.storyboard_package_id) as { project_id: string; data_json: string } | undefined;
+    if (existing) {
+      const existingHash = createHash("sha256").update(existing.data_json).digest("hex");
+      if (existing.project_id !== storyboardPackage.project_id || existingHash !== contentHash) {
+        throw new Error("STORYBOARD_PACKAGE_IMMUTABLE");
+      }
+      return;
+    }
+    const writable = assertWorkbenchContentMutationAllowed(db, storyboardPackage.project_id);
+    if (!writable.ok) throw new WorkbenchProductionMutationError(writable.error.code);
+    withWorkbenchProductionMutationAuthority(db, {
+      kind: "storyboard_package",
+      project_id: storyboardPackage.project_id,
+      object_id: storyboardPackage.storyboard_package_id
+    }, () => db.prepare(`
+        INSERT INTO storyboard_packages (storyboard_package_id, project_id, data_json, updated_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      `).run(storyboardPackage.storyboard_package_id, storyboardPackage.project_id, serialized));
+  } catch (error) {
+    if (error instanceof Error && error.message === "STORYBOARD_PACKAGE_IMMUTABLE") throw error;
+    throwWorkbenchProductionMutationError(error);
+  }
 }
 
 export function getStoryboardPackage(db: M0Database, storyboardPackageId: string): StoryboardPackage | null {
@@ -108,10 +138,15 @@ export function getStoryboardPackage(db: M0Database, storyboardPackageId: string
 }
 
 export function importStoryboardPackage(input: ImportStoryboardPackageInput, db = openM0Database()): ImportResult {
+  const ownsTransaction = !(db as unknown as { isTransaction?: boolean }).isTransaction;
+  let transactionBoundaryOpen = false;
+  try {
   const project = getProject(db, input.project_id);
   if (!project) {
     return { ok: false, error: { code: "PROJECT_NOT_FOUND", message: `Project not found: ${input.project_id}` } };
   }
+  const writable = assertWorkbenchContentMutationAllowed(db, project.project_id);
+  if (!writable.ok) return { ok: false, error: writable.error };
 
   if (input.status !== "approved_for_video_generation" || input.user_approval?.storyboard_approved !== true) {
     return { ok: false, error: { code: "UNAPPROVED_STORYBOARD_PACKAGE", message: "Storyboard Package is not approved for video generation." } };
@@ -135,10 +170,9 @@ export function importStoryboardPackage(input: ImportStoryboardPackageInput, db 
       storyboard_image_artifact_id: ""
     })
   );
-  const ownsTransaction = !(db as unknown as { isTransaction?: boolean }).isTransaction;
   if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
   else db.exec("SAVEPOINT sr1_storyboard_package");
-  try {
+  transactionBoundaryOpen = true;
     for (const shot of shots) {
       if (getShot(db, shot.shot_id)) throw new Error("SHOT_ID_CONFLICT");
       saveShot(db, shot);
@@ -177,10 +211,11 @@ export function importStoryboardPackage(input: ImportStoryboardPackageInput, db 
   project.status = "storyboard_approved";
   project.active_storyboard_package_id = storyboardPackage.storyboard_package_id;
   project.shot_ids = shots.map((shot) => shot.shot_id);
-  saveProject(db, project);
   saveStoryboardPackage(db, storyboardPackage);
+  saveProject(db, project);
   if (ownsTransaction) db.exec("COMMIT");
   else db.exec("RELEASE SAVEPOINT sr1_storyboard_package");
+  transactionBoundaryOpen = false;
 
   return {
     ok: true,
@@ -190,8 +225,13 @@ export function importStoryboardPackage(input: ImportStoryboardPackageInput, db 
     storyboard_package: storyboardPackage
   };
   } catch (error) {
-    if (ownsTransaction && (db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
-    else if (!ownsTransaction) db.exec("ROLLBACK TO SAVEPOINT sr1_storyboard_package; RELEASE SAVEPOINT sr1_storyboard_package");
-    return { ok: false, error: { code: error instanceof Error ? error.message : "STORYBOARD_PACKAGE_BINDING_FAILED", message: "Storyboard Package Artifact binding failed." } };
+    if (transactionBoundaryOpen && ownsTransaction && (db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
+    else if (transactionBoundaryOpen && !ownsTransaction) db.exec("ROLLBACK TO SAVEPOINT sr1_storyboard_package; RELEASE SAVEPOINT sr1_storyboard_package");
+    const mapped = workbenchProductionMutationError(error);
+    const known = mapped.code !== "PRODUCTION_MUTATION_REJECTED";
+    const immutable = error instanceof Error && error.message.includes("STORYBOARD_PACKAGE_IMMUTABLE");
+    return { ok: false, error: immutable
+      ? { code: "STORYBOARD_PACKAGE_IMMUTABLE", message: "Storyboard Package content is immutable." }
+      : known ? mapped : { code: "STORYBOARD_PACKAGE_BINDING_FAILED", message: "Storyboard Package Artifact binding failed." } };
   }
 }

@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { openM0Database } from "../storage/sqlite.js";
+import { WorkbenchProductionMutationError, workbenchProductionMutationError } from "../tools/workbenchDeliveryState.js";
 import {
   PersonalReadonlyOperationsError,
   type PersonalReadonlyOperationsService
@@ -64,7 +65,7 @@ function sendOk(response: ServerResponse, data: unknown, meta?: unknown): void {
 
 function statusForError(error: WorkbenchV2Error): number {
   if (error.code.endsWith("_NOT_FOUND")) return 404;
-  if (["PROJECT_ARCHIVED", "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION", "SHOT_BLOCKED", "GOVERNANCE_SNAPSHOT_STALE", "INVALID_DRAFT_TRANSITION", "ACTION_NOT_PENDING", "DIRECTOR_PROPOSAL_STALE", "DIRECTOR_PROPOSAL_NOT_PENDING", "DIRECTOR_PROPOSAL_PRINCIPAL_INACTIVE", "DIRECTOR_FOCUS_STALE", "DIRECTOR_FOCUS_TARGET_INVALID", "DIRECTOR_PRINCIPAL_SELECTION_REQUIRED"].includes(error.code)) return 409;
+  if (["PROJECT_ARCHIVED", "PROJECT_CLOSED", "DELIVERY_JOB_ACTIVE", "DELIVERY_REWORK_REQUIRED", "PRODUCTION_MUTATION_CONFLICT", "PRODUCTION_MUTATION_REJECTED", "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION", "SHOT_BLOCKED", "GOVERNANCE_SNAPSHOT_STALE", "INVALID_DRAFT_TRANSITION", "ACTION_NOT_PENDING", "DIRECTOR_PROPOSAL_STALE", "DIRECTOR_PROPOSAL_NOT_PENDING", "DIRECTOR_PROPOSAL_PRINCIPAL_INACTIVE", "DIRECTOR_FOCUS_STALE", "DIRECTOR_FOCUS_TARGET_INVALID", "DIRECTOR_PRINCIPAL_SELECTION_REQUIRED"].includes(error.code)) return 409;
   if (error.code === "ACTION_NONCE_REQUIRED") return 403;
   return 400;
 }
@@ -158,11 +159,23 @@ async function mutation(
     send(response, 403, { ok: false, error: { code: "ACTION_NONCE_REQUIRED", message: "Mutation nonce is required." } });
     return;
   }
+  let body: Record<string, unknown>;
   try {
-    await operation(await readBody(request));
+    body = await readBody(request);
   } catch (error) {
     const code = error instanceof Error && error.message === "BODY_TOO_LARGE" ? "BODY_TOO_LARGE" : "INVALID_JSON_BODY";
     send(response, 400, { ok: false, error: { code, message: code === "BODY_TOO_LARGE" ? "Request body is too large." : "Request body must be valid JSON." } });
+    return;
+  }
+  try {
+    await operation(body);
+  } catch (error) {
+    if (error instanceof WorkbenchProductionMutationError) {
+      const mapped = workbenchProductionMutationError(error);
+      send(response, statusForError(mapped), { ok: false, error: mapped });
+      return;
+    }
+    send(response, 500, { ok: false, error: { code: "WORKBENCH_MUTATION_FAILED", message: "Workbench mutation did not complete." } });
   }
 }
 

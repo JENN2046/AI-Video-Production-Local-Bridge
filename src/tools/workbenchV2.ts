@@ -4,6 +4,7 @@ import { basename, join, resolve } from "node:path";
 
 import { paths } from "../paths.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
+import { withWorkbenchProductionMutationAuthority } from "../storage/productionMutationAuthority.js";
 import { classifyStoryboardImageImport } from "./importClassifier.js";
 import { validateImageFile } from "./imageValidity.js";
 import { listH1Reports, loadH1WorkbenchState, registerH1ApprovedKeyframe, type H1WorkbenchState } from "./h1Workbench.js";
@@ -23,8 +24,11 @@ import type { ProjectOperationalSummary } from "../packages/domain/operationalSt
 import { markShotClipReview, type RevisionInstruction } from "./review.js";
 import { listWorkbenchDraftRecords, listWorkbenchPendingActionRecords } from "./workbenchInboxStore.js";
 import {
+  assertWorkbenchContentMutationAllowed,
+  assertWorkbenchProductionWriteAllowed,
   projectWorkbenchDeliverySummaryState,
   requireWorkbenchDeliveryState,
+  workbenchProductionMutationError,
   type WorkbenchDeliveryWorkflowState
 } from "./workbenchDeliveryState.js";
 
@@ -227,9 +231,8 @@ export function assertWorkbenchProjectWritable(db: M0Database, projectId: string
   if (!project) return projectNotFound(projectId);
   const meta = projectMeta(db, projectId);
   if (!meta) return projectNotFound(projectId);
-  if (meta.lifecycle === "archived") {
-    return { ok: false, error: { code: "PROJECT_ARCHIVED", message: "Archived projects are read-only.", field: "project_id" } };
-  }
+  const boundary = assertWorkbenchProductionWriteAllowed(db, projectId);
+  if (!boundary.ok) return { ok: false, error: { ...boundary.error, field: "project_id" } };
   return { ok: true, data: { project, meta } };
 }
 
@@ -523,19 +526,34 @@ export function createWorkbenchProject(
   if (input.classification !== "production" && input.classification !== "test") {
     return { ok: false, error: { code: "CLASSIFICATION_REQUIRED", message: "Project classification must be production or test.", field: "classification" } };
   }
-  const created = createProject({
-    title,
-    project_type: input.project_type ?? "human_workbench_v2",
-    video_spec: {
-      duration_seconds: input.duration_seconds ?? 15,
-      aspect_ratio: input.aspect_ratio ?? "9:16",
-      resolution: input.resolution ?? "1080x1920"
+  if ((db as unknown as { isTransaction?: boolean }).isTransaction) {
+    return { ok: false, error: { code: "PRODUCTION_MUTATION_REJECTED", message: "Project creation requires an owned transaction." } };
+  }
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    const created = createProject({
+      title,
+      project_type: input.project_type ?? "human_workbench_v2",
+      video_spec: {
+        duration_seconds: input.duration_seconds ?? 15,
+        aspect_ratio: input.aspect_ratio ?? "9:16",
+        resolution: input.resolution ?? "1080x1920"
+      }
+    }, db);
+    if (!created.ok) throw new Error(created.error.code);
+    ensureProjectMeta(db, created.project_id);
+    db.prepare("UPDATE workbench_project_meta SET classification = ?, lifecycle = 'active', updated_at = CURRENT_TIMESTAMP WHERE project_id = ?")
+      .run(input.classification, created.project_id);
+    const meta = projectMeta(db, created.project_id, false);
+    if (!meta) throw new Error("PRODUCTION_MUTATION_REJECTED");
+    db.exec("COMMIT");
+    return { ok: true, data: { project: created.project, meta } };
+  } catch (error) {
+    if ((db as unknown as { isTransaction?: boolean }).isTransaction) {
+      try { db.exec("ROLLBACK"); } catch { /* preserve the low-disclosure failure below */ }
     }
-  }, db);
-  if (!created.ok) return created;
-  ensureProjectMeta(db, created.project_id);
-  db.prepare("UPDATE workbench_project_meta SET classification = ?, lifecycle = 'active', updated_at = CURRENT_TIMESTAMP WHERE project_id = ?").run(input.classification, created.project_id);
-  return { ok: true, data: { project: created.project, meta: projectMeta(db, created.project_id) as WorkbenchProjectMeta } };
+    return { ok: false, error: workbenchProductionMutationError(error) };
+  }
 }
 
 export function updateWorkbenchProject(
@@ -548,28 +566,19 @@ export function updateWorkbenchProject(
   },
   db = openM0Database()
 ): WorkbenchV2Result<{ project: Project; meta: WorkbenchProjectMeta }> {
-  const writable = assertWorkbenchProjectWritable(db, projectId);
-  if (!writable.ok) return writable;
-  const project = writable.data.project;
+  const title = input.title?.trim();
   if (input.title !== undefined) {
-    const title = input.title.trim();
     if (!title) return { ok: false, error: { code: "MISSING_REQUIRED_FIELD", message: "Project title is required.", field: "title" } };
-    project.title = title;
-    saveProject(db, project);
   }
-  const classification = input.classification ?? writable.data.meta.classification;
-  const pinned = input.pinned ?? writable.data.meta.pinned;
-  let overrideLabel = writable.data.meta.next_action_override;
-  let overridePriority = writable.data.meta.next_action_priority;
-  let overrideExpiresAt = writable.data.meta.next_action_expires_at;
-  let overrideProjectStatus = writable.data.meta.next_action_project_status;
-  let overrideUpdatedAt = writable.data.meta.next_action_updated_at;
+  if (input.classification !== undefined
+    && input.classification !== "unclassified"
+    && input.classification !== "production"
+    && input.classification !== "test") {
+    return { ok: false, error: { code: "CLASSIFICATION_INVALID", message: "Project classification is invalid.", field: "classification" } };
+  }
+  let requestedOverride: { label: string; priority: WorkbenchProjectPriority; updated_at: string; expires_at: string } | null | undefined;
   if (input.next_action_override === null) {
-    overrideLabel = "";
-    overridePriority = null;
-    overrideExpiresAt = null;
-    overrideProjectStatus = null;
-    overrideUpdatedAt = now();
+    requestedOverride = null;
   } else if (input.next_action_override !== undefined) {
     const label = input.next_action_override.label?.trim();
     const priority = input.next_action_override.priority;
@@ -578,20 +587,67 @@ export function updateWorkbenchProject(
       return { ok: false, error: { code: "NEXT_ACTION_OVERRIDE_INVALID", message: "Next action priority is invalid.", field: "next_action_override.priority" } };
     }
     const updatedAt = new Date();
-    overrideLabel = label;
-    overridePriority = priority;
-    overrideExpiresAt = new Date(updatedAt.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    overrideProjectStatus = project.status;
-    overrideUpdatedAt = updatedAt.toISOString();
+    requestedOverride = {
+      label,
+      priority,
+      updated_at: updatedAt.toISOString(),
+      expires_at: new Date(updatedAt.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    };
   }
-  db.prepare(`
-    UPDATE workbench_project_meta
-    SET classification = ?, pinned = ?, next_action_override = ?, next_action_priority = ?,
-      next_action_expires_at = ?, next_action_project_status = ?, next_action_updated_at = ?,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE project_id = ?
-  `).run(classification, pinned ? 1 : 0, overrideLabel, overridePriority, overrideExpiresAt, overrideProjectStatus, overrideUpdatedAt, projectId);
-  return { ok: true, data: { project, meta: projectMeta(db, projectId) as WorkbenchProjectMeta } };
+  if ((db as unknown as { isTransaction?: boolean }).isTransaction) {
+    return { ok: false, error: { code: "PRODUCTION_MUTATION_REJECTED", message: "Project updates require an owned transaction." } };
+  }
+
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    const writable = assertWorkbenchProjectWritable(db, projectId);
+    if (!writable.ok) throw new Error(writable.error.code);
+    const classification = input.classification ?? writable.data.meta.classification;
+    const pinned = input.pinned ?? writable.data.meta.pinned;
+    let overrideLabel = writable.data.meta.next_action_override;
+    let overridePriority = writable.data.meta.next_action_priority;
+    let overrideExpiresAt = writable.data.meta.next_action_expires_at;
+    let overrideProjectStatus = writable.data.meta.next_action_project_status;
+    let overrideUpdatedAt = writable.data.meta.next_action_updated_at;
+    if (requestedOverride === null) {
+      overrideLabel = "";
+      overridePriority = null;
+      overrideExpiresAt = null;
+      overrideProjectStatus = null;
+      overrideUpdatedAt = now();
+    } else if (requestedOverride !== undefined) {
+      overrideLabel = requestedOverride.label;
+      overridePriority = requestedOverride.priority;
+      overrideExpiresAt = requestedOverride.expires_at;
+      overrideProjectStatus = writable.data.project.status;
+      overrideUpdatedAt = requestedOverride.updated_at;
+    }
+    if (title !== undefined) {
+      withWorkbenchProductionMutationAuthority(db, {
+        kind: "project_title", project_id: projectId, object_id: projectId
+      }, () => db.prepare(`
+          UPDATE projects SET data_json = json_set(data_json, '$.title', ?), updated_at = CURRENT_TIMESTAMP
+          WHERE project_id = ?
+        `).run(title, projectId));
+    }
+    db.prepare(`
+      UPDATE workbench_project_meta
+      SET classification = ?, pinned = ?, next_action_override = ?, next_action_priority = ?,
+        next_action_expires_at = ?, next_action_project_status = ?, next_action_updated_at = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE project_id = ?
+    `).run(classification, pinned ? 1 : 0, overrideLabel, overridePriority, overrideExpiresAt, overrideProjectStatus, overrideUpdatedAt, projectId);
+    const project = getProject(db, projectId);
+    const meta = projectMeta(db, projectId, false);
+    if (!project || !meta) throw new Error("PROJECT_NOT_FOUND");
+    db.exec("COMMIT");
+    return { ok: true, data: { project, meta } };
+  } catch (error) {
+    if ((db as unknown as { isTransaction?: boolean }).isTransaction) {
+      try { db.exec("ROLLBACK"); } catch { /* preserve the low-disclosure failure below */ }
+    }
+    return { ok: false, error: { ...workbenchProductionMutationError(error), field: "project_id" } };
+  }
 }
 
 export function setWorkbenchProjectLifecycle(
@@ -632,6 +688,8 @@ export function updateWorkbenchShot(
 ): WorkbenchV2Result<{ shot: Shot }> {
   const writable = assertWorkbenchProjectWritable(db, projectId);
   if (!writable.ok) return writable;
+  const contentWritable = assertWorkbenchContentMutationAllowed(db, projectId);
+  if (!contentWritable.ok) return { ok: false, error: { ...contentWritable.error, field: "project_id" } };
   let shot = getShot(db, shotId);
   if (!shot || shot.project_id !== projectId) return { ok: false, error: { code: "SHOT_NOT_FOUND", message: `Shot not found in project: ${shotId}`, field: "shot_id" } };
   const ownsTransaction = input.storyboard_image_artifact_id !== undefined
@@ -694,7 +752,10 @@ export function updateWorkbenchShot(
   return { ok: true, data: { shot } };
   } catch (error) {
     if (ownsTransaction && (db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
-    return { ok: false, error: { code: "SHOT_UPDATE_FAILED", message: error instanceof Error ? error.message : "SHOT update failed." } };
+    const mapped = workbenchProductionMutationError(error);
+    return { ok: false, error: mapped.code === "PRODUCTION_MUTATION_REJECTED"
+      ? { code: "SHOT_UPDATE_FAILED", message: "SHOT update failed." }
+      : { ...mapped, field: "project_id" } };
   }
 }
 
@@ -711,6 +772,8 @@ export function decideWorkbenchClip(
 ): WorkbenchV2Result<{ shot: Shot; regeneration_request?: Record<string, unknown> }> {
   const writable = assertWorkbenchProjectWritable(db, projectId);
   if (!writable.ok) return writable;
+  const contentWritable = assertWorkbenchContentMutationAllowed(db, projectId);
+  if (!contentWritable.ok) return { ok: false, error: { ...contentWritable.error, field: "project_id" } };
   const candidate = getShot(db, input.shot_id);
   if (!candidate || candidate.project_id !== projectId) return { ok: false, error: { code: "SHOT_NOT_FOUND", message: "SHOT does not belong to the selected project.", field: "shot_id" } };
   const result = markShotClipReview({
@@ -734,10 +797,12 @@ export function decideWorkbenchClip(
     status: "draft",
     created_at: now()
   };
-  db.prepare(`
-    INSERT INTO regeneration_requests (request_id, project_id, shot_id, artifact_id, previous_run_id, status, data_json, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)
-  `).run(request.request_id, projectId, request.shot_id, request.artifact_id, request.previous_run_id, JSON.stringify(request), request.created_at, request.created_at);
+  withWorkbenchProductionMutationAuthority(db, {
+    kind: "regeneration_request", project_id: projectId, object_id: request.request_id
+  }, () => db.prepare(`
+      INSERT INTO regeneration_requests (request_id, project_id, shot_id, artifact_id, previous_run_id, status, data_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)
+    `).run(request.request_id, projectId, request.shot_id, request.artifact_id, request.previous_run_id, JSON.stringify(request), request.created_at, request.created_at));
   return { ok: true, data: { shot: result.shot, regeneration_request: request } };
 }
 
@@ -1340,10 +1405,12 @@ export function migrateH1StateToWorkbenchV2(db = openM0Database()): Record<strin
     for (const draft of state.regeneration_request_drafts) {
       const shot = getShot(db, draft.shot_id);
       if (!shot) continue;
-      db.prepare(`
-        INSERT OR IGNORE INTO regeneration_requests (request_id, project_id, shot_id, artifact_id, previous_run_id, status, data_json, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)
-      `).run(draft.draft_id, shot.project_id, draft.shot_id, draft.artifact_id, draft.previous_run_id, JSON.stringify({ ...draft, project_id: shot.project_id }), draft.created_at, draft.created_at);
+      withWorkbenchProductionMutationAuthority(db, {
+        kind: "regeneration_request", project_id: shot.project_id, object_id: draft.draft_id
+      }, () => db.prepare(`
+          INSERT OR IGNORE INTO regeneration_requests (request_id, project_id, shot_id, artifact_id, previous_run_id, status, data_json, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)
+        `).run(draft.draft_id, shot.project_id, draft.shot_id, draft.artifact_id, draft.previous_run_id, JSON.stringify({ ...draft, project_id: shot.project_id }), draft.created_at, draft.created_at));
     }
     const migratedAt = now();
     db.prepare("INSERT INTO m0_meta (key, value, updated_at) VALUES ('workbench_v2_h1_migrated_at', ?, CURRENT_TIMESTAMP)").run(migratedAt);

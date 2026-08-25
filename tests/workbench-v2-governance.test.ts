@@ -70,7 +70,7 @@ test("secondary governance isolates validation projects and orphan duplicates", 
     assert.equal(duplicate.ok && delivered.ok, true);
     if (!duplicate.ok || !delivered.ok) return;
     duplicate.project.status = "storyboard_approved";
-    delivered.project.status = "final_approved";
+    delivered.project.status = "video_review";
     saveProject(db, duplicate.project);
     saveProject(db, delivered.project);
 

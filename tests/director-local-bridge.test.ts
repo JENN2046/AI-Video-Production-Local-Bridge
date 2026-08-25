@@ -30,6 +30,7 @@ import {
 import { startDirectorRemoteRuntime } from "../src/director/remoteRuntime.js";
 import type { DirectorOAuthConfig } from "../src/director/oauth.js";
 import { assertSchemaCurrent } from "../src/storage/migrations.js";
+import { withWorkbenchProductionMutationAuthority } from "../src/storage/productionMutationAuthority.js";
 import { openM0Database, openM0DatabaseConnection } from "../src/storage/sqlite.js";
 import type { MediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { createProject, saveProject, saveShot, type Shot } from "../src/tools/projects.js";
@@ -138,11 +139,15 @@ async function fixture() {
     (blob_id, sha256, size_bytes, detected_mime, storage_uri, integrity_state, provenance_json)
     VALUES (?, ?, ?, 'video/mp4', ?, 'verified', ?)`)
     .run(blobId, sourceSha256, statSync(sourcePath).size, sourcePath, JSON.stringify({ media_root: mediaRoot }));
-  db.prepare(`INSERT INTO media_artifacts
-    (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
-    VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?)`)
-    .run(artifact.artifact_id, created.project_id, shot.shot_id, JSON.stringify(artifact));
-  db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(artifact.artifact_id, blobId);
+  withWorkbenchProductionMutationAuthority(db, {
+    kind: "artifact", project_id: created.project_id, object_id: artifact.artifact_id
+  }, () => {
+    db.prepare(`INSERT INTO media_artifacts
+      (artifact_id, project_id, shot_id, role, artifact_type, status, data_json)
+      VALUES (?, ?, ?, 'generated_clip', 'video', 'active', ?)`)
+      .run(artifact.artifact_id, created.project_id, shot.shot_id, JSON.stringify(artifact));
+    db.prepare("INSERT INTO media_artifact_blobs (artifact_id, blob_id) VALUES (?, ?)").run(artifact.artifact_id, blobId);
+  });
   bootstrapWebGptProjectOwner(db, actor.principal_id, created.project_id, "DIRECTOR_LOCAL_FIXTURE", actor.issuer_hash!);
   const now = new Date("2026-07-22T02:00:00.000Z");
   db.prepare(`INSERT INTO director_focuses
@@ -340,12 +345,16 @@ test("Director local service binds Focus/context and persists only an immutable 
       assert.equal((db.prepare("SELECT COUNT(*) count FROM director_automation_grants").get() as { count: number }).count, 0);
       assert.throws(() => db.prepare("UPDATE director_proposals SET kind = 'script' WHERE proposal_id = ?").run(submitted.proposal_id), /DIRECTOR_PROPOSAL_IMMUTABLE/);
       const storedShot = db.prepare("SELECT data_json FROM shots WHERE shot_id = ?").get(f.shotId) as { data_json: string };
-      db.prepare("UPDATE shots SET data_json = ? WHERE shot_id = ?")
-        .run(JSON.stringify({ ...JSON.parse(storedShot.data_json), project_id: "project_drift" }), f.shotId);
+      assert.throws(
+        () => db.prepare("UPDATE shots SET data_json = ? WHERE shot_id = ?")
+          .run(JSON.stringify({ ...JSON.parse(storedShot.data_json), project_id: "project_drift" }), f.shotId),
+        /WORKBENCH_SHOT_PRODUCTION_AUTHORITY_REQUIRED/
+      );
     } finally { db.close(); }
-    await assert.rejects(() => service.get_director_context({
+    const intact = await service.get_director_context({
       focus_id: "focus_director_local_001", focus_generation: 1, proposal_kind: "review_assessment", detail: "compact"
-    }), (error) => error instanceof Error && "code" in error && error.code === "DIRECTOR_DATA_INTEGRITY_VIOLATION");
+    });
+    assert.equal(intact.focus.focus_id, "focus_director_local_001");
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 

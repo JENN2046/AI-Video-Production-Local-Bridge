@@ -7,6 +7,7 @@ import { requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import { getProject, getShot, saveShot, type Shot, type ToolError } from "./projects.js";
 import { type ProviderExecutionRequest } from "./provider.js";
 import { MockVideoProviderAdapter } from "./videoProviderAdapters.js";
+import { refreshWorkbenchAssemblyReadiness, workbenchProductionMutationError } from "./workbenchDeliveryState.js";
 
 type ToolResult<T> = { ok: true } & T | { ok: false; error: ToolError };
 
@@ -32,14 +33,16 @@ function validateGeneratedClip(db: M0Database, artifactId: string, shot: Shot): 
   return validated.ok ? null : validated.error;
 }
 
-export function markShotClipReview(
-  input: {
+type MarkShotClipReviewInput = {
     shot_id: string;
     artifact_id: string;
     decision: "approved" | "revision_needed";
     rejection_reasons?: string[];
     revision_instruction?: RevisionInstruction;
-  },
+};
+
+function markShotClipReviewInternal(
+  input: MarkShotClipReviewInput,
   db = openM0Database()
 ): ToolResult<{ shot: Shot }> {
   const shot = getShot(db, input.shot_id);
@@ -55,8 +58,8 @@ export function markShotClipReview(
 
   if (input.decision === "approved") {
     const ownsTransaction = !(db as unknown as { isTransaction?: boolean }).isTransaction;
-    if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
     try {
+      if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
       const attached = attachArtifactToShot({
         project_id: shot.project_id,
         shot_id: shot.shot_id,
@@ -77,11 +80,15 @@ export function markShotClipReview(
       if (!nextVersion) throw new Error("ARTIFACT_NOT_FOUND");
       nextVersion.review_status = "approved";
       saveShot(db, nextShot);
+      refreshWorkbenchAssemblyReadiness(db, nextShot.project_id);
       if (ownsTransaction) db.exec("COMMIT");
       return { ok: true, shot: nextShot };
     } catch (error) {
       if (ownsTransaction && (db as unknown as { isTransaction?: boolean }).isTransaction) db.exec("ROLLBACK");
-      return { ok: false, error: { code: "CLIP_REVIEW_TRANSACTION_FAILED", message: error instanceof Error ? error.message : "Clip review failed." } };
+      const mapped = workbenchProductionMutationError(error);
+      return { ok: false, error: mapped.code === "PRODUCTION_MUTATION_REJECTED"
+        ? { code: "CLIP_REVIEW_TRANSACTION_FAILED", message: "Clip review transaction failed." }
+        : mapped };
     }
   } else {
     shot.status = "revision_needed";
@@ -93,6 +100,20 @@ export function markShotClipReview(
 
   saveShot(db, shot);
   return { ok: true, shot };
+}
+
+export function markShotClipReview(
+  input: MarkShotClipReviewInput,
+  db = openM0Database()
+): ToolResult<{ shot: Shot }> {
+  try {
+    return markShotClipReviewInternal(input, db);
+  } catch (error) {
+    const mapped = workbenchProductionMutationError(error);
+    return { ok: false, error: mapped.code === "PRODUCTION_MUTATION_REJECTED"
+      ? { code: "CLIP_REVIEW_TRANSACTION_FAILED", message: "Clip review transaction failed." }
+      : mapped };
+  }
 }
 
 export async function regenerateShotVideo(

@@ -6,6 +6,10 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { migrateDatabase } from "../src/storage/databaseGovernance.js";
+import {
+  installWorkbenchProductionMutationAuthority,
+  withWorkbenchProductionMutationAuthority
+} from "../src/storage/productionMutationAuthority.js";
 import { captureT2Core } from "../src/tools/s3bT2Eligibility.js";
 
 function fixture(): { root: string; dataRoot: string; sqlitePath: string; mediaRoot: string } {
@@ -25,7 +29,13 @@ test("two-snapshot core detects database drift without retrying", () => {
     const result = captureT2Core({ snapshotPaths: { dataRoot: f.dataRoot, sqlitePath: f.sqlitePath }, mediaRoot: f.mediaRoot, betweenSnapshots: () => {
       hookCalls += 1;
       const db = new DatabaseSync(f.sqlitePath);
-      try { db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run("drift", JSON.stringify({})); } finally { db.close(); }
+      try {
+        installWorkbenchProductionMutationAuthority(db);
+        withWorkbenchProductionMutationAuthority(db, {
+          kind: "project_content", project_id: "drift", object_id: "drift"
+        }, () => db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+          .run("drift", JSON.stringify({ project_id: "drift" })));
+      } finally { db.close(); }
     } });
     assert.equal(hookCalls, 1);
     assert.equal(result.decision.state, "INELIGIBLE");
