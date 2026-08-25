@@ -56,7 +56,9 @@ Review decisions, Delivery projection, and immutable Events commit in one
 transaction. Export copies into a governed `.part` path with no-overwrite,
 validates SHA-256, size, and FFprobe facts, then atomically registers the
 immutable Export receipt, terminal Job, Event, and Delivery pointer. Existing
-Export files and receipts are never overwritten or deleted by rework.
+Export files and receipts are never overwritten or deleted by rework. Failure
+cleanup removes a `.part` only after this Job proved exclusive ownership; a
+pre-existing or concurrently created file is preserved unchanged.
 
 Cold project-list and Dashboard reads do not synchronously hash every finished
 video. They project Export verification separately as `unverified`, `verified`,
@@ -74,6 +76,9 @@ On process startup, inherited queued or running Export Jobs become
 does not resume or retry. If a final database commit acknowledgement is
 indeterminate, the operation returns `EXPORT_RECOVERY_REQUIRED` or
 `CLOSEOUT_RECOVERY_REQUIRED` and performs no destructive compensation.
+At pre-side-effect Final Review, Export queue/reuse, and worker-claim commits,
+an acknowledgement loss is accepted only when the exact durable Event and
+state postconditions can be read back; otherwise the action fails closed.
 
 Closeout revalidates, inside one transaction, the Project pointer, current and
 approved Artifact identity, latest immutable Export receipt, real Export bytes,
@@ -112,7 +117,8 @@ Targeted tests cover the isolated `0014 → 0015` upgrade, deterministic checksu
 required index and trigger expressions, migration failure atomicity, direct-SQL
 rejection, stale Artifact checks, selected-SHOT regeneration, old-version
 retention, Export no-overwrite, byte drift, idempotent reuse, explicit retry,
-restart interruption, lost commit acknowledgement, exact Closeout phrase,
+pre-existing and raced `.part` ownership, restart interruption, lost commit
+acknowledgement at pre-side-effect and finalization boundaries, exact Closeout phrase,
 closed-project write rejection, cold-versus-full Export verification, Dashboard
 blocker propagation, sanitized Workspace DTOs, and same-descriptor verified
 download. Snapshot projection tests cover current-source Export verification

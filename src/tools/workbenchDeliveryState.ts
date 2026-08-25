@@ -203,13 +203,14 @@ export function getLatestRetryableWorkbenchDeliveryJob(
   return row && (row.state === "failed" || row.state === "interrupted") ? row : null;
 }
 
-export function getLatestWorkbenchExport(db: M0Database, projectId: string): WorkbenchExportRecord | null {
+export function getCurrentWorkbenchExport(db: M0Database, projectId: string): WorkbenchExportRecord | null {
   const row = db.prepare(`
-    SELECT export_id, project_id, artifact_id, relative_path, sha256, size_bytes, created_at
-    FROM workbench_exports
-    WHERE project_id = ?
-    ORDER BY created_at DESC, export_id DESC
-    LIMIT 1
+    SELECT exported.export_id, exported.project_id, exported.artifact_id, exported.relative_path,
+      exported.sha256, exported.size_bytes, exported.created_at
+    FROM workbench_delivery_state state
+    JOIN workbench_exports exported
+      ON exported.project_id = state.project_id AND exported.export_id = state.latest_export_id
+    WHERE state.project_id = ?
   `).get(projectId) as WorkbenchExportRecord | undefined;
   return row ? { ...row, size_bytes: Number(row.size_bytes) } : null;
 }

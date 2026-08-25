@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { closeSync, existsSync, fstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, fstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
@@ -407,6 +407,98 @@ test("export is persistent, exclusive, idempotent, drift-aware, and leaves state
     const occupied = await runWorkbenchExportJob(occupiedQueue.data.job.job_id, db);
     assert.equal(occupied.ok, false);
     assert.equal(readFileSync(occupiedPath).equals(sentinel), true);
+
+    const occupiedPartFixture = await setupFinalReviewProject(db, 1);
+    acceptFinal(db, occupiedPartFixture);
+    const occupiedPartQueue = queueWorkbenchExport({ project_id: occupiedPartFixture.project.project_id, artifact_id: occupiedPartFixture.final.artifact_id, human_confirmation: true }, db);
+    assert.equal(occupiedPartQueue.ok, true);
+    if (!occupiedPartQueue.ok || !occupiedPartQueue.data.job) return;
+    const occupiedPartInput = JSON.parse((db.prepare("SELECT input_json FROM workbench_delivery_jobs WHERE job_id = ?").get(occupiedPartQueue.data.job.job_id) as { input_json: string }).input_json) as { relative_path: string };
+    const occupiedPart = `${resolve(paths.exportsRoot, occupiedPartFixture.project.project_id, basename(occupiedPartInput.relative_path))}.part`;
+    mkdirSync(resolve(paths.exportsRoot, occupiedPartFixture.project.project_id), { recursive: true });
+    writeFileSync(occupiedPart, sentinel, { flag: "wx" });
+    const occupiedPartResult = await runWorkbenchExportJob(occupiedPartQueue.data.job.job_id, db);
+    assert.equal(occupiedPartResult.ok, false);
+    assert.equal(readFileSync(occupiedPart).equals(sentinel), true);
+
+    const racedPartFixture = await setupFinalReviewProject(db, 1);
+    acceptFinal(db, racedPartFixture);
+    const racedPartQueue = queueWorkbenchExport({ project_id: racedPartFixture.project.project_id, artifact_id: racedPartFixture.final.artifact_id, human_confirmation: true }, db);
+    assert.equal(racedPartQueue.ok, true);
+    if (!racedPartQueue.ok || !racedPartQueue.data.job) return;
+    let racedPart = "";
+    const racedPartResult = await runWorkbenchExportJob(racedPartQueue.data.job.job_id, db, {
+      before_export_copy: (partPath) => {
+        racedPart = partPath;
+        writeFileSync(partPath, sentinel, { flag: "wx" });
+      }
+    });
+    assert.equal(racedPartResult.ok, false);
+    assert.notEqual(racedPart, "");
+    assert.equal(readFileSync(racedPart).equals(sentinel), true);
+  } finally {
+    db.close();
+  }
+});
+
+test("commit acknowledgement loss is postcondition-verified before delivery side effects continue", async () => {
+  const db = openM0Database();
+  try {
+    const fixture = await setupFinalReviewProject(db, 1);
+    const accepted = decideWorkbenchFinalReview({
+      project_id: fixture.project.project_id,
+      artifact_id: fixture.final.artifact_id,
+      decision: "accept",
+      human_confirmation: true
+    }, commitAcknowledgementLost(db, 1));
+    assert.equal(accepted.ok, true);
+
+    const queued = queueWorkbenchExport({
+      project_id: fixture.project.project_id,
+      artifact_id: fixture.final.artifact_id,
+      human_confirmation: true
+    }, commitAcknowledgementLost(db, 1));
+    assert.equal(queued.ok, true);
+    if (!queued.ok || !queued.data.job) return;
+    assert.equal(queued.data.job.state, "queued");
+
+    const first = await runWorkbenchExportJob(queued.data.job.job_id, commitAcknowledgementLost(db, 1));
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+    const firstPath = resolve(paths.exportsRoot, fixture.project.project_id, basename(first.data.export.relative_path));
+
+    writeFileSync(firstPath, "older export drift", "utf8");
+    const replacementQueue = queueWorkbenchExport({
+      project_id: fixture.project.project_id,
+      artifact_id: fixture.final.artifact_id,
+      human_confirmation: true
+    }, db);
+    assert.equal(replacementQueue.ok, true);
+    if (!replacementQueue.ok || !replacementQueue.data.job) return;
+    const replacement = await runWorkbenchExportJob(replacementQueue.data.job.job_id, db);
+    assert.equal(replacement.ok, true);
+    if (!replacement.ok) return;
+    const replacementPath = resolve(paths.exportsRoot, fixture.project.project_id, basename(replacement.data.export.relative_path));
+
+    copyFileSync(fixture.final.storage.uri, firstPath);
+    writeFileSync(replacementPath, "newer export drift", "utf8");
+    const reused = queueWorkbenchExport({
+      project_id: fixture.project.project_id,
+      artifact_id: fixture.final.artifact_id,
+      human_confirmation: true
+    }, commitAcknowledgementLost(db, 1));
+    assert.equal(reused.ok, true);
+    if (!reused.ok) return;
+    assert.equal(reused.data.reused, true);
+    assert.equal(reused.data.export?.export_id, first.data.export.export_id);
+
+    const workspace = getWorkbenchProjectWorkspace(fixture.project.project_id, "delivery", db);
+    assert.equal(workspace.ok, true);
+    if (workspace.ok) {
+      const currentExport = workspace.data.latest_export as { export_id: string; verification_state: string };
+      assert.equal(currentExport.export_id, first.data.export.export_id);
+      assert.equal(currentExport.verification_state, "verified");
+    }
   } finally {
     db.close();
   }

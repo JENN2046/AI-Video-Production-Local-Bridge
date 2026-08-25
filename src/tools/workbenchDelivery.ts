@@ -263,6 +263,31 @@ function deliveryError(error: unknown): WorkbenchDeliveryResult<never> {
   return { ok: false, error: { code: "EXPORT_INTEGRITY_FAILED", message: "Delivery operation failed closed." } };
 }
 
+function commitWithVerifiedOutcome(
+  db: M0Database,
+  verifyCommitted: () => boolean,
+  recoveryCode: string,
+  recoveryMessage: string
+): void {
+  try {
+    db.exec("COMMIT");
+    return;
+  } catch (error) {
+    if ((db as unknown as { isTransaction?: boolean }).isTransaction === true) {
+      try {
+        db.exec("ROLLBACK");
+      } catch {
+        throw new DeliveryFailure(recoveryCode, recoveryMessage);
+      }
+      throw error;
+    }
+    try {
+      if (verifyCommitted()) return;
+    } catch { /* a failed postcondition read keeps the outcome explicitly recoverable */ }
+    throw new DeliveryFailure(recoveryCode, recoveryMessage);
+  }
+}
+
 function projectForDelivery(db: M0Database, projectId: string): { project: Project; delivery: WorkbenchDeliveryState } {
   const project = getProject(db, projectId);
   if (!project) throw new DeliveryFailure("PROJECT_NOT_FOUND", "Project was not found.", "project_id");
@@ -759,7 +784,13 @@ export function decideWorkbenchFinalReview(
       .run(eventId, input.project_id, eventType, delivery.workflow_state, nextState,
         input.artifact_id, delivery.assembly_input_fingerprint, reasonCode,
         canonicalizeJcs({ shot_ids: selectedShotIds, reason: (input.reason ?? "").trim().slice(0, 1_000) }), timestamp));
-    db.exec("COMMIT");
+    commitWithVerifiedOutcome(db, () => {
+      const committed = db.prepare(`SELECT 1 AS present FROM workbench_delivery_events
+        WHERE event_id = ? AND project_id = ? AND event_type = ? AND to_state = ?`)
+        .get(eventId, input.project_id, eventType, nextState) as { present: number } | undefined;
+      const committedState = getWorkbenchDeliveryState(db, input.project_id);
+      return Boolean(committed && committedState?.workflow_state === nextState);
+    }, "FINAL_REVIEW_RECOVERY_REQUIRED", "Final review commit outcome requires explicit recovery.");
     transactionOpen = false;
     const updated = getWorkbenchDeliveryState(db, input.project_id);
     if (!updated) throw new DeliveryFailure("DELIVERY_STATE_MISSING", "Updated delivery state is unavailable.");
@@ -836,7 +867,15 @@ export function queueWorkbenchExport(
                 reason_code, data_json, created_at)
               VALUES (?, ?, 'export_reused', ?, 'exported', ?, ?, 'EXPORT_REUSED', '{"reused":true}', ?)`)
             .run(eventId, input.project_id, locked.delivery.workflow_state, input.artifact_id, reusable.export_id, timestamp));
-          db.exec("COMMIT");
+          commitWithVerifiedOutcome(db, () => {
+            const committed = db.prepare(`SELECT 1 AS present FROM workbench_delivery_events
+              WHERE event_id = ? AND project_id = ? AND event_type = 'export_reused'
+                AND export_id = ? AND to_state = 'exported'`)
+              .get(eventId, input.project_id, reusable.export_id) as { present: number } | undefined;
+            const committedState = getWorkbenchDeliveryState(db, input.project_id);
+            return Boolean(committed && committedState?.workflow_state === "exported"
+              && committedState.latest_export_id === reusable.export_id);
+          }, "EXPORT_RECOVERY_REQUIRED", "Export reuse commit outcome requires explicit recovery.");
           transactionOpen = false;
         } catch (error) {
           if (transactionOpen) {
@@ -925,7 +964,13 @@ export function queueWorkbenchExport(
           .run(eventId, input.project_id, jobId, locked.delivery.workflow_state, locked.delivery.workflow_state,
             input.artifact_id, fingerprint, timestamp);
       });
-      db.exec("COMMIT");
+      commitWithVerifiedOutcome(db, () => {
+        const committedJob = getDeliveryJob(db, jobId);
+        const committedEvent = db.prepare(`SELECT 1 AS present FROM workbench_delivery_events
+          WHERE event_id = ? AND project_id = ? AND job_id = ? AND event_type = 'export_queued'`)
+          .get(eventId, input.project_id, jobId) as { present: number } | undefined;
+        return Boolean(committedJob?.state === "queued" && committedJob.input_fingerprint === fingerprint && committedEvent);
+      }, "EXPORT_RECOVERY_REQUIRED", "Export queue commit outcome requires explicit recovery.");
       transactionOpen = false;
     } catch (error) {
       if (transactionOpen) {
@@ -1047,6 +1092,7 @@ export async function runWorkbenchExportJob(
   const connection = db ?? openM0Database();
   const ownsConnection = !db;
   let claimed = false;
+  let partOwned = false;
   let finalOwned = false;
   let preserveRecoveryEvidence = false;
   let location: ReturnType<typeof exportFileLocation> | null = null;
@@ -1079,7 +1125,13 @@ export async function runWorkbenchExportJob(
           .run(eventId, queued.project_id, jobId, delivery.workflow_state, delivery.workflow_state,
             snapshot.artifact_id, queued.input_fingerprint, timestamp);
       });
-      connection.exec("COMMIT");
+      commitWithVerifiedOutcome(connection, () => {
+        const committedJob = getDeliveryJob(connection, jobId);
+        const committedEvent = connection.prepare(`SELECT 1 AS present FROM workbench_delivery_events
+          WHERE event_id = ? AND project_id = ? AND job_id = ? AND event_type = 'export_started'`)
+          .get(eventId, queued.project_id, jobId) as { present: number } | undefined;
+        return Boolean(committedJob?.state === "running" && committedEvent);
+      }, "EXPORT_RECOVERY_REQUIRED", "Export Job claim outcome requires explicit recovery.");
       claimOpen = false;
       claimed = true;
     } catch (error) {
@@ -1118,11 +1170,13 @@ export async function runWorkbenchExportJob(
     }
     if (dependencies.before_export_copy) await dependencies.before_export_copy(location.part);
     copyFileSync(source.artifact.storage.uri, location.part, constants.COPYFILE_EXCL);
+    partOwned = true;
     if (dependencies.after_export_copy) await dependencies.after_export_copy(location.part);
     validateExportFile(location.part, snapshot, dependencies);
     linkSync(location.part, location.final);
     finalOwned = true;
     unlinkSync(location.part);
+    partOwned = false;
     validateExportFile(location.final, snapshot, dependencies);
     if (dependencies.before_export_commit) await dependencies.before_export_commit();
 
@@ -1214,7 +1268,7 @@ export async function runWorkbenchExportJob(
       : new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Local export did not complete.");
     if (claimed && !preserveRecoveryEvidence) markExportJobFailed(connection, jobId, failure.code, dependencies);
     if (location && !preserveRecoveryEvidence) {
-      cleanupRegularFile(location.part, location.directory);
+      if (partOwned) cleanupRegularFile(location.part, location.directory);
       if (finalOwned) cleanupRegularFile(location.final, location.directory);
     }
     return deliveryError(failure);

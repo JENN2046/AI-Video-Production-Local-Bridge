@@ -34,7 +34,7 @@ import {
   assertWorkbenchContentMutationAllowed,
   assertWorkbenchProductionWriteAllowed,
   getActiveWorkbenchDeliveryJob,
-  getLatestWorkbenchExport,
+  getCurrentWorkbenchExport,
   getLatestRetryableWorkbenchDeliveryJob,
   getWorkbenchCloseoutReceipt,
   projectWorkbenchDeliverySummaryState,
@@ -1111,7 +1111,7 @@ export function getWorkbenchProjectWorkspace(
   const invalidAcceptedClipCount = accepted_clips.filter((clip) => clip.artifact_id && clip.artifact === null).length;
   const deliverySummary = withValidatedAssemblyReadiness(summary, readyForAssembly, invalidAcceptedClipCount);
   const assemblyPreflight = getAssemblyDatabasePreflight(projectId, db);
-  const latestExport = getLatestWorkbenchExport(db, projectId);
+  const latestExport = getCurrentWorkbenchExport(db, projectId);
   const exportIntegrity = getWorkbenchExportIntegrityStatus(db, projectId, "full");
   return { ok: true, data: {
     ...base,
