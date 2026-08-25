@@ -44,16 +44,18 @@ export function ProjectWorkspacePage() {
   const summary = query.data.summary;
   return <div className={s.page}>
     <PageHeader eyebrow={`${classificationLabel(meta.classification)} · ${project.project_id}`} title={project.title} description={`${project.video_spec.aspect_ratio} · ${project.video_spec.resolution} · ${project.video_spec.duration_seconds}s`} actions={<div className={s.headerActions}>
-      <button className={s.iconButton} title={meta.pinned ? "取消置顶" : "置顶项目"} onClick={() => projectMutation.mutate({ pinned: !meta.pinned })}><Pin size={17} fill={meta.pinned ? "currentColor" : "none"} /></button>
-      <button className={s.iconButton} title="指定下一步动作" onClick={() => setOverrideOpen(true)}><Edit3 size={17} /></button>
+      <button className={s.iconButton} aria-label={meta.pinned ? "取消置顶" : "置顶项目"} onClick={() => projectMutation.mutate({ pinned: !meta.pinned })}><Pin size={17} fill={meta.pinned ? "currentColor" : "none"} /></button>
+      <button className={s.iconButton} aria-label="指定下一步动作" onClick={() => setOverrideOpen(true)}><Edit3 size={17} /></button>
       {meta.lifecycle === "active" ? <button className={s.secondaryButton} onClick={() => lifecycleMutation.mutate("archive")}><Archive size={16} /> 归档</button> : <button className={s.secondaryButton} onClick={() => lifecycleMutation.mutate("restore")}><RotateCcw size={16} /> 恢复</button>}
     </div>} />
-    <div className={s.projectNav}><SegmentedTabs items={workspaceTabs} active={workspace} onChange={(value) => navigate(`/v2/projects/${encodeURIComponent(id)}/${value}`)} />{meta.lifecycle === "archived" && <StatusPill tone="warning">只读归档</StatusPill>}</div>
-    {workspace === "overview" && <OverviewWorkspace data={query.data} />}
-    {workspace === "storyboard" && <StoryboardWorkspace data={query.data} />}
-    {workspace === "generation" && <GenerationWorkspace data={query.data} />}
-    {workspace === "review" && <ReviewWorkspace data={query.data} />}
-    {workspace === "delivery" && <DeliveryWorkspace data={query.data} />}
+    <div className={s.projectNav}><SegmentedTabs ariaLabel="项目工作区" panelId="project-workspace-panel" items={workspaceTabs} active={workspace} onChange={(value) => navigate(`/v2/projects/${encodeURIComponent(id)}/${value}`)} />{meta.lifecycle === "archived" && <StatusPill tone="warning">只读归档</StatusPill>}</div>
+    <div id="project-workspace-panel" role="tabpanel" aria-label="项目工作区内容" className={s.workspacePanel}>
+      {workspace === "overview" && <OverviewWorkspace data={query.data} />}
+      {workspace === "storyboard" && <StoryboardWorkspace data={query.data} />}
+      {workspace === "generation" && <GenerationWorkspace data={query.data} />}
+      {workspace === "review" && <ReviewWorkspace data={query.data} />}
+      {workspace === "delivery" && <DeliveryWorkspace data={query.data} />}
+    </div>
     {overrideOpen && summary && <NextActionModal projectId={id} summary={summary} onClose={() => setOverrideOpen(false)} />}
   </div>;
 }

@@ -24,7 +24,7 @@ export function SystemPage() {
   const navigate = useNavigate();
   return <div className={s.page}>
     <PageHeader eyebrow="本地运行边界" title="系统" description="查看 Provider 门禁、Canary 和结构化证据；原始 JSON 默认折叠。" />
-    <div className={s.subnav}><SegmentedTabs items={tabs} active={tab} onChange={(value) => navigate(`/v2/system/${value}`)} /></div>
+    <div className={s.subnav}><SegmentedTabs ariaLabel="系统区域" items={tabs} active={tab} onChange={(value) => navigate(`/v2/system/${value}`)} /></div>
     {tab === "reports" ? <ReportsView /> : tab === "governance" ? <GovernanceView /> : tab === "readonly" ? <ReadonlyOperationsView /> : <CanaryView mode={tab} />}
   </div>;
 }

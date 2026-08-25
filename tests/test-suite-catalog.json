@@ -97,6 +97,7 @@
       "ci_step": "Workbench V2 UI tests",
       "paths": [
         "src/workbench-ui/App.test.tsx",
+        "src/workbench-ui/components.test.tsx",
         "src/workbench-ui/pages/ProjectWorkspacePage.test.tsx"
       ]
     },
