@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -56,6 +56,34 @@ describe("Human Workbench V2 shell", () => {
     expect(screen.getByRole("link", { name: /收件箱/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Director 审批/ })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Legacy" })).not.toBeInTheDocument();
+  });
+
+  it("renders the fixed five-item mobile navigation and a keyboard-dismissable More sheet", async () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
+      matches: true,
+      media: "(max-width: 820px)",
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn()
+    }));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={["/v2/dashboard"]}><App /></MemoryRouter></QueryClientProvider>);
+    expect(await screen.findByRole("heading", { name: "指挥台" })).toBeInTheDocument();
+    const mobileNav = screen.getByRole("navigation", { name: "移动端主导航" });
+    expect(mobileNav.querySelectorAll("a,button")).toHaveLength(5);
+    for (const name of ["指挥台", "项目", "收件箱", "Director"]) expect(within(mobileNav).getByRole("link", { name })).toBeInTheDocument();
+    const more = within(mobileNav).getByRole("button", { name: "更多" });
+    more.focus();
+    fireEvent.click(more);
+    const sheet = await screen.findByRole("dialog", { name: "更多" });
+    expect(screen.getByRole("link", { name: /资产库/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /系统/ })).toBeInTheDocument();
+    fireEvent.keyDown(sheet, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "更多" })).not.toBeInTheDocument());
+    await waitFor(() => expect(more).toHaveFocus());
   });
 
   it("renders Director approval controls without treating a proposal or Grant as Provider execution", async () => {

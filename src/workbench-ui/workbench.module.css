@@ -1,4 +1,6 @@
 .app { display: grid; grid-template-columns: 216px minmax(0, 1fr); width: 100%; height: 100%; padding: 10px; gap: 10px; }
+.skipLink { position: fixed; z-index: 100; top: 8px; left: 8px; padding: 8px 12px; border-radius: 6px; color: #fff; background: #0747a6; transform: translateY(-150%); transition: transform .15s ease; }
+.skipLink:focus { transform: translateY(0); }
 .navCollapsed { grid-template-columns: 64px minmax(0, 1fr); }
 .sidebar, .shell { min-width: 0; overflow: hidden; border: 1px solid rgba(255,255,255,.58); background: rgba(244,247,251,.72); backdrop-filter: blur(22px) saturate(.92); box-shadow: var(--shadow); }
 .sidebar { display: flex; flex-direction: column; border-radius: 8px; }
@@ -8,7 +10,7 @@
 .brandText strong { font-size: 13px; }
 .brandText small { margin-top: 2px; color: var(--muted); font-size: 10px; }
 .sidebar nav { display: flex; flex-direction: column; gap: 4px; padding: 10px 8px; }
-.navItem { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; min-height: 40px; padding: 0 9px; border-radius: 6px; color: #344563; text-decoration: none; font-size: 13px; font-weight: 600; }
+.navItem { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; min-height: 40px; padding: 0 9px; border: 0; border-radius: 6px; color: #344563; background: transparent; text-decoration: none; font-size: 13px; font-weight: 600; cursor: pointer; }
 .navItem:hover { background: rgba(255,255,255,.7); }
 .navActive { color: #0747a6; background: rgba(222,235,255,.88); box-shadow: inset 3px 0 #0c66e4; }
 .navLabel { white-space: nowrap; }
@@ -31,6 +33,7 @@
 .topMeta strong { color: var(--ink); }
 .content { min-width: 0; min-height: 0; overflow: hidden; }
 .page { display: flex; flex-direction: column; height: 100%; min-width: 0; padding: 12px 16px 16px; overflow: hidden; }
+.workspacePanel { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .pageHeader { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex: 0 0 auto; min-height: 50px; margin-bottom: 10px; }
 .pageHeader h1 { margin: 2px 0 0; font-size: 22px; line-height: 1.2; }
 .pageHeader p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
@@ -45,12 +48,13 @@
 .textButton { border: 0; color: #0c66e4; background: transparent; }
 .primaryButton:disabled, .secondaryButton:disabled, .dangerButton:disabled { opacity: .48; cursor: not-allowed; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid #0c66e4; outline-offset: 2px; }
-.metricStrip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); flex: 0 0 auto; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,.72); overflow: hidden; }
+.metricStrip { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); flex: 0 0 auto; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,.72); overflow: hidden; }
 .metricCell { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; min-height: 64px; padding: 9px 14px; gap: 9px; border-right: 1px solid var(--line); }
 .metricCell:last-child { border-right: 0; }
 .metricCell svg { color: #44546f; }
-.metricCell span { color: var(--muted); font-size: 11px; }
-.metricCell strong { color: var(--ink); font-size: 22px; }
+.metricCell span { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.metricCell strong { min-width: 0; color: var(--ink); font-size: 22px; white-space: nowrap; }
+.metricCell .tone_neutral { color: #172b4d; }
 .tableSection { min-height: 0; border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,.72); overflow: hidden; }
 .sectionTitle { display: flex; align-items: center; justify-content: space-between; min-height: 52px; padding: 9px 13px; border-bottom: 1px solid var(--line); }
 .sectionTitle h2 { margin: 0; font-size: 14px; }
@@ -73,7 +77,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .tone_warning { color: var(--amber); background: var(--amber-soft); }
 .tone_danger { color: var(--red); background: var(--red-soft); }
 .tone_info { color: #0747a6; background: var(--blue-soft); }
-.tone_neutral { color: #44546f; background: #dfe1e6; }
+.tone_neutral { color: #172b4d; background: #dfe1e6; }
 .filterBar, .subnav, .projectNav { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: 0 0 auto; margin-bottom: 10px; }
 .filterRows { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; flex: 0 0 auto; margin-bottom: 10px; }
 .filterModes { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -91,6 +95,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .projectPickerMenu { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; width: max(100%, 310px); max-height: 260px; overflow: auto; padding: 4px; border: 1px solid var(--line); border-radius: 6px; background: rgba(255,255,255,.98); box-shadow: 0 12px 28px rgba(9,30,66,.18); }
 .projectPickerMenu button { display: flex; flex-direction: column; width: 100%; min-height: 46px; padding: 7px 9px; border: 0; border-radius: 4px; background: transparent; text-align: left; cursor: pointer; }
 .projectPickerMenu button:hover, .projectPickerMenu button[aria-selected="true"] { background: var(--blue-soft); }
+.projectPickerMenu .projectPickerOptionActive { background: #deebff; box-shadow: inset 3px 0 #0c66e4; }
+.projectPickerMenu .projectPickerOptionActive small { color: #172b4d; }
 .projectPickerMenu strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .projectPickerMenu small, .projectPickerMessage { margin-top: 3px; color: var(--muted); font-size: 9px; }
 .projectPickerMessage { display: block; padding: 12px; text-align: center; }
@@ -112,7 +118,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .virtualRow { position: absolute; top: 0; left: 0; width: 100%; }
 .masterDetail { display: grid; grid-template-columns: 340px minmax(0, 1fr); flex: 1; min-height: 0; border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,.74); overflow: hidden; }
 .directorPage { overflow: auto; }
-.directorFocusPanel { flex: 0 0 310px; min-height: 310px; }
+.directorFocusPanel { flex: 0 0 auto; min-height: 0; border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,.74); overflow: hidden; }
 .directorProposalPanel { flex: 0 0 auto; margin-top: 12px; }
 .queuePane { min-width: 0; min-height: 0; overflow: hidden; border-right: 1px solid var(--line); background: rgba(244,247,251,.62); }
 .masterDetail > .queuePane { display: grid; grid-template-rows: 42px minmax(0,1fr); }
@@ -255,8 +261,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .modal { width: min(640px, 100%); max-height: min(760px, calc(100vh - 40px)); display: grid; grid-template-rows: 52px minmax(0, 1fr) auto; border: 1px solid rgba(255,255,255,.7); border-radius: 8px; background: rgba(255,255,255,.95); box-shadow: 0 22px 50px rgba(9,30,66,.28); overflow: hidden; }
 .modal > header, .modal > footer { display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid var(--line); }.modal > footer { justify-content: flex-end; gap: 8px; min-height: 54px; border-top: 1px solid var(--line); border-bottom: 0; }
 .modal h2 { margin: 0; font-size: 15px; }.modalBody { padding: 14px; overflow: auto; }
+.sheetBackdrop { place-items: end center; padding: 0; }
+.sheet { width: min(520px, 100%); max-height: min(560px, 86vh); border-radius: 12px 12px 0 0; }
+.moreSheetNavigation { display: grid; gap: 8px; }
+.moreSheetNavigation a { display: grid; grid-template-columns: 38px minmax(0, 1fr); align-items: center; min-height: 64px; padding: 9px 12px; gap: 10px; border: 1px solid var(--line); border-radius: 7px; color: #344563; background: #fff; text-decoration: none; }
+.moreSheetNavigation a[aria-current="page"] { color: #0747a6; border-color: #579dff; background: var(--blue-soft); }
+.moreSheetNavigation a > span { display: flex; flex-direction: column; min-width: 0; }
+.moreSheetNavigation strong { font-size: 13px; }.moreSheetNavigation small { margin-top: 3px; color: var(--muted); font-size: 10px; }
 .loading, .errorState, .emptyState { display: flex; align-items: center; justify-content: center; min-height: 120px; gap: 9px; padding: 20px; color: var(--muted); font-size: 11px; text-align: center; }
 .errorState, .emptyState { flex-direction: column; }.errorState strong { color: var(--red); }.emptyState strong { color: var(--ink); font-size: 12px; }
+.imageStage .emptyState, .assetStage .emptyState, .storyboardStage .emptyState, .reviewStage .emptyState, .deliveryPreview .emptyState { color: #d7e2f2; }
+.imageStage .emptyState strong, .assetStage .emptyState strong, .storyboardStage .emptyState strong, .reviewStage .emptyState strong, .deliveryPreview .emptyState strong { color: #fff; }
 .spinner { width: 16px; height: 16px; border: 2px solid #b3c2d8; border-top-color: #0c66e4; border-radius: 50%; animation: spin .7s linear infinite; }
 .inlineError { padding: 7px 9px; border-radius: 5px; color: var(--red); background: var(--red-soft); font-size: 10px; }
 .liveRegion { position: fixed; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
@@ -278,6 +293,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .evidencePane { grid-column: 2; grid-row: 2; max-height: 42vh; border-top: 1px solid var(--line); border-left: 0; }
   .tableHeader, .tableRow, .projectListHead, .projectRow { grid-template-columns: minmax(200px, 1.5fr) minmax(135px, 1fr) minmax(130px, 1fr) 48px 90px 96px 20px; gap: 7px; }
   .assetFilterRow { gap: 6px; }.projectPicker { min-width: 190px; }.disabledFilter { width: 190px; }
+  .directorFocusPanel .objectDetail { display: flow-root; }
+  .directorFocusPanel .evidencePanel { margin-top: 14px; }
 }
 
 @media (max-width: 820px) {
@@ -285,10 +302,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .app { display: block; height: auto; min-height: 100%; padding: 0; }
   .sidebar { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; height: 58px; display: block; border-radius: 0; }
   .brand, .sidebarBottom { display: none; }
-  .sidebar nav { display: grid; grid-template-columns: repeat(5, 1fr); height: 100%; padding: 4px; }
+  .sidebar nav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); height: 100%; padding: 4px; }
   .navItem { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-height: 48px; font-size: 9px; }
   .navLabel { display: block; }
   .navBadge { position: absolute; margin: -25px 0 0 24px; }
+  .navActive { box-shadow: inset 0 3px #0c66e4; }
   .shell { display: block; min-height: 100vh; border: 0; border-radius: 0; }
   .topbar { height: 38px; }.topMeta span { display: none; }
   .content { height: auto; min-height: calc(100vh - 96px); padding-bottom: 64px; }
@@ -298,7 +316,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .filterRows { overflow-x: auto; }.assetFilterRow { width: max-content; }
   .filterModes { flex: 0 0 auto; }
   .segmented { flex: 0 0 auto; }
-  .metricStrip { grid-template-columns: repeat(2, 1fr); }.metricCell { border-bottom: 1px solid var(--line); }
+  .metricStrip { grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); }.metricCell { border-bottom: 1px solid var(--line); }
   .tableHeader, .projectListHead { display: none; }
   .tableBody { max-height: none; }
   .tableRow, .projectRow { grid-template-columns: minmax(0, 1fr) auto; height: auto; min-height: 68px; }
@@ -314,6 +332,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .editorFields, .formGrid { grid-template-columns: 1fr; }.editorFields .field:first-child { grid-column: 1; }
   .generationSummary { grid-template-columns: 110px minmax(0, 1fr); }.generationSummary .mediaPreview { width: 110px; height: 155px; }
   .modalBackdrop { padding: 8px; }.modal { max-height: calc(100vh - 16px); }
+  .sheetBackdrop { padding: 0; }.sheet { max-height: 82vh; }
   .deliveryReviewBody, .deliveryExportBody { grid-template-columns: 1fr; }
   .deliveryExportBody .buttonColumn { width: 100%; }
 }

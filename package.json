@@ -94,6 +94,7 @@
     "test": "npm run typecheck && npm run build && npm run test:selection-gate && npm run test:foundation-boundaries && npm run test:s3b:t2:is2.5 && npm run test:s3b:t2:is3 && npm run test:provider-boundaries && npm run test:db && npm run test:v2 && npm run test:v2:ui && npm run test:h1 && npm run test:webgpt:legacy-boundaries && npm run test:webgpt:v4 && npm run test:webgpt:cloud && npm run test:webgpt:app && npm run test:webgpt:director && npm run test:webgpt:workspace && npm run test:webgpt:media-gateway && npm run smoke:webgpt:app && npm run smoke:webgpt:media && npm run test:memory && npm run test:source-audit && npm run test:legacy && npm run test:windows-runtime && npm run test:v2:browser && npm run secret:scan"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@playwright/test": "^1.61.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

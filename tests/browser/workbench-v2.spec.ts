@@ -1,4 +1,36 @@
-import { expect, test } from "@playwright/test";
+import { AxeBuilder } from "@axe-core/playwright";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+
+const wcag22AaTags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"];
+
+async function expectNoWcagViolations(page: Page, context: string): Promise<void> {
+  const results = await new AxeBuilder({ page }).withTags(wcag22AaTags).analyze();
+  const summary = results.violations.map((violation) => ({
+    id: violation.id,
+    impact: violation.impact,
+    targets: violation.nodes.map((node) => node.target.join(" "))
+  }));
+  expect(summary, `${context} 存在 WCAG 2.2 A/AA 自动化违规`).toEqual([]);
+}
+
+async function firstActiveProjectId(request: APIRequestContext): Promise<string> {
+  const response = await request.get("/api/v2/projects?limit=100&lifecycle=active&classification=all&query=Playwright%20Production%20Fixture");
+  expect(response.ok()).toBeTruthy();
+  const payload = await response.json() as { data: Array<{ project: { project_id: string; title: string } }> };
+  const project = payload.data.find((item) => item.project.title === "Playwright Production Fixture")?.project;
+  expect(project, "缺少 Playwright Production Fixture").toBeTruthy();
+  return project!.project_id;
+}
+
+async function expectMainPageReady(page: Page, label: string): Promise<void> {
+  if (label === "指挥台") await expect(page.getByRole("region", { name: "生产指标" })).toBeVisible();
+  else if (label === "项目") await expect(page.locator('section[class*="_projectList_"]')).toBeVisible();
+  else if (label === "收件箱" || label === "资产库") await expect(page.locator('[class*="_masterDetail_"]')).toBeVisible();
+  else if (label === "Director") await expect(page.getByRole("region", { name: "Director 边界状态" })).toBeVisible();
+  else if (label === "系统") await expect(page.getByRole("heading", { name: "单 SHOT 单次提交" })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+}
 
 test("素材隔离的可见项选择和筛选往返不会跳顶", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
@@ -59,6 +91,127 @@ test("六区导航可达且 URL 可恢复", async ({ page }) => {
   }
 });
 
+for (const [label, path, heading] of [
+  ["指挥台", "/v2/dashboard", "指挥台"],
+  ["项目", "/v2/projects", "项目"],
+  ["收件箱", "/v2/inbox/pending", "收件箱"],
+  ["Director", "/v2/director", "Director 审批台"],
+  ["资产库", "/v2/assets/media", "资产库"],
+  ["系统", "/v2/system/runninghub", "系统"]
+] as const) {
+  test(`${label}活动页通过 WCAG 2.2 A/AA 自动扫描`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(path);
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+    await expectMainPageReady(page, label);
+    await expectNoWcagViolations(page, label);
+  });
+}
+
+test("移动端五入口和 More sheet 的焦点圈定可用", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/v2/dashboard");
+  const navigation = page.getByRole("navigation", { name: "移动端主导航" });
+  await expect(navigation.locator("a,button")).toHaveCount(5);
+  for (const name of ["指挥台", "项目", "收件箱", "Director"]) await expect(navigation.getByRole("link", { name, exact: true })).toBeVisible();
+  const more = navigation.getByRole("button", { name: "更多" });
+  await more.click();
+  const sheet = page.getByRole("dialog", { name: "更多" });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole("link", { name: /资产库/ })).toBeVisible();
+  await expect(sheet.getByRole("link", { name: /系统/ })).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "关闭" })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(sheet.getByRole("link", { name: /系统/ })).toBeFocused();
+  await expectNoWcagViolations(page, "移动端 More sheet");
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
+  await expect(more).toBeFocused();
+});
+
+test("项目选择器长列表保持活动选项可见且 ARIA 结构有效", async ({ page }) => {
+  await page.route("**/api/v2/projects?scope=daily**", async (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      ok: true,
+      data: Array.from({ length: 20 }, (_, index) => ({ project: { project_id: `picker_project_${index}`, title: `选择器项目 ${index + 1}` } })),
+      meta: { limit: 20, offset: 0, total: 20, has_more: false }
+    })
+  }));
+  await page.setViewportSize({ width: 820, height: 900 });
+  await page.goto("/v2/assets/media");
+  await expect(page.locator('[class*="_masterDetail_"]')).toBeVisible();
+  const picker = page.getByRole("combobox", { name: "搜索项目名称或 ID" });
+  await picker.focus();
+  const listbox = page.getByRole("listbox", { name: "项目搜索结果" });
+  await expect(listbox.getByRole("option")).toHaveCount(20);
+  await picker.press("End");
+  const activeId = await picker.getAttribute("aria-activedescendant");
+  expect(activeId).toBeTruthy();
+  const activeOption = page.locator(`#${activeId}`);
+  await expect(activeOption).toBeVisible();
+  const bounds = await Promise.all([listbox.boundingBox(), activeOption.boundingBox()]);
+  expect(bounds[0]).toBeTruthy();
+  expect(bounds[1]).toBeTruthy();
+  expect(bounds[1]!.y).toBeGreaterThanOrEqual(bounds[0]!.y);
+  expect(bounds[1]!.y + bounds[1]!.height).toBeLessThanOrEqual(bounds[0]!.y + bounds[0]!.height + 1);
+  await expectNoWcagViolations(page, "项目选择器长列表");
+  await picker.press("Tab");
+  await expect(listbox).toBeHidden();
+});
+
+test("五个项目页签使用真实 Workspace 投影并通过 WCAG 2.2 A/AA 自动扫描", async ({ page, request }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const projectId = await firstActiveProjectId(request);
+  for (const workspace of ["overview", "storyboard", "generation", "review", "delivery"] as const) {
+    const response = await request.get(`/api/v2/projects/${encodeURIComponent(projectId)}/${workspace}`);
+    expect(response.ok()).toBeTruthy();
+    const payload = await response.json() as { data: { workspace: string; delivery?: { workflow_state?: string } } };
+    expect(payload.data.workspace).toBe(workspace);
+    await page.goto(`/v2/projects/${encodeURIComponent(projectId)}/${workspace}`);
+    await expect(page.locator("#project-workspace-panel")).toBeVisible();
+    await expect(page.getByRole("tablist", { name: "项目工作区" }).getByRole("tab", { selected: true })).toBeVisible();
+    if (workspace === "delivery" && payload.data.delivery?.workflow_state) {
+      await expect(page.getByText(payload.data.delivery.workflow_state, { exact: true })).toBeVisible();
+    }
+    await expectNoWcagViolations(page, `项目页签 ${workspace}`);
+  }
+});
+
+test("活动确认框和错误状态通过 WCAG 2.2 A/AA 自动扫描", async ({ page, request }) => {
+  await page.setViewportSize({ width: 1166, height: 820 });
+  await page.goto("/v2/projects");
+  const createTrigger = page.getByRole("button", { name: "新建项目" });
+  await createTrigger.click();
+  const createDialog = page.getByRole("dialog", { name: "创建项目" });
+  await expect(createDialog.getByLabel("项目名称", { exact: true })).toBeFocused();
+  await expectNoWcagViolations(page, "创建项目确认框");
+  await page.keyboard.press("Escape");
+  await expect(createDialog).toBeHidden();
+  await expect(createTrigger).toBeFocused();
+
+  const projectId = await firstActiveProjectId(request);
+  await page.goto(`/v2/projects/${encodeURIComponent(projectId)}/overview`);
+  const nextActionTrigger = page.getByRole("button", { name: "指定下一步动作" });
+  await nextActionTrigger.click();
+  const nextActionDialog = page.getByRole("dialog", { name: "指定下一步动作" });
+  await expect(nextActionDialog.getByLabel("下一步动作", { exact: true })).toBeFocused();
+  await expectNoWcagViolations(page, "下一步动作确认框");
+  await page.keyboard.press("Escape");
+  await expect(nextActionDialog).toBeHidden();
+  await expect(nextActionTrigger).toBeFocused();
+
+  await page.route("**/api/v2/dashboard", async (route) => route.fulfill({
+    status: 503,
+    contentType: "application/json",
+    body: JSON.stringify({ ok: false, error: { code: "BROWSER_ACCESSIBILITY_ERROR", message: "受控错误状态" } })
+  }));
+  await page.goto("/v2/dashboard");
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expectNoWcagViolations(page, "受控错误状态");
+});
+
 test("低高度 Director 审批台可滚动到完整提议区", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 620 });
   await page.goto("/v2/director");
@@ -71,6 +224,20 @@ test("低高度 Director 审批台可滚动到完整提议区", async ({ page })
   await proposalTitle.scrollIntoViewIfNeeded();
   await expect(proposalTitle).toBeVisible();
   await expect(page.getByText("还没有 Director 提议", { exact: true })).toBeVisible();
+});
+
+test("1166px Director 使用流动详情且证据位于详情内部", async ({ page }) => {
+  await page.setViewportSize({ width: 1166, height: 760 });
+  await page.goto("/v2/director");
+  const focusPanel = page.locator('[class*="_directorFocusPanel_"]');
+  await expect(focusPanel).toBeVisible();
+  await expect(focusPanel.locator('[class*="_objectDetail_"] [class*="_evidencePanel_"]')).toBeVisible();
+  const metrics = page.locator('[class*="_metricStrip_"] [class*="_metricCell_"] strong');
+  for (let index = 0; index < await metrics.count(); index += 1) {
+    expect(await metrics.nth(index).evaluate((element) => getComputedStyle(element).whiteSpace)).toBe("nowrap");
+  }
+  const bodyMetrics = await page.evaluate(() => ({ clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
+  expect(bodyMetrics.scrollWidth).toBe(bodyMetrics.clientWidth);
 });
 
 test("项目分类平铺、创建分类必选并保留全部生命周期筛选", async ({ page }) => {
@@ -146,16 +313,13 @@ test("Legacy 页面和 API 已退出活动路径", async ({ page, request }) => 
 
 for (const viewport of [
   { width: 1920, height: 911 },
-  { width: 1536, height: 864 },
-  { width: 1280, height: 720 }
+  { width: 1166, height: 800 },
+  { width: 820, height: 900 },
+  { width: 390, height: 844 }
 ]) {
-  test(`${viewport.width}x${viewport.height} 分镜三栏无重叠和页面横向滚动`, async ({ page, request }) => {
+  test(`${viewport.width}x${viewport.height} 分镜布局无重叠和页面横向滚动`, async ({ page, request }) => {
     await page.setViewportSize(viewport);
-    const response = await request.get("/api/v2/projects?limit=1&lifecycle=active");
-    expect(response.ok()).toBeTruthy();
-    const payload = await response.json() as { data: Array<{ project: { project_id: string } }> };
-    const projectId = payload.data[0]?.project.project_id;
-    expect(projectId).toBeTruthy();
+    const projectId = await firstActiveProjectId(request);
     await page.goto(`/v2/projects/${encodeURIComponent(projectId)}/storyboard`);
     await expect(page.locator('[class*="_threePane_"]')).toBeVisible({ timeout: 15_000 });
 
@@ -168,9 +332,18 @@ for (const viewport of [
       page.locator('[class*="_threePane_"] > [class*="_evidencePane_"]').boundingBox()
     ]);
     expect(panes.every(Boolean)).toBeTruthy();
-    const [queue, detail, evidence] = panes as Array<NonNullable<(typeof panes)[number]>>;
-    expect(queue.x + queue.width).toBeLessThanOrEqual(detail.x + 1);
-    expect(detail.x + detail.width).toBeLessThanOrEqual(evidence.x + 1);
-    expect(evidence.x + evidence.width).toBeLessThanOrEqual(viewport.width + 1);
+    const rectangles = panes as Array<NonNullable<(typeof panes)[number]>>;
+    for (const rectangle of rectangles) {
+      expect(rectangle.x).toBeGreaterThanOrEqual(0);
+      expect(rectangle.x + rectangle.width).toBeLessThanOrEqual(viewport.width + 1);
+      expect(rectangle.height).toBeGreaterThan(0);
+    }
+    for (let left = 0; left < rectangles.length; left += 1) for (let right = left + 1; right < rectangles.length; right += 1) {
+      const a = rectangles[left];
+      const b = rectangles[right];
+      const overlapWidth = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x));
+      const overlapHeight = Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+      expect(overlapWidth * overlapHeight).toBeLessThanOrEqual(1);
+    }
   });
 }
