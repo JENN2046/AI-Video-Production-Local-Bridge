@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { isAbsolute, relative, resolve } from "node:path";
 
+import { paths } from "../paths.js";
 import {
   consumeDirectorGrantReservation,
   loadDirectorGrantAuthorization,
@@ -32,6 +33,8 @@ import {
 } from "./mediaArtifacts.js";
 import { providerError, resolveRunningHubComparableBalance, selectM1ProviderPort, type ProviderToolError } from "./provider.js";
 import { buildProviderCapabilityKey, buildProviderPriceCacheKey, providerCapabilityErrorMessage } from "./providerCapabilities.js";
+import { parseAssemblyResolution } from "./assembly.js";
+import { validateMp4File } from "./mediaValidity.js";
 import { downloadProviderOutputToArtifact } from "./providerOutputDownloader.js";
 import { getProject, getShot, listProjectShots, saveProject, saveShot, type Project, type ProjectStatus, type Shot, type ShotStatus } from "./projects.js";
 import { parseGenerationPlan, planMatchesFacts, revalidateGenerationPlanMedia } from "./s3bT2AdmissionPlan.js";
@@ -162,6 +165,7 @@ export interface WorkbenchGenerationDependencies {
   poll_interval_ms?: number;
   timeout_ms?: number;
   sqlite_path?: string;
+  provider_output_storage_directory?: string;
 }
 
 export type GenerationJobState = "queued" | "submitting" | "polling" | "downloading" | "finalizing" | "manual_reconciliation" | "succeeded" | "failed" | "cancelled";
@@ -2294,18 +2298,26 @@ function quarantineUntrustedDownloadedArtifact(
 function providerOutputActivationBindingError(
   activationInput: ActivateLocalMediaArtifactInput,
   intent: WorkbenchGenerationIntent,
-  providerOutputIdentity: string
+  providerOutputIdentity: string,
+  expectedStorageDirectory: string
 ): ProviderToolError | null {
   const artifact = activationInput.artifact;
   const expectedArtifactId = `artifact_${createHash("sha256")
     .update(`${intent.provider}\0${providerOutputIdentity}`)
     .digest("hex")}`;
-  const mediaRoot = activationInput.media_root ? resolve(activationInput.media_root) : "";
+  const mediaRoot = expectedStorageDirectory.trim() ? resolve(expectedStorageDirectory) : "";
+  const suppliedMediaRoot = activationInput.media_root ? resolve(activationInput.media_root) : "";
   const artifactPath = resolve(artifact.storage.uri);
   const sourcePath = resolve(activationInput.source_path);
   const artifactRelative = mediaRoot ? relative(mediaRoot, artifactPath) : "..";
   const sourceRelative = mediaRoot ? relative(mediaRoot, sourcePath) : "..";
   const insideMediaRoot = (value: string): boolean => value === "" || (!value.startsWith("..") && !isAbsolute(value));
+  const expectedResolution = parseAssemblyResolution(
+    intent.input_snapshot.project_resolution ?? "",
+    intent.input_snapshot.aspect_ratio
+  );
+  const probed = validateMp4File(sourcePath);
+  const durationToleranceSeconds = Math.max(0.25, intent.duration_seconds * 0.02);
   if (artifact.artifact_id !== expectedArtifactId
     || artifact.blob_id !== ""
     || artifact.artifact_type !== "video"
@@ -2319,7 +2331,18 @@ function providerOutputActivationBindingError(
     || artifact.storage.filename !== `${expectedArtifactId}.mp4`
     || !artifact.storage.mime_type.toLowerCase().startsWith("video/")
     || artifact.metadata.aspect_ratio !== intent.input_snapshot.aspect_ratio
+    || !expectedResolution
+    || artifact.metadata.width !== expectedResolution.width
+    || artifact.metadata.height !== expectedResolution.height
+    || probed.status !== "PASS"
+    || probed.width !== expectedResolution.width
+    || probed.height !== expectedResolution.height
+    || probed.duration_seconds === null
+    || Math.abs(probed.duration_seconds - intent.duration_seconds) > durationToleranceSeconds
+    || artifact.metadata.duration_seconds === null
+    || Math.abs(artifact.metadata.duration_seconds - probed.duration_seconds) > durationToleranceSeconds
     || !mediaRoot
+    || suppliedMediaRoot !== mediaRoot
     || artifactPath !== resolve(mediaRoot, `${expectedArtifactId}.mp4`)
     || !insideMediaRoot(artifactRelative)
     || !insideMediaRoot(sourceRelative)
@@ -3276,10 +3299,14 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
           return { ok: false, error: { code: "GENERATION_EXECUTION_DATABASE_MISMATCH", message: "Provider output activation used a different database authority." } };
         }
         const providerOutputIdentity = recoveryNeedsDownload && recovery ? recovery.local_identity : taskId;
+        const providerOutputStorageDirectory = resolve(
+          dependencies.provider_output_storage_directory ?? paths.videoArtifactsRoot
+        );
         const initialBindingError = providerOutputActivationBindingError(
           activationInput,
           downloadIntent,
-          providerOutputIdentity
+          providerOutputIdentity,
+          providerOutputStorageDirectory
         );
         if (initialBindingError) return { ok: false, error: initialBindingError };
         db.exec("BEGIN IMMEDIATE");
@@ -3288,7 +3315,8 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
             const bindingError = providerOutputActivationBindingError(
               activationInput,
               downloadIntent,
-              providerOutputIdentity
+              providerOutputIdentity,
+              providerOutputStorageDirectory
             );
             if (bindingError) throw new Error(bindingError.code);
             assertJobLease(db, downloadJob.job_id, leaseToken);
@@ -3404,6 +3432,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
           shot_id: downloadIntent.shot_id,
           duration_seconds: downloadIntent.duration_seconds,
           aspect_ratio: downloadIntent.input_snapshot.aspect_ratio,
+          storage_directory: resolve(dependencies.provider_output_storage_directory ?? paths.videoArtifactsRoot),
           ...(recoveryNeedsDownload && recovery
             ? { verified_blob_recovery: { invalid_artifact_id: recovery.invalid_artifact_id } }
             : {})

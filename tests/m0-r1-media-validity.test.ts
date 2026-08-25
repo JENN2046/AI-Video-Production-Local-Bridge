@@ -75,6 +75,8 @@ function assertValidMp4Artifact(artifact: MediaArtifact | null | undefined): voi
   const validity = validateMp4File(artifact.storage.uri);
   assert.equal(validity.status, "PASS", validity.error);
   assert.equal(validity.has_video_stream, true);
+  assert.equal(validity.width, artifact.metadata.width);
+  assert.equal(validity.height, artifact.metadata.height);
   assert(validity.duration_seconds !== null && validity.duration_seconds > 0);
   assert.equal(Math.abs(validity.duration_seconds - (artifact.metadata.duration_seconds ?? 0)) < 0.25, true);
 }
@@ -83,6 +85,8 @@ test("M0-R1 mock fixture mp4 is valid", () => {
   const validity = validateMp4File(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));
   assert.equal(validity.status, "PASS", validity.error);
   assert.equal(validity.has_video_stream, true);
+  assert.equal(validity.width, 1080);
+  assert.equal(validity.height, 1920);
   assert.equal(validity.duration_seconds !== null && validity.duration_seconds > 0, true);
 });
 

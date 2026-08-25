@@ -336,7 +336,7 @@ export async function downloadProviderOutputToArtifact(
 
   try {
     const ffprobe = validateMp4File(tempPath);
-    if (ffprobe.status !== "PASS") {
+    if (ffprobe.status !== "PASS" || ffprobe.width === null || ffprobe.height === null || ffprobe.duration_seconds === null) {
       return { ok: false, error: providerError("PROVIDER_OUTPUT_INVALID", ffprobe.error || "Provider output is not ffprobe-valid.") };
     }
 
@@ -381,7 +381,13 @@ export async function downloadProviderOutputToArtifact(
       role: "generated_clip",
       status: "active",
       storage: { uri: finalPath, mime_type: contentType ?? "video/mp4", filename: basename(finalPath) },
-      metadata: { width: 1080, height: 1920, duration_seconds: ffprobe.duration_seconds ?? input.duration_seconds, aspect_ratio: input.aspect_ratio, sha256: "" },
+      metadata: {
+        width: ffprobe.width,
+        height: ffprobe.height,
+        duration_seconds: ffprobe.duration_seconds,
+        aspect_ratio: input.aspect_ratio,
+        sha256: ""
+      },
       linked_objects: { project_id: input.project_id, shot_id: input.shot_id },
       source: { kind: "provider_output_file", provider: input.provider_name, provider_job_id: input.provider_job_id, sha256: "", external_url_host: fetched.finalUrl.hostname }
     };

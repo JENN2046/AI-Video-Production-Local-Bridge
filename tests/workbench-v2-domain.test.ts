@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 
 import { paths } from "../src/paths.js";
@@ -42,6 +43,30 @@ import {
 import { activateLocalMediaArtifact, persistMediaArtifact, recoverMediaActivations, registerMediaArtifact, type MediaArtifact } from "../src/tools/mediaArtifacts.js";
 import { downloadProviderOutputToArtifact } from "../src/tools/providerOutputDownloader.js";
 import type { ProviderPollOptions, VideoProviderAdapter } from "../src/tools/videoProviderAdapters.js";
+
+const FFMPEG = process.env.FFMPEG_PATH ?? "ffmpeg";
+
+function writeProviderOutputFixture(
+  targetPath: string,
+  input: { duration_seconds?: number; width?: number; height?: number } = {}
+): void {
+  const duration = input.duration_seconds ?? 6;
+  const width = input.width ?? 1080;
+  const height = input.height ?? 1920;
+  mkdirSync(dirname(resolve(targetPath)), { recursive: true });
+  const sourcePath = resolve("fixtures/video/mock_clip.mp4");
+  const sameDimensions = width === 1080 && height === 1920;
+  const args = [
+    "-hide_banner", "-loglevel", "error", "-y",
+    "-stream_loop", "-1", "-i", sourcePath,
+    "-t", String(duration), "-an"
+  ];
+  if (sameDimensions) args.push("-c:v", "copy");
+  else args.push("-vf", `scale=${width}:${height}`, "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p");
+  args.push("-movflags", "+faststart", targetPath);
+  const result = spawnSync(FFMPEG, args, { stdio: "ignore", windowsHide: true });
+  assert.equal(result.status, 0, "Provider output fixture creation should succeed");
+}
 
 function operationalFacts(overrides: Partial<ShotOperationalFacts> = {}): ShotOperationalFacts {
   const generationVersionCount = overrides.generation_version_count ?? 0;
@@ -2728,7 +2753,7 @@ test("[EEI-RUN-01] Generation Run authority is frozen before effects, after subm
       const artifactId = `artifact_${createHash("sha256").update(`runninghub\0${taskId}`).digest("hex")}`;
       const sourcePath = join(mediaRoot, "provider-source.mp4");
       mkdirSync(mediaRoot, { recursive: true });
-      writeFileSync(sourcePath, readFileSync(resolve("fixtures/video/mock_clip.mp4")));
+      writeProviderOutputFixture(sourcePath);
       persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, taskId);
       const markerNamesBefore = new Set(existsSync(paths.mediaActivationJournalRoot)
         ? readdirSync(paths.mediaActivationJournalRoot)
@@ -2786,7 +2811,8 @@ test("[EEI-RUN-01] Generation Run authority is frozen before effects, after subm
           sqlite_path: sqlitePath,
           env: prepared.env,
           adapter_factory: () => adapter,
-          download_provider_output: download
+          download_provider_output: download,
+          provider_output_storage_directory: mediaRoot
         }
       });
       newMarkerNames = existsSync(paths.mediaActivationJournalRoot)
@@ -3527,7 +3553,9 @@ test("[EEI-ACTIVATION-01] Provider Artifact finalization rollback retains its ma
   try {
     const prepared = await prepareConfirmedGeneration(sqlitePath, "Finalization rollback");
     persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, taskId);
-    const fixture = readFileSync(resolve("fixtures/video/mock_clip.mp4"));
+    const fixturePath = join(mediaRoot, "provider-source.mp4");
+    writeProviderOutputFixture(fixturePath);
+    const fixture = readFileSync(fixturePath);
     const adapter = {
       provider_name: "runninghub",
       model_name: "rhart-video-g/image-to-video",
@@ -3560,6 +3588,7 @@ test("[EEI-ACTIVATION-01] Provider Artifact finalization rollback retains its ma
         env: prepared.env,
         adapter_factory: () => adapter,
         download_provider_output: download,
+        provider_output_storage_directory: mediaRoot,
         fault_injection_after_provider_artifact_persist: () => {
           throw new Error("INJECTED_AFTER_PROVIDER_ARTIFACT_PERSIST");
         }
@@ -3651,6 +3680,8 @@ test("[EEI-DOWNLOAD-01] an injected downloader cannot claim a Provider output ou
           path: activated.artifact.storage.uri,
           ffprobe_exit_code: 0,
           has_video_stream: true,
+          width: 1080,
+          height: 1920,
           duration_seconds: 6,
           stream_count: 1,
           error: ""
@@ -3750,6 +3781,8 @@ test("[EEI-DOWNLOAD-02] archive failure keeps an untrusted output recovery-bound
           path: activated.artifact.storage.uri,
           ffprobe_exit_code: 0,
           has_video_stream: true,
+          width: 1080,
+          height: 1920,
           duration_seconds: 6,
           stream_count: 1,
           error: ""
@@ -3818,15 +3851,22 @@ test("[EEI-DOWNLOAD-02] archive failure keeps an untrusted output recovery-bound
 });
 
 test("[EEI-DOWNLOAD-03] worker activation capability rejects confused-deputy Artifact bindings", async (t) => {
-  for (const mutation of ["project", "role", "task", "path", "spec"] as const) {
+  for (const mutation of ["project", "role", "task", "path", "spec", "root", "duration", "dimensions", "metadata"] as const) {
     await t.test(mutation, async () => {
       const root = mkdtempSync(join(tmpdir(), `generation-activation-binding-${mutation}-`));
       const sqlitePath = join(root, "app.sqlite");
       const mediaRoot = join(root, "media");
       try {
-        mkdirSync(mediaRoot, { recursive: true });
-        const sourcePath = join(mediaRoot, "provider-source.mp4");
-        writeFileSync(sourcePath, readFileSync(resolve("fixtures/video/mock_clip.mp4")));
+        const suppliedMediaRoot = mutation === "root" ? join(root, "outside-media") : mediaRoot;
+        mkdirSync(suppliedMediaRoot, { recursive: true });
+        const sourcePath = join(suppliedMediaRoot, "provider-source.mp4");
+        if (mutation === "duration") {
+          writeFileSync(sourcePath, readFileSync(resolve("fixtures/video/mock_clip.mp4")));
+        } else if (mutation === "dimensions") {
+          writeProviderOutputFixture(sourcePath, { width: 720, height: 1280 });
+        } else {
+          writeProviderOutputFixture(sourcePath);
+        }
         const prepared = await prepareConfirmedGeneration(sqlitePath, `Activation binding ${mutation}`);
         const taskId = `task-activation-binding-${mutation}`;
         const artifactId = `artifact_${createHash("sha256").update(`runninghub\0${taskId}`).digest("hex")}`;
@@ -3854,7 +3894,7 @@ test("[EEI-DOWNLOAD-03] worker activation capability rejects confused-deputy Art
             role: "generated_clip",
             status: "active",
             storage: {
-              uri: join(mediaRoot, `${artifactId}.mp4`),
+              uri: join(suppliedMediaRoot, `${artifactId}.mp4`),
               mime_type: "video/mp4",
               filename: `${artifactId}.mp4`
             },
@@ -3873,7 +3913,11 @@ test("[EEI-DOWNLOAD-03] worker activation capability rejects confused-deputy Art
           if (mutation === "task") artifact.source.provider_job_id = "task_foreign";
           if (mutation === "path") artifact.storage.uri = join(mediaRoot, "unexpected-output.mp4");
           if (mutation === "spec") artifact.metadata.aspect_ratio = "16:9";
-          const activated = runtime.activate_artifact({ artifact, source_path: sourcePath, media_root: mediaRoot }, targetDb);
+          if (mutation === "metadata") {
+            artifact.metadata.width = 720;
+            artifact.metadata.height = 1280;
+          }
+          const activated = runtime.activate_artifact({ artifact, source_path: sourcePath, media_root: suppliedMediaRoot }, targetDb);
           assert.equal(activated.ok, false);
           if (!activated.ok) assert.equal(activated.error.code, "PROVIDER_OUTPUT_BINDING_INVALID");
           return activated;
@@ -3885,7 +3929,8 @@ test("[EEI-DOWNLOAD-03] worker activation capability rejects confused-deputy Art
             sqlite_path: sqlitePath,
             env: prepared.env,
             adapter_factory: () => adapter,
-            download_provider_output: download
+            download_provider_output: download,
+            provider_output_storage_directory: mediaRoot
           }
         });
         const checked = openM0Database(sqlitePath);
@@ -3918,12 +3963,13 @@ test("[EEI-AUTH-02] final activation transaction revalidates SHOT authority imme
     ? new Set(readdirSync(paths.mediaActivationJournalRoot))
     : new Set<string>();
   let newMarkerNames: string[] = [];
+  let activationErrorCode = "";
   try {
     const prepared = await prepareConfirmedGeneration(sqlitePath, "Final authority recheck");
     const artifactId = `artifact_${createHash("sha256").update(`runninghub\0${taskId}`).digest("hex")}`;
     const sourcePath = join(mediaRoot, "provider-source.mp4");
     mkdirSync(mediaRoot, { recursive: true });
-    writeFileSync(sourcePath, readFileSync(resolve("fixtures/video/mock_clip.mp4")));
+    writeProviderOutputFixture(sourcePath);
     persistKnownProviderTask(sqlitePath, prepared.intent_id, prepared.job_id, taskId);
     const adapter = {
       provider_name: "runninghub",
@@ -3970,6 +4016,7 @@ test("[EEI-AUTH-02] final activation transaction revalidates SHOT authority imme
       }, targetDb);
       assert.equal(activated.ok, false);
       if (activated.ok) throw new Error("stale authority must not activate an Artifact");
+      activationErrorCode = activated.error.code;
       return { ok: false, error: { code: activated.error.code, message: activated.error.message, retryable: false } };
     };
 
@@ -3979,7 +4026,8 @@ test("[EEI-AUTH-02] final activation transaction revalidates SHOT authority imme
         sqlite_path: sqlitePath,
         env: prepared.env,
         adapter_factory: () => adapter,
-        download_provider_output: download
+        download_provider_output: download,
+        provider_output_storage_directory: mediaRoot
       }
     });
 
@@ -3991,6 +4039,9 @@ test("[EEI-AUTH-02] final activation transaction revalidates SHOT authority imme
     const job = checked.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = ?")
       .get(prepared.job_id) as { state: string; reconciliation_reason: string };
     const receipt = getGenerationExecutionReceipt(checked, prepared.intent_id);
+    recoverMediaActivations(checked);
+    checked.close();
+    assert.equal(activationErrorCode, "GENERATION_EXECUTION_AUTHORITY_STALE");
     assert.equal(newMarkerNames.length, 1);
     assert.equal(artifact, undefined);
     assert.deepEqual({ ...job }, {
@@ -3998,8 +4049,6 @@ test("[EEI-AUTH-02] final activation transaction revalidates SHOT authority imme
       reconciliation_reason: "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
     });
     assert.equal(receipt?.state, "reconciling");
-    recoverMediaActivations(checked);
-    checked.close();
   } finally {
     for (const name of newMarkerNames) rmSync(join(paths.mediaActivationJournalRoot, name), { force: true });
     rmSync(root, { recursive: true, force: true });
@@ -4499,8 +4548,9 @@ test("human reattachment redownloads, repairs verified Blob bytes, and rebinds w
   const root = mkdtempSync(join(tmpdir(), "generation-invalid-output-recovery-"));
   const sqlitePath = join(root, "app.sqlite");
   const mediaRoot = join(root, "media");
-  const videoFixture = resolve("fixtures/video/mock_clip.mp4");
+  const videoFixture = join(mediaRoot, "provider-source.mp4");
   try {
+    writeProviderOutputFixture(videoFixture);
     const prepared = await prepareConfirmedGeneration(sqlitePath, "Reject invalid local output");
     const taskId = "task-invalid-output-recovery";
     const wallMs = Date.now();
@@ -4637,6 +4687,7 @@ test("human reattachment redownloads, repairs verified Blob bytes, and rebinds w
         adapter_factory: () => recoveryAdapter,
         now: () => new Date(wallMs),
         monotonic_now_ms: () => 10_000,
+        provider_output_storage_directory: mediaRoot,
         download_provider_output: (async (input, targetDb, runtime = {}) => {
           downloadCalls += 1;
           assert.equal(input.provider_name, "runninghub");
@@ -5915,7 +5966,7 @@ test("poll timeout remains distinct from submit rejection, unknown submit, task 
     const succeededMediaRoot = join(succeededRoot, "media");
     const succeededSourcePath = join(succeededMediaRoot, "provider-source.mp4");
     mkdirSync(succeededMediaRoot, { recursive: true });
-    writeFileSync(succeededSourcePath, readFileSync(resolve("fixtures/video/mock_clip.mp4")));
+    writeProviderOutputFixture(succeededSourcePath);
     persistKnownProviderTask(succeededPath, succeeded.intent_id, succeeded.job_id, succeededTaskId);
     let succeededPollCalls = 0;
     let succeededDownloadCalls = 0;
@@ -5970,7 +6021,8 @@ test("poll timeout remains distinct from submit rejection, unknown submit, task 
         sqlite_path: succeededPath,
         env: succeeded.env,
         adapter_factory: () => succeededAdapter,
-        download_provider_output: succeededDownload
+        download_provider_output: succeededDownload,
+        provider_output_storage_directory: succeededMediaRoot
       }
     });
     checked = openM0Database(succeededPath);

@@ -64,10 +64,14 @@ Final output activation is available only through the worker-supplied
 `activate_artifact` capability and runs inside its outer Workbench transaction.
 An injected downloader cannot independently activate an Artifact and report it
 as the worker result. The capability verifies its deterministic Artifact
-identity, storage boundary, Project, SHOT, role, type, Provider task and media
-specification both before opening the outer transaction and immediately before
-persistence. Unattested outputs remain durably recovery-bound even when an
-archive attempt fails. The worker rechecks Project, SHOT, Storyboard Package,
+identity, worker-authorized output directory, Project, SHOT, role, type and
+Provider task both before opening the outer transaction and immediately before
+persistence. It also probes the actual MP4 bytes and binds width, height,
+aspect ratio and duration (within the greater of 250 ms or 2 percent) to the
+frozen Project/Intent specification; downloader-supplied metadata is not a
+media-fact authority. Unattested outputs remain durably recovery-bound even
+when an archive attempt fails. The worker rechecks Project, SHOT, Storyboard
+Package,
 Run, receipt, lease, exact Job stage and any Director grant immediately before
 Artifact persistence. Within that worker-owned path, Artifact, Blob,
 GenerationRun, SHOT, Project, Intent, receipt, Job and Event changes share one

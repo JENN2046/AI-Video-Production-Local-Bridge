@@ -840,15 +840,17 @@ function localMediaFacts(filePath: string, artifact: MediaArtifact): LocalMediaF
     };
   }
   const validation = validateMp4File(filePath);
-  if (validation.status !== "PASS") throw new Error(validation.status === "NOT_TESTED" ? "VIDEO_PROBE_UNAVAILABLE" : "VIDEO_FILE_INVALID");
+  if (validation.status !== "PASS" || validation.width === null || validation.height === null || validation.duration_seconds === null) {
+    throw new Error(validation.status === "NOT_TESTED" ? "VIDEO_PROBE_UNAVAILABLE" : "VIDEO_FILE_INVALID");
+  }
   const detectedMime = detectMimeFromBytes(fileFacts.header);
   if (detectedMime !== "video/mp4") throw new Error("MEDIA_MIME_MISMATCH");
   return {
     sha256: fileFacts.sha256,
     size_bytes: fileFacts.size_bytes,
     detected_mime: detectedMime,
-    width: artifact.metadata.width,
-    height: artifact.metadata.height,
+    width: validation.width,
+    height: validation.height,
     duration_seconds: validation.duration_seconds,
     aspect_ratio: artifact.metadata.aspect_ratio
   };
