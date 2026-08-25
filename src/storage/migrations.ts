@@ -2614,6 +2614,16 @@ const FINAL_REVIEW_EXPORT_CLOSEOUT_SQL = `
   SELECT CASE
     WHEN EXISTS (SELECT 1 FROM workbench_exports)
       OR EXISTS (
+        SELECT 1 FROM workbench_delivery_jobs
+        WHERE job_type = 'export'
+      )
+      OR EXISTS (
+        SELECT 1 FROM workbench_delivery_events
+        WHERE event_type IN (
+          'export_queued','export_started','export_succeeded','export_failed','export_interrupted','export_reused'
+        )
+      )
+      OR EXISTS (
         SELECT 1
         FROM workbench_delivery_events
         WHERE job_id IS NULL

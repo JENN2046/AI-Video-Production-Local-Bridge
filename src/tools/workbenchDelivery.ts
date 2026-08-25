@@ -1,18 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import {
   closeSync,
   existsSync,
   fstatSync,
-  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
   readSync,
   realpathSync,
-  rmSync,
-  statSync,
-  unlinkSync,
-  writeSync
+  statSync
 } from "node:fs";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 
@@ -21,7 +18,7 @@ import { paths } from "../paths.js";
 import { withWorkbenchProductionMutationAuthority } from "../storage/productionMutationAuthority.js";
 import { openM0Database, type M0Database } from "../storage/sqlite.js";
 import { validateActiveArtifactReference, validateAcceptedClipReference } from "./mediaArtifacts.js";
-import { validateMp4File } from "./mediaValidity.js";
+import { validateMp4FileDescriptor } from "./mediaValidity.js";
 import { getProject, listProjectShots, saveProject, saveShot, type Project, type ToolError } from "./projects.js";
 import { markShotClipReview } from "./review.js";
 import {
@@ -77,6 +74,8 @@ export interface WorkbenchDeliveryDependencies {
   now?: () => Date;
   random_uuid?: () => string;
   before_export_copy?: (partPath: string) => void | Promise<void>;
+  after_export_lease?: (partPath: string) => void | Promise<void>;
+  after_export_directory_revalidation?: (partPath: string) => void | Promise<void>;
   after_export_copy?: (partPath: string) => void | Promise<void>;
   before_export_commit?: () => void | Promise<void>;
   validate_export_file?: (filePath: string) => boolean;
@@ -96,9 +95,9 @@ interface FileIdentity {
 
 interface DirectoryIdentity {
   real_path: string;
-  device: number;
-  inode: number;
-  birthtime_ms: number;
+  device: string;
+  inode: string;
+  birthtime_ns: string;
 }
 
 interface ExportDirectoryLease {
@@ -237,59 +236,24 @@ function openFileFacts(filePath: string): OpenFileFacts {
   }
 }
 
-function fileFacts(filePath: string): FileFacts {
-  const opened = openFileFacts(filePath);
-  try {
-    const { file_descriptor: _descriptor, ...facts } = opened;
-    return facts;
-  } finally {
-    closeSync(opened.file_descriptor);
-  }
-}
-
-function copyToExclusivePart(sourcePath: string, partPath: string, assertDirectoryLease: () => void): FileIdentity {
-  let sourceDescriptor: number | null = null;
-  let partDescriptor: number | null = null;
-  try {
-    sourceDescriptor = openSync(sourcePath, "r");
-    assertDirectoryLease();
-    partDescriptor = openSync(partPath, "wx");
-    assertDirectoryLease();
-    const buffer = Buffer.allocUnsafe(1024 * 1024);
-    let offset = 0;
-    while (true) {
-      const count = readSync(sourceDescriptor, buffer, 0, buffer.length, offset);
-      if (count === 0) break;
-      let written = 0;
-      while (written < count) {
-        const next = writeSync(partDescriptor, buffer, written, count - written, offset + written);
-        if (next <= 0) throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Export staging copy did not complete.");
-        written += next;
-      }
-      offset += count;
-    }
-    const identity = identityFromStat(fstatSync(partDescriptor));
-    assertDirectoryLease();
-    return identity;
-  } finally {
-    if (partDescriptor !== null) closeSync(partDescriptor);
-    if (sourceDescriptor !== null) closeSync(sourceDescriptor);
-  }
-}
-
 function validateExportFile(
   filePath: string,
   expected: Pick<WorkbenchExportSnapshot, "blob_sha256" | "size_bytes">,
   dependencies: WorkbenchDeliveryDependencies
 ): FileFacts {
-  const facts = fileFacts(filePath);
-  const mediaValid = dependencies.validate_export_file
-    ? dependencies.validate_export_file(filePath)
-    : validateMp4File(filePath).status === "PASS";
-  if (facts.sha256 !== expected.blob_sha256 || facts.size_bytes !== expected.size_bytes || !mediaValid) {
-    throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Export bytes failed SHA-256, size, or FFprobe validation.");
+  const opened = openFileFacts(filePath);
+  try {
+    const mediaValid = dependencies.validate_export_file
+      ? dependencies.validate_export_file(filePath)
+      : validateMp4FileDescriptor(opened.file_descriptor).status === "PASS";
+    if (opened.sha256 !== expected.blob_sha256 || opened.size_bytes !== expected.size_bytes || !mediaValid) {
+      throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Export bytes failed SHA-256, size, or FFprobe validation.");
+    }
+    const { file_descriptor: _descriptor, ...facts } = opened;
+    return facts;
+  } finally {
+    closeSync(opened.file_descriptor);
   }
-  return facts;
 }
 
 function deliveryError(error: unknown): WorkbenchDeliveryResult<never> {
@@ -411,15 +375,15 @@ function chooseExportRelativePath(projectId: string, artifactId: string, date: D
 
 function directoryIdentity(directoryPath: string): DirectoryIdentity {
   const link = lstatSync(directoryPath);
-  const value = statSync(directoryPath);
+  const value = statSync(directoryPath, { bigint: true });
   if (link.isSymbolicLink() || !value.isDirectory()) {
     throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Export directory identity is unsafe.");
   }
   return {
     real_path: realpathSync(directoryPath),
-    device: Number(value.dev),
-    inode: Number(value.ino),
-    birthtime_ms: Number(value.birthtimeMs)
+    device: value.dev.toString(),
+    inode: value.ino.toString(),
+    birthtime_ns: value.birthtimeNs.toString()
   };
 }
 
@@ -427,7 +391,7 @@ function sameDirectoryIdentity(left: DirectoryIdentity, right: DirectoryIdentity
   return left.real_path === right.real_path
     && left.device === right.device
     && left.inode === right.inode
-    && left.birthtime_ms === right.birthtime_ms;
+    && left.birthtime_ns === right.birthtime_ns;
 }
 
 function ensureSafeExportDirectory(projectId: string): ExportDirectoryLease {
@@ -470,6 +434,139 @@ function assertExportDirectoryLease(lease: ExportDirectoryLease): void {
     || !sameDirectoryIdentity(directoryIdentity(lease.export_root_path), lease.export_root)
     || !sameDirectoryIdentity(directoryIdentity(lease.project_directory_path), lease.project_directory)) {
     throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Export directory identity changed during execution.");
+  }
+}
+
+class NativeExportFileLease {
+  private readonly pendingLines: string[] = [];
+  private readonly waiters: Array<{ resolve: (line: string) => void; reject: (error: Error) => void }> = [];
+  private outputBuffer = "";
+  private terminalError: Error | null = null;
+  private readonly exitPromise: Promise<number | null>;
+
+  constructor(private readonly child: ChildProcessWithoutNullStreams) {
+    child.stdout.setEncoding("utf8");
+    child.stderr.resume();
+    child.stdin.on("error", () => this.failPending(new Error("EXPORT_NATIVE_HANDLE_STDIN_FAILED")));
+    child.stdout.on("data", (chunk: string) => {
+      this.outputBuffer += chunk;
+      for (;;) {
+        const newline = this.outputBuffer.indexOf("\n");
+        if (newline < 0) break;
+        const line = this.outputBuffer.slice(0, newline).replace(/\r$/, "");
+        this.outputBuffer = this.outputBuffer.slice(newline + 1);
+        const waiter = this.waiters.shift();
+        if (waiter) waiter.resolve(line);
+        else this.pendingLines.push(line);
+      }
+    });
+    this.exitPromise = new Promise((resolveExit) => {
+      child.once("close", (code) => {
+        this.failPending(new Error("EXPORT_NATIVE_HANDLE_EXITED"));
+        resolveExit(code);
+      });
+      child.once("error", () => this.failPending(new Error("EXPORT_NATIVE_HANDLE_FAILED")));
+    });
+  }
+
+  private failPending(error: Error): void {
+    this.terminalError = error;
+    for (const waiter of this.waiters.splice(0)) waiter.reject(error);
+  }
+
+  private nextLine(): Promise<string> {
+    if (this.pendingLines.length > 0) return Promise.resolve(this.pendingLines.shift()!);
+    if (this.terminalError) return Promise.reject(this.terminalError);
+    return new Promise((resolveLine, rejectLine) => {
+      const timer = setTimeout(() => rejectLine(new Error("EXPORT_NATIVE_HANDLE_TIMEOUT")), 10_000);
+      this.waiters.push({
+        resolve: (line) => { clearTimeout(timer); resolveLine(line); },
+        reject: (error) => { clearTimeout(timer); rejectLine(error); }
+      });
+    });
+  }
+
+  private async expect(expected: string): Promise<void> {
+    if (await this.nextLine() !== expected) {
+      const error = new Error("EXPORT_NATIVE_HANDLE_PROTOCOL_INVALID");
+      this.failPending(error);
+      throw error;
+    }
+  }
+
+  private send(command: string): Promise<void> {
+    if (this.terminalError || this.child.exitCode !== null || this.child.stdin.destroyed) {
+      return Promise.reject(this.terminalError ?? new Error("EXPORT_NATIVE_HANDLE_EXITED"));
+    }
+    return new Promise((resolveWrite, rejectWrite) => {
+      this.child.stdin.write(`${command}\n`, (error) => {
+        if (error) {
+          const failure = new Error("EXPORT_NATIVE_HANDLE_STDIN_FAILED");
+          this.failPending(failure);
+          rejectWrite(failure);
+        } else {
+          resolveWrite();
+        }
+      });
+    });
+  }
+
+  async copy(): Promise<void> {
+    await this.send("COPY");
+    await this.expect("COPIED");
+  }
+
+  async release(preserveFinal: boolean): Promise<void> {
+    await this.send(preserveFinal ? "PRESERVE" : "ABORT");
+    this.child.stdin.end();
+    await this.expect(preserveFinal ? "PRESERVED" : "ABORTED");
+    if (await this.exitPromise !== 0) throw new Error("EXPORT_NATIVE_HANDLE_RELEASE_FAILED");
+  }
+
+  terminate(): void {
+    this.child.stdin.end();
+    if (this.child.exitCode === null) this.child.kill();
+  }
+
+  static async acquire(
+    directoryLease: ExportDirectoryLease,
+    partPath: string,
+    finalPath: string,
+    sourcePath: string
+  ): Promise<NativeExportFileLease> {
+    if (process.platform !== "win32") {
+      throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Native export handle governance requires the Windows Runtime.");
+    }
+    const helperPath = resolve(paths.workspaceRoot, "scripts", "hold-export-files.ps1");
+    if (!existsSync(helperPath)) {
+      throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Native export handle helper is unavailable.");
+    }
+    const child = spawn("powershell.exe", [
+      "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", helperPath
+    ], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    const lease = new NativeExportFileLease(child);
+    try {
+      child.stdin.write([
+        directoryLease.data_root_path,
+        directoryLease.data_root.device,
+        directoryLease.data_root.inode,
+        directoryLease.export_root_path,
+        directoryLease.export_root.device,
+        directoryLease.export_root.inode,
+        directoryLease.project_directory_path,
+        directoryLease.project_directory.device,
+        directoryLease.project_directory.inode,
+        partPath,
+        finalPath,
+        sourcePath
+      ].join("\n") + "\n");
+      await lease.expect("LEASED");
+      assertExportDirectoryLease(directoryLease);
+      return lease;
+    } catch {
+      lease.terminate();
+      throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Native export handle governance failed closed.");
+    }
   }
 }
 
@@ -1070,20 +1167,6 @@ function exportSnapshotFromJob(job: DeliveryJobRow): WorkbenchExportSnapshot {
   }
 }
 
-function cleanupRegularFile(filePath: string, parent: string, expectedIdentity: FileIdentity): boolean {
-  try {
-    if (!existsSync(filePath)) return true;
-    if (!isPathInside(filePath, parent) || hasExistingSymlinkAncestor(filePath, parent)
-      || lstatSync(filePath).isSymbolicLink() || !statSync(filePath).isFile()) return false;
-    const currentIdentity = inspectExportFileIdentity(filePath);
-    if (!sameFileIdentity(currentIdentity, expectedIdentity)) return false;
-    rmSync(filePath, { force: true });
-    return !existsSync(filePath);
-  } catch {
-    return false;
-  }
-}
-
 export function inspectInterruptedWorkbenchExportEvidence(
   job: Pick<DeliveryJobRow, "project_id" | "input_json" | "input_fingerprint">
 ): boolean {
@@ -1185,10 +1268,9 @@ export async function runWorkbenchExportJob(
   const connection = db ?? openM0Database();
   const ownsConnection = !db;
   let claimed = false;
-  let partOwnedIdentity: FileIdentity | null = null;
-  let finalOwnedIdentity: FileIdentity | null = null;
+  let nativeLease: NativeExportFileLease | null = null;
+  let finalBytesReady = false;
   let preserveRecoveryEvidence = false;
-  let retainOwnedFiles = false;
   let location: ReturnType<typeof exportFileLocation> | null = null;
   try {
     let claimOpen = false;
@@ -1264,21 +1346,23 @@ export async function runWorkbenchExportJob(
     }
     if (dependencies.before_export_copy) await dependencies.before_export_copy(location.part);
     assertExportDirectoryLease(directoryLease);
-    partOwnedIdentity = copyToExclusivePart(
-      source.artifact.storage.uri,
+    nativeLease = await NativeExportFileLease.acquire(
+      directoryLease,
       location.part,
-      () => assertExportDirectoryLease(directoryLease)
+      location.final,
+      source.artifact.storage.uri
     );
+    if (dependencies.after_export_lease) await dependencies.after_export_lease(location.part);
+    assertExportDirectoryLease(directoryLease);
+    if (dependencies.after_export_directory_revalidation) {
+      await dependencies.after_export_directory_revalidation(location.part);
+    }
+    await nativeLease.copy();
     if (dependencies.after_export_copy) await dependencies.after_export_copy(location.part);
     assertExportDirectoryLease(directoryLease);
     validateExportFile(location.part, snapshot, dependencies);
-    assertExportDirectoryLease(directoryLease);
-    linkSync(location.part, location.final);
-    assertExportDirectoryLease(directoryLease);
-    unlinkSync(location.part);
-    partOwnedIdentity = null;
-    finalOwnedIdentity = inspectExportFileIdentity(location.final);
     validateExportFile(location.final, snapshot, dependencies);
+    finalBytesReady = true;
     if (dependencies.before_export_commit) await dependencies.before_export_commit();
 
     const exportId = `export_${uuid(dependencies)}`;
@@ -1344,9 +1428,6 @@ export async function runWorkbenchExportJob(
       finalizationPhase = "before_begin";
     } catch (error) {
       if (finalizationPhase === "before_begin") {
-        if (workbenchProductionMutationError(error).code === "PRODUCTION_MUTATION_CONFLICT") {
-          retainOwnedFiles = true;
-        }
         throw error;
       }
       let rollbackConfirmed = false;
@@ -1362,13 +1443,14 @@ export async function runWorkbenchExportJob(
       }
       throw error;
     }
-    finalOwnedIdentity = null;
     const completedJob = getDeliveryJob(connection, jobId);
     const completedExport = exportRecord(connection, snapshot.project_id, exportId);
     if (!completedJob || !completedExport) {
       preserveRecoveryEvidence = true;
       throw new DeliveryFailure("EXPORT_RECOVERY_REQUIRED", "Completed export evidence requires explicit recovery.");
     }
+    await nativeLease.release(true);
+    nativeLease = null;
     return { ok: true, data: { job: publicDeliveryJob(completedJob), export: completedExport } };
   } catch (error) {
     const failure = error instanceof DeliveryFailure
@@ -1385,12 +1467,18 @@ export async function runWorkbenchExportJob(
         reportedFailure = new DeliveryFailure("EXPORT_RECOVERY_REQUIRED", "Export failure outcome requires explicit recovery.");
       }
     }
-    if (location && !preserveRecoveryEvidence && !retainOwnedFiles) {
-      if (partOwnedIdentity) cleanupRegularFile(location.part, location.directory, partOwnedIdentity);
-      if (finalOwnedIdentity) cleanupRegularFile(location.final, location.directory, finalOwnedIdentity);
+    if (nativeLease) {
+      try {
+        await nativeLease.release(finalBytesReady || preserveRecoveryEvidence);
+        nativeLease = null;
+      } catch {
+        preserveRecoveryEvidence = true;
+        reportedFailure = new DeliveryFailure("EXPORT_RECOVERY_REQUIRED", "Export file-handle outcome requires explicit recovery.");
+      }
     }
     return deliveryError(reportedFailure);
   } finally {
+    nativeLease?.terminate();
     if (ownsConnection) connection.close();
   }
 }

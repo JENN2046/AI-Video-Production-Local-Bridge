@@ -223,7 +223,7 @@ test("migration 0015 upgrades 0014 atomically with exact governed objects", asyn
     assert.equal((db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-9");
     const migration = DATABASE_MIGRATIONS.find((candidate) => candidate.id === "0015");
     assert.ok(migration);
-    assert.equal(migrationChecksum(migration), "28cfae31d34d6e121fe01b9b6d042c01ee44def3721bda4d4b37a72785f4ed93");
+    assert.equal(migrationChecksum(migration), "f0b57cea351f708cd10fceac74e2da47432061ca4864ddcb9ffecad4ed9fc0bb");
     assert.deepEqual(runDatabaseMigrations(db).applied, ["0015"]);
     assert.equal((db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-10");
     const relativePathIndex = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_workbench_exports_relative_path'")
@@ -279,8 +279,14 @@ test("migration 0015 upgrades 0014 atomically with exact governed objects", asyn
           .run(created.project.project_id);
       }
 
-      assert.throws(() => runDatabaseMigrations(poisoned), /workbench_0015_admission_guard|CHECK constraint failed/i);
-      assert.equal((poisoned.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-9");
+      let migrationFailure = "";
+      try {
+        runDatabaseMigrations(poisoned);
+      } catch (error) {
+        migrationFailure = String(error);
+      }
+      assert.match(migrationFailure, /workbench_0015_admission_guard|CHECK constraint failed/i);
+      assert.equal((poisoned.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-9", migrationFailure);
       assert.equal((poisoned.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE migration_id = '0015'").get() as { count: number }).count, 0);
       assert.equal(poisoned.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'workbench_0015_admission_guard'").get(), undefined);
       assert.equal(poisoned.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'index' AND name = 'idx_workbench_exports_relative_path'").get(), undefined);
@@ -289,6 +295,60 @@ test("migration 0015 upgrades 0014 atomically with exact governed objects", asyn
         ? (poisoned.prepare("SELECT COUNT(*) AS count FROM workbench_exports WHERE export_id = 'poisoned_export'").get() as { count: number }).count
         : (poisoned.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_events WHERE event_id = 'poisoned_closeout'").get() as { count: number }).count;
       assert.equal(poisonCount, 1);
+    } finally {
+      poisoned.close();
+    }
+  }
+
+  for (const poison of ["active_export_job", "terminal_export_job"] as const) {
+    const poisoned = new DatabaseSync(":memory:");
+    try {
+      applyMigrationsThrough(poisoned, "0012");
+      const created = createProject({
+        title: `Poisoned 0012 ${poison}`,
+        video_spec: { duration_seconds: 1, aspect_ratio: "16:9", resolution: "320x180" }
+      }, poisoned);
+      assert.equal(created.ok, true);
+      if (!created.ok) continue;
+      const jobId = `poisoned_${poison}`;
+      const eventId = `${jobId}_event`;
+      poisoned.exec("BEGIN IMMEDIATE");
+      try {
+        if (poison === "active_export_job") {
+          poisoned.prepare(`INSERT INTO workbench_delivery_jobs
+            (job_id, project_id, job_type, state, input_json)
+            VALUES (?, ?, 'export', 'queued', '{}')`).run(jobId, created.project.project_id);
+          poisoned.prepare(`INSERT INTO workbench_delivery_events
+            (event_id, project_id, event_type, job_id, reason_code, data_json)
+            VALUES (?, ?, 'export_queued', ?, 'FORGED', '{}')`).run(eventId, created.project.project_id, jobId);
+        } else {
+          poisoned.prepare(`INSERT INTO workbench_delivery_jobs
+            (job_id, project_id, job_type, state, input_json, terminal_event_id, error_code)
+            VALUES (?, ?, 'export', 'failed', '{}', ?, 'FORGED')`)
+            .run(jobId, created.project.project_id, eventId);
+          poisoned.prepare(`INSERT INTO workbench_delivery_events
+            (event_id, project_id, event_type, job_id, reason_code, data_json)
+            VALUES (?, ?, 'export_failed', ?, 'FORGED', '{}')`).run(eventId, created.project.project_id, jobId);
+        }
+        poisoned.exec("COMMIT");
+      } catch (error) {
+        poisoned.exec("ROLLBACK");
+        throw error;
+      }
+
+      let migrationFailure = "";
+      try {
+        runDatabaseMigrations(poisoned);
+      } catch (error) {
+        migrationFailure = String(error);
+      }
+      assert.match(migrationFailure, /workbench_0015_admission_guard|CHECK constraint failed/i);
+      assert.equal((poisoned.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-7", migrationFailure);
+      assert.equal((poisoned.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE migration_id IN ('0013','0014')").get() as { count: number }).count, 0);
+      assert.equal((poisoned.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE migration_id = '0015'").get() as { count: number }).count, 0);
+      assert.equal(poisoned.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'workbench_0015_admission_guard'").get(), undefined);
+      assert.equal((poisoned.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_jobs WHERE job_id = ?").get(jobId) as { count: number }).count, 1);
+      assert.equal((poisoned.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_events WHERE event_id = ?").get(eventId) as { count: number }).count, 1);
     } finally {
       poisoned.close();
     }
@@ -424,10 +484,11 @@ test("export is persistent, exclusive, idempotent, drift-aware, and leaves state
     const queued = queueWorkbenchExport({ project_id: fixture.project.project_id, artifact_id: fixture.final.artifact_id, human_confirmation: true }, db);
     assert.equal(queued.ok, true);
     if (!queued.ok || !queued.data.job) return;
+    const jobId = queued.data.job.job_id;
     assert.equal(queued.data.reused, false);
     assert.equal("input_json" in queued.data.job, false);
-    const completed = await runWorkbenchExportJob(queued.data.job.job_id, db);
-    assert.equal(completed.ok, true);
+    const completed = await runWorkbenchExportJob(jobId, db);
+    assert.equal(completed.ok, true, JSON.stringify(completed));
     if (!completed.ok) return;
     assert.match(completed.data.export.relative_path, new RegExp(`^data/exports/${fixture.project.project_id}/${fixture.project.project_id}_[0-9TZ]+_[A-Za-z0-9]{8}\\.mp4$`));
     const location = resolve(paths.exportsRoot, fixture.project.project_id, basename(completed.data.export.relative_path));
@@ -462,7 +523,7 @@ test("export is persistent, exclusive, idempotent, drift-aware, and leaves state
     assert.equal(failedQueue.ok, true);
     if (!failedQueue.ok || !failedQueue.data.job) return;
     const failed = await runWorkbenchExportJob(failedQueue.data.job.job_id, db, {
-      after_export_copy: (partPath) => writeFileSync(partPath, "tampered", "utf8")
+      validate_export_file: () => false
     });
     assert.equal(failed.ok, false);
     if (!failed.ok) assert.equal(failed.error.code, "EXPORT_INTEGRITY_FAILED");
@@ -541,17 +602,18 @@ test("export is persistent, exclusive, idempotent, drift-aware, and leaves state
     const swappedPartQueue = queueWorkbenchExport({ project_id: swappedPartFixture.project.project_id, artifact_id: swappedPartFixture.final.artifact_id, human_confirmation: true }, db);
     assert.equal(swappedPartQueue.ok, true);
     if (!swappedPartQueue.ok || !swappedPartQueue.data.job) return;
-    let swappedPart = "";
+    let partReplacementBlocked = false;
     const swappedPartResult = await runWorkbenchExportJob(swappedPartQueue.data.job.job_id, db, {
       after_export_copy: (partPath) => {
-        swappedPart = partPath;
-        unlinkSync(partPath);
-        writeFileSync(partPath, sentinel, { flag: "wx" });
+        try {
+          unlinkSync(partPath);
+        } catch {
+          partReplacementBlocked = true;
+        }
       }
     });
-    assert.equal(swappedPartResult.ok, false);
-    assert.notEqual(swappedPart, "");
-    assert.equal(readFileSync(swappedPart).equals(sentinel), true);
+    assert.equal(swappedPartResult.ok, true);
+    assert.equal(partReplacementBlocked, true);
 
     const swappedFinalFixture = await setupFinalReviewProject(db, 1);
     acceptFinal(db, swappedFinalFixture);
@@ -560,14 +622,19 @@ test("export is persistent, exclusive, idempotent, drift-aware, and leaves state
     if (!swappedFinalQueue.ok || !swappedFinalQueue.data.job) return;
     const swappedFinalInput = JSON.parse((db.prepare("SELECT input_json FROM workbench_delivery_jobs WHERE job_id = ?").get(swappedFinalQueue.data.job.job_id) as { input_json: string }).input_json) as { relative_path: string };
     const swappedFinal = resolve(paths.exportsRoot, swappedFinalFixture.project.project_id, basename(swappedFinalInput.relative_path));
+    let finalReplacementBlocked = false;
     const swappedFinalResult = await runWorkbenchExportJob(swappedFinalQueue.data.job.job_id, db, {
       before_export_commit: () => {
-        unlinkSync(swappedFinal);
-        writeFileSync(swappedFinal, sentinel, { flag: "wx" });
+        try {
+          unlinkSync(swappedFinal);
+        } catch {
+          finalReplacementBlocked = true;
+        }
       }
     });
-    assert.equal(swappedFinalResult.ok, false);
-    assert.equal(readFileSync(swappedFinal).equals(sentinel), true);
+    assert.equal(swappedFinalResult.ok, true);
+    assert.equal(finalReplacementBlocked, true);
+    assert.equal(existsSync(swappedFinal), true);
   } finally {
     db.close();
   }
@@ -623,6 +690,146 @@ test("export directory identity lease prevents a swapped project path from writi
   }
 });
 
+test("native export handles block part and final replacement", async () => {
+  const db = openM0Database();
+  try {
+    const fixture = await setupFinalReviewProject(db, 1);
+    acceptFinal(db, fixture);
+    const queued = queueWorkbenchExport({
+      project_id: fixture.project.project_id,
+      artifact_id: fixture.final.artifact_id,
+      human_confirmation: true
+    }, db);
+    assert.equal(queued.ok, true);
+    if (!queued.ok || !queued.data.job) return;
+    const jobId = queued.data.job.job_id;
+    let partReplacementBlocked = false;
+    let finalReplacementBlocked = false;
+    let finalPath = "";
+    const result = await runWorkbenchExportJob(jobId, db, {
+      after_export_copy: (partPath) => {
+        try {
+          unlinkSync(partPath);
+        } catch {
+          partReplacementBlocked = true;
+        }
+      },
+      before_export_commit: () => {
+        const input = JSON.parse((db.prepare("SELECT input_json FROM workbench_delivery_jobs WHERE job_id = ?")
+          .get(jobId) as { input_json: string }).input_json) as { relative_path: string };
+        finalPath = resolve(paths.exportsRoot, fixture.project.project_id, basename(input.relative_path));
+        try {
+          unlinkSync(finalPath);
+        } catch {
+          finalReplacementBlocked = true;
+        }
+      }
+    });
+    const jobState = (db.prepare("SELECT state FROM workbench_delivery_jobs WHERE job_id = ?")
+      .get(jobId) as { state: string }).state;
+    assert.equal(result.ok, true, JSON.stringify({
+      result,
+      job_state: jobState,
+      part_replacement_blocked: partReplacementBlocked,
+      final_replacement_blocked: finalReplacementBlocked,
+      final_exists: existsSync(finalPath),
+      part_exists: existsSync(`${finalPath}.part`)
+    }));
+    assert.equal(partReplacementBlocked, true);
+    assert.equal(finalReplacementBlocked, true);
+    assert.equal(existsSync(finalPath), true);
+    assert.equal(existsSync(`${finalPath}.part`), false);
+  } finally {
+    db.close();
+  }
+});
+
+test("native directory identities reject a normal-directory replacement before lease", async () => {
+  const db = openM0Database();
+  let originalDirectory = "";
+  let heldDirectory = "";
+  try {
+    const fixture = await setupFinalReviewProject(db, 1);
+    acceptFinal(db, fixture);
+    const queued = queueWorkbenchExport({
+      project_id: fixture.project.project_id,
+      artifact_id: fixture.final.artifact_id,
+      human_confirmation: true
+    }, db);
+    assert.equal(queued.ok, true);
+    if (!queued.ok || !queued.data.job) return;
+    const result = await runWorkbenchExportJob(queued.data.job.job_id, db, {
+      before_export_copy: (partPath) => {
+        originalDirectory = dirname(partPath);
+        heldDirectory = `${originalDirectory}.held-${randomUUID()}`;
+        renameSync(originalDirectory, heldDirectory);
+        mkdirSync(originalDirectory);
+      }
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, "EXPORT_INTEGRITY_FAILED");
+    assert.deepEqual(readdirSync(originalDirectory), []);
+    assert.deepEqual(readdirSync(heldDirectory), []);
+  } finally {
+    if (originalDirectory && heldDirectory) {
+      rmSync(originalDirectory, { recursive: true, force: true });
+      renameSync(heldDirectory, originalDirectory);
+    }
+    db.close();
+  }
+});
+
+test("native relative creation cannot follow a junction swapped after directory revalidation", async (t) => {
+  const db = openM0Database();
+  let originalDirectory = "";
+  let heldDirectory = "";
+  let outsideDirectory = "";
+  try {
+    const fixture = await setupFinalReviewProject(db, 1);
+    acceptFinal(db, fixture);
+    const queued = queueWorkbenchExport({
+      project_id: fixture.project.project_id,
+      artifact_id: fixture.final.artifact_id,
+      human_confirmation: true
+    }, db);
+    assert.equal(queued.ok, true);
+    if (!queued.ok || !queued.data.job) return;
+    const result = await runWorkbenchExportJob(queued.data.job.job_id, db, {
+      after_export_directory_revalidation: (partPath) => {
+        originalDirectory = dirname(partPath);
+        heldDirectory = `${originalDirectory}.held-${randomUUID()}`;
+        outsideDirectory = resolve(paths.mediaRoot, ".delivery-actions-test-inputs", `outside-${randomUUID()}`);
+        mkdirSync(outsideDirectory, { recursive: true });
+        renameSync(originalDirectory, heldDirectory);
+        try {
+          symlinkSync(outsideDirectory, originalDirectory, process.platform === "win32" ? "junction" : "dir");
+        } catch (error) {
+          renameSync(heldDirectory, originalDirectory);
+          heldDirectory = "";
+          t.skip(`directory link unavailable on this platform: ${error instanceof Error ? error.message : "unknown"}`);
+        }
+      }
+    });
+    if (heldDirectory) {
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.error.code, "EXPORT_INTEGRITY_FAILED");
+      assert.deepEqual(readdirSync(outsideDirectory), []);
+      assert.deepEqual(readdirSync(heldDirectory), []);
+      const job = db.prepare("SELECT state, error_code FROM workbench_delivery_jobs WHERE job_id = ?")
+        .get(queued.data.job.job_id) as { state: string; error_code: string };
+      assert.equal(job.state, "failed");
+      assert.equal(job.error_code, "EXPORT_INTEGRITY_FAILED");
+    }
+  } finally {
+    if (originalDirectory && heldDirectory) {
+      rmSync(originalDirectory, { recursive: true, force: true });
+      renameSync(heldDirectory, originalDirectory);
+    }
+    if (outsideDirectory) rmSync(outsideDirectory, { recursive: true, force: true });
+    db.close();
+  }
+});
+
 test("export finalization busy and failure terminalization reconcile the durable Job", async () => {
   const db = openM0Database();
   try {
@@ -657,7 +864,7 @@ test("export finalization busy and failure terminalization reconcile the durable
     assert.equal(beginRetryQueue.ok, true);
     if (!beginRetryQueue.ok || !beginRetryQueue.data.job) return;
     const beginRetryResult = await runWorkbenchExportJob(beginRetryQueue.data.job.job_id, beginImmediateBusyOnce(db, 2), {
-      after_export_copy: (partPath) => writeFileSync(partPath, "tampered", "utf8")
+      validate_export_file: () => false
     });
     assert.equal(beginRetryResult.ok, false);
     if (!beginRetryResult.ok) assert.equal(beginRetryResult.error.code, "EXPORT_INTEGRITY_FAILED");
@@ -674,7 +881,7 @@ test("export finalization busy and failure terminalization reconcile the durable
     assert.equal(commitQueue.ok, true);
     if (!commitQueue.ok || !commitQueue.data.job) return;
     const commitResult = await runWorkbenchExportJob(commitQueue.data.job.job_id, commitAcknowledgementLost(db, 2), {
-      after_export_copy: (partPath) => writeFileSync(partPath, "tampered", "utf8")
+      validate_export_file: () => false
     });
     assert.equal(commitResult.ok, false);
     if (!commitResult.ok) assert.equal(commitResult.error.code, "EXPORT_INTEGRITY_FAILED");

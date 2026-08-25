@@ -1208,7 +1208,6 @@ function writeJsonReport(stem: string, runId: string, payload: unknown, latestRe
 }
 
 export function listH1Reports(): Array<{ name: string; relative_path: string; size_bytes: number; updated_at: string; is_latest_pointer: boolean }> {
-  ensureM0Directories();
   if (!existsSync(paths.reportsRoot)) return [];
   return readdirSync(paths.reportsRoot, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))

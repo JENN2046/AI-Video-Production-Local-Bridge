@@ -56,9 +56,16 @@ Review decisions, Delivery projection, and immutable Events commit in one
 transaction. Export copies into a governed `.part` path with no-overwrite,
 validates SHA-256, size, and FFprobe facts, then atomically registers the
 immutable Export receipt, terminal Job, Event, and Delivery pointer. Existing
-Export files and receipts are never overwritten or deleted by rework. Failure
-cleanup removes a `.part` only after this Job proved exclusive ownership; a
-pre-existing or concurrently created file is preserved unchanged.
+Export files and receipts are never overwritten or deleted by rework. On the
+Windows Runtime, a native helper opens the governed directory chain without
+following reparse points, matches every handle to the frozen volume/file identity,
+and creates `.part` and final names relative to the already-open Project directory
+handle. It retains exclusive file handles through digest and
+descriptor-fed FFprobe validation. Success preserves final and deletes `.part`
+by handle; failure marks only those handles for deletion. A pre-existing or
+concurrently created path is never selected for cleanup, and a junction swap
+cannot redirect relative creation outside the opened directory object. Other
+platforms fail closed before Export execution.
 
 Cold project-list and Dashboard reads do not synchronously hash every finished
 video. They project Export verification separately as `unverified`, `verified`,
@@ -113,12 +120,14 @@ unchanged. Database triggers require connection-local Production Mutation
 Authority for Final Review, Export, Event, Project projection, and Closeout
 changes. Direct SQL cannot forge those transitions or receipts.
 
-Targeted tests cover the isolated `0014 → 0015` upgrade, deterministic checksum,
+Targeted tests cover the isolated `0014 → 0015` upgrade plus poisoned real
+`0012 → current` upgrade rollback, deterministic checksum,
 required index and trigger expressions, migration failure atomicity, direct-SQL
 rejection, stale Artifact checks, selected-SHOT regeneration, old-version
 retention, Export no-overwrite, byte drift, idempotent reuse, explicit retry,
-pre-existing, raced, and identity-swapped output ownership, export-directory lease
-drift, restart interruption, busy failure reconciliation, lost commit acknowledgement
+pre-existing, raced, and identity-swapped output ownership, native relative-handle
+creation across a post-revalidation junction swap, export-directory lease drift,
+restart interruption, busy failure reconciliation, lost commit acknowledgement
 at pre-side-effect and finalization boundaries, poisoned-`0014` admission rollback,
 exact Closeout phrase,
 closed-project write rejection, cold-versus-full Export verification, Dashboard
