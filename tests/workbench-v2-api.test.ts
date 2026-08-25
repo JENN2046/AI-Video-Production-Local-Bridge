@@ -1,10 +1,58 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { createServer } from "node:http";
+import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import { handleWorkbenchV2Api } from "../src/http/workbenchV2Routes.js";
 import { openM0Database } from "../src/storage/sqlite.js";
 import type { PersonalReadonlyOperationsService } from "../src/webgpt-cloud/personalReadonlyOperations.js";
+
+test("report GET routes do not create a missing workspace data tree", () => {
+  const dataRoot = resolve(process.cwd(), `.readonly-report-manifest-${randomUUID()}`);
+  assert.equal(existsSync(dataRoot), false);
+  const script = `
+    import { createServer } from "node:http";
+    import { handleWorkbenchV2Api } from "./dist/src/http/workbenchV2Routes.js";
+    const server = createServer((request, response) => {
+      const url = new URL(request.url ?? "/", "http://127.0.0.1");
+      void handleWorkbenchV2Api(request, response, url, "readonly-report-test").then((handled) => {
+        if (!handled) { response.writeHead(404); response.end(); }
+      });
+    });
+    await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    const address = server.address();
+    const base = "http://127.0.0.1:" + address.port;
+    const list = await fetch(base + "/api/v2/system/reports");
+    const listBody = await list.json();
+    const missing = await fetch(base + "/api/v2/system/reports/missing.json");
+    const missingBody = await missing.json();
+    await new Promise((resolveClose) => server.close(resolveClose));
+    process.stdout.write(JSON.stringify({ listStatus: list.status, listBody, missingStatus: missing.status, missingBody }));
+  `;
+  const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: { ...process.env, AI_VIDEO_WORKSPACE_DATA_ROOT: dataRoot, AI_VIDEO_WORKSPACE_DB_PATH: "" },
+    windowsHide: true
+  });
+  assert.equal(child.status, 0, child.stderr);
+  const result = JSON.parse(child.stdout) as {
+    listStatus: number;
+    listBody: { ok: boolean; data: unknown[]; meta: { total: number } };
+    missingStatus: number;
+    missingBody: { ok: boolean; error: { code: string } };
+  };
+  assert.equal(result.listStatus, 200);
+  assert.equal(result.listBody.ok, true);
+  assert.deepEqual(result.listBody.data, []);
+  assert.equal(result.listBody.meta.total, 0);
+  assert.equal(result.missingStatus, 404);
+  assert.equal(result.missingBody.error.code, "REPORT_NOT_FOUND");
+  assert.equal(existsSync(dataRoot), false);
+});
 
 test("V2 API uses readonly workspace GETs, stable envelopes, pagination, nonce and archived write blocking", async (t) => {
   const nonce = "synthetic-action-nonce";

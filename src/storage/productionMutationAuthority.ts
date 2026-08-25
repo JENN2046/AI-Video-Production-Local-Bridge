@@ -13,11 +13,16 @@ export type WorkbenchProductionMutationKind =
   | "assembly_failure"
   | "assembly_interruption"
   | "assembly_finalization"
+  | "final_review_accept"
+  | "final_review_reassemble"
+  | "final_review_regenerate_shots"
   | "export_queue"
   | "export_start"
   | "export_failure"
   | "export_interruption"
-  | "export_finalization";
+  | "export_finalization"
+  | "export_reuse"
+  | "closeout";
 
 export interface WorkbenchProductionMutationCapability {
   kind: WorkbenchProductionMutationKind;

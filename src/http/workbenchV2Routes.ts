@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { createReadStream } from "node:fs";
 
-import { openM0Database } from "../storage/sqlite.js";
+import { openM0Database, openM0ReadonlyDatabase } from "../storage/sqlite.js";
 import { WorkbenchProductionMutationError, workbenchProductionMutationError } from "../tools/workbenchDeliveryState.js";
 import {
   PersonalReadonlyOperationsError,
@@ -30,6 +31,14 @@ import {
   queueWorkbenchAssembly,
   startWorkbenchAssemblyJob
 } from "../tools/assembly.js";
+import {
+  closeoutWorkbenchDelivery,
+  decideWorkbenchFinalReview,
+  queueWorkbenchExport,
+  resolveWorkbenchExportDownload,
+  startWorkbenchExportJob,
+  type WorkbenchFinalReviewDecision
+} from "../tools/workbenchDelivery.js";
 import {
   createWorkbenchProject,
   decideWorkbenchClip,
@@ -70,9 +79,9 @@ function sendOk(response: ServerResponse, data: unknown, meta?: unknown): void {
 
 function statusForError(error: WorkbenchV2Error): number {
   if (error.code.endsWith("_NOT_FOUND")) return 404;
-  if (["PROJECT_ARCHIVED", "PROJECT_CLOSED", "DELIVERY_JOB_ACTIVE", "DELIVERY_REWORK_REQUIRED", "PRODUCTION_MUTATION_CONFLICT", "PRODUCTION_MUTATION_REJECTED", "ASSEMBLY_NOT_READY", "ASSEMBLY_INPUT_CHANGED", "ASSEMBLY_RETRY_REQUIRED", "ASSEMBLY_RETRY_INVALID", "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION", "SHOT_BLOCKED", "GOVERNANCE_SNAPSHOT_STALE", "INVALID_DRAFT_TRANSITION", "ACTION_NOT_PENDING", "DIRECTOR_PROPOSAL_STALE", "DIRECTOR_PROPOSAL_NOT_PENDING", "DIRECTOR_PROPOSAL_PRINCIPAL_INACTIVE", "DIRECTOR_FOCUS_STALE", "DIRECTOR_FOCUS_TARGET_INVALID", "DIRECTOR_PRINCIPAL_SELECTION_REQUIRED"].includes(error.code)) return 409;
+  if (["PROJECT_ARCHIVED", "PROJECT_CLOSED", "DELIVERY_JOB_ACTIVE", "DELIVERY_REWORK_REQUIRED", "PRODUCTION_MUTATION_CONFLICT", "PRODUCTION_MUTATION_REJECTED", "ASSEMBLY_NOT_READY", "ASSEMBLY_INPUT_CHANGED", "ASSEMBLY_RETRY_REQUIRED", "ASSEMBLY_RETRY_INVALID", "FINAL_REVIEW_REQUIRED", "FINAL_REVIEW_ARTIFACT_STALE", "FINAL_REVIEW_STATE_INVALID", "FINAL_REWORK_SELECTION_REQUIRED", "EXPORT_RETRY_REQUIRED", "EXPORT_RETRY_INVALID", "EXPORT_INTEGRITY_FAILED", "CLOSEOUT_EXPORT_MISMATCH", "PROJECT_OPERATIONAL_DATA_INTEGRITY_VIOLATION", "SHOT_BLOCKED", "GOVERNANCE_SNAPSHOT_STALE", "INVALID_DRAFT_TRANSITION", "ACTION_NOT_PENDING", "DIRECTOR_PROPOSAL_STALE", "DIRECTOR_PROPOSAL_NOT_PENDING", "DIRECTOR_PROPOSAL_PRINCIPAL_INACTIVE", "DIRECTOR_FOCUS_STALE", "DIRECTOR_FOCUS_TARGET_INVALID", "DIRECTOR_PRINCIPAL_SELECTION_REQUIRED"].includes(error.code)) return 409;
   if (error.code === "FFMPEG_UNAVAILABLE") return 503;
-  if (["ASSEMBLY_OUTPUT_INVALID", "ASSEMBLY_FFMPEG_FAILED", "ASSEMBLY_TIMEOUT", "ASSEMBLY_RECOVERY_REQUIRED"].includes(error.code)) return 500;
+  if (["ASSEMBLY_OUTPUT_INVALID", "ASSEMBLY_FFMPEG_FAILED", "ASSEMBLY_TIMEOUT", "ASSEMBLY_RECOVERY_REQUIRED", "FINAL_REVIEW_RECOVERY_REQUIRED", "EXPORT_RECOVERY_REQUIRED", "CLOSEOUT_RECOVERY_REQUIRED"].includes(error.code)) return 500;
   if (error.code === "ACTION_NONCE_REQUIRED") return 403;
   return 400;
 }
@@ -152,6 +161,15 @@ function withDatabase<T>(operation: (db: ReturnType<typeof openM0Database>) => T
   }
 }
 
+function withReadonlyDatabase<T>(operation: (db: ReturnType<typeof openM0ReadonlyDatabase>) => T): T {
+  const db = openM0ReadonlyDatabase();
+  try {
+    return operation(db);
+  } finally {
+    db.close();
+  }
+}
+
 function hasNonce(request: IncomingMessage, actionNonce: string): boolean {
   return request.headers["x-h1-action-nonce"] === actionNonce;
 }
@@ -204,19 +222,19 @@ export async function handleWorkbenchV2Api(
   if (!url.pathname.startsWith("/api/v2/")) return false;
 
   if (request.method === "GET" && url.pathname === "/api/v2/shell") {
-    const data = withDatabase((db) => getWorkbenchShell(db));
+    const data = withReadonlyDatabase((db) => getWorkbenchShell(db));
     sendOk(response, { ...data, action_nonce: actionNonce });
     return true;
   }
   if (request.method === "GET" && url.pathname === "/api/v2/dashboard") {
-    sendOk(response, withDatabase((db) => getWorkbenchDashboard(db)));
+    sendOk(response, withReadonlyDatabase((db) => getWorkbenchDashboard(db)));
     return true;
   }
 
   const directorTowerMatch = url.pathname.match(/^\/api\/v2\/director\/projects\/([^/]+)$/);
   if (request.method === "GET" && directorTowerMatch) {
     const projectId = decodeSegment(directorTowerMatch[1]);
-    sendResult(response, withDatabase((db) => getDirectorApprovalTower(projectId, db)));
+    sendResult(response, withReadonlyDatabase((db) => getDirectorApprovalTower(projectId, db)));
     return true;
   }
   if (request.method === "POST" && url.pathname === "/api/v2/director/focus") {
@@ -301,7 +319,7 @@ export async function handleWorkbenchV2Api(
       send(response, 404, { ok: false, error: { code: "INBOX_TAB_NOT_FOUND", message: "Inbox tab was not found." } });
       return true;
     }
-    const result = withDatabase((db) => listWorkbenchInboxV21(tab as "pending" | "drafts" | "quarantine", {
+    const result = withReadonlyDatabase((db) => listWorkbenchInboxV21(tab as "pending" | "drafts" | "quarantine", {
       status: url.searchParams.get("status") ?? undefined,
       limit: numberParam(url.searchParams.get("limit")),
       offset: numberParam(url.searchParams.get("offset"))
@@ -313,7 +331,7 @@ export async function handleWorkbenchV2Api(
   if (request.method === "GET" && url.pathname === "/api/v2/projects") {
     const lifecycle = (url.searchParams.get("lifecycle") ?? "active") as WorkbenchProjectLifecycle | "all";
     const classification = (url.searchParams.get("classification") ?? "all") as WorkbenchProjectClassification | "all";
-    const result = withDatabase((db) => listWorkbenchProjects({
+    const result = withReadonlyDatabase((db) => listWorkbenchProjects({
       scope: (url.searchParams.get("scope") ?? "daily") as WorkbenchProjectScope,
       lifecycle,
       classification,
@@ -333,7 +351,7 @@ export async function handleWorkbenchV2Api(
       send(response, 404, { ok: false, error: { code: "PROJECT_WORKSPACE_NOT_FOUND", message: "Project workspace was not found." } });
       return true;
     }
-    sendResult(response, withDatabase((db) => getWorkbenchProjectWorkspace(projectId, workspace, db, { touch_last_opened: false })));
+    sendResult(response, withReadonlyDatabase((db) => getWorkbenchProjectWorkspace(projectId, workspace, db, { touch_last_opened: false })));
     return true;
   }
 
@@ -372,6 +390,71 @@ export async function handleWorkbenchV2Api(
     return true;
   }
 
+  const finalReviewMatch = url.pathname.match(/^\/api\/v2\/projects\/([^/]+)\/delivery\/final-review$/);
+  if (request.method === "POST" && finalReviewMatch) {
+    const projectId = decodeSegment(finalReviewMatch[1]);
+    await mutation(request, response, actionNonce, (body) => sendResult(response, withDatabase((db) => decideWorkbenchFinalReview({
+      project_id: projectId,
+      artifact_id: text(body.artifact_id),
+      decision: text(body.decision) as WorkbenchFinalReviewDecision,
+      shot_ids: Array.isArray(body.shot_ids) ? body.shot_ids.map(text) : undefined,
+      reason: optionalText(body.reason),
+      human_confirmation: body.human_confirmation === true
+    }, db))));
+    return true;
+  }
+
+  const exportMatch = url.pathname.match(/^\/api\/v2\/projects\/([^/]+)\/delivery\/export$/);
+  if (request.method === "POST" && exportMatch) {
+    const projectId = decodeSegment(exportMatch[1]);
+    await mutation(request, response, actionNonce, (body) => {
+      const result = withDatabase((db) => queueWorkbenchExport({
+        project_id: projectId,
+        artifact_id: text(body.artifact_id),
+        human_confirmation: body.human_confirmation === true,
+        retry_of_job_id: optionalText(body.retry_of_job_id)
+      }, db));
+      sendResult(response, result, result.ok && !result.data.reused ? 202 : 200);
+      if (result.ok && result.data.job) startWorkbenchExportJob(result.data.job.job_id);
+    });
+    return true;
+  }
+
+  const closeoutMatch = url.pathname.match(/^\/api\/v2\/projects\/([^/]+)\/delivery\/closeout$/);
+  if (request.method === "POST" && closeoutMatch) {
+    const projectId = decodeSegment(closeoutMatch[1]);
+    await mutation(request, response, actionNonce, (body) => sendResult(response, withDatabase((db) => closeoutWorkbenchDelivery({
+      project_id: projectId,
+      confirmation_phrase: text(body.confirmation_phrase)
+    }, db))));
+    return true;
+  }
+
+  const exportFileMatch = url.pathname.match(/^\/api\/v2\/projects\/([^/]+)\/delivery\/exports\/([^/]+)\/file$/);
+  if (request.method === "GET" && exportFileMatch) {
+    const projectId = decodeSegment(exportFileMatch[1]);
+    const exportId = decodeSegment(exportFileMatch[2]);
+    const result = withReadonlyDatabase((db) => resolveWorkbenchExportDownload(projectId, exportId, db));
+    if (!result.ok) {
+      send(response, statusForError(result.error), { ok: false, error: result.error });
+      return true;
+    }
+    response.writeHead(200, {
+      "content-type": "video/mp4",
+      "content-length": String(result.data.size_bytes),
+      "content-disposition": `attachment; filename="${result.data.filename}"`,
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff"
+    });
+    const stream = createReadStream(result.data.absolute_path, {
+      fd: result.data.file_descriptor,
+      autoClose: true
+    });
+    stream.on("error", () => response.destroy());
+    stream.pipe(response);
+    return true;
+  }
+
   const assetsMatch = url.pathname.match(/^\/api\/v2\/assets\/([^/]+)$/);
   if (request.method === "GET" && assetsMatch) {
     const tab = decodeSegment(assetsMatch[1]);
@@ -379,7 +462,7 @@ export async function handleWorkbenchV2Api(
       send(response, 404, { ok: false, error: { code: "ASSET_TAB_NOT_FOUND", message: "Asset tab was not found." } });
       return true;
     }
-    const result = withDatabase((db) => listWorkbenchAssets(tab as "media" | "memory" | "reference" | "recall", {
+    const result = withReadonlyDatabase((db) => listWorkbenchAssets(tab as "media" | "memory" | "reference" | "recall", {
       project_id: url.searchParams.get("project_id") ?? undefined,
       shot_id: url.searchParams.get("shot_id") ?? undefined,
       scope: (url.searchParams.get("scope") ?? "daily") as "daily" | "unassigned" | "all",
@@ -452,7 +535,7 @@ export async function handleWorkbenchV2Api(
     return true;
   }
   if (request.method === "GET" && url.pathname === "/api/v2/system/governance") {
-    sendOk(response, withDatabase((db) => getWorkbenchGovernancePreview(db)));
+    sendOk(response, withReadonlyDatabase((db) => getWorkbenchGovernancePreview(db)));
     return true;
   }
 
@@ -589,7 +672,7 @@ export async function handleWorkbenchV2Api(
 
   const generationIntentMatch = url.pathname.match(/^\/api\/v2\/generation\/intents\/([^/]+)$/);
   if (request.method === "GET" && generationIntentMatch) {
-    sendResult(response, withDatabase((db) => getWorkbenchGenerationIntent(decodeSegment(generationIntentMatch[1]), db)));
+    sendResult(response, withReadonlyDatabase((db) => getWorkbenchGenerationIntent(decodeSegment(generationIntentMatch[1]), db)));
     return true;
   }
 

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { accessSync, constants, existsSync, lstatSync, statSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -68,6 +68,89 @@ function parseDuration(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function probeMp4(input: string, displayPath: string, stdinDescriptor?: number): Mp4ValidationResult {
+  const ffprobe = findFfprobeExecutable();
+  if (!ffprobe) {
+    return {
+      status: "NOT_TESTED",
+      path: displayPath,
+      ffprobe_exit_code: null,
+      has_video_stream: false,
+      duration_seconds: null,
+      stream_count: 0,
+      error: "ffprobe is unavailable."
+    };
+  }
+
+  const result = spawnSync(
+    ffprobe,
+    ["-v", "error", "-show_entries", "format=duration", "-show_streams", "-of", "json", input],
+    {
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024 * 10,
+      windowsHide: true,
+      ...(stdinDescriptor === undefined ? {} : { stdio: [stdinDescriptor, "pipe", "pipe"] })
+    }
+  );
+  const exitCode = typeof result.status === "number" ? result.status : 1;
+  if (exitCode !== 0) {
+    return {
+      status: "FAIL",
+      path: displayPath,
+      ffprobe_exit_code: exitCode,
+      has_video_stream: false,
+      duration_seconds: null,
+      stream_count: 0,
+      error: result.stderr?.trim() || result.error?.message || "ffprobe failed."
+    };
+  }
+
+  let parsed: FfprobeOutput;
+  try {
+    parsed = JSON.parse(result.stdout) as FfprobeOutput;
+  } catch {
+    return {
+      status: "FAIL",
+      path: displayPath,
+      ffprobe_exit_code: exitCode,
+      has_video_stream: false,
+      duration_seconds: null,
+      stream_count: 0,
+      error: "ffprobe output was not valid JSON."
+    };
+  }
+
+  const streams = parsed.streams ?? [];
+  const videoStreams = streams.filter((stream) => stream.codec_type === "video");
+  const duration = parseDuration(parsed.format?.duration) ?? parseDuration(videoStreams[0]?.duration);
+  const hasVideoStream = videoStreams.length > 0;
+
+  return {
+    status: hasVideoStream && duration !== null ? "PASS" : "FAIL",
+    path: displayPath,
+    ffprobe_exit_code: exitCode,
+    has_video_stream: hasVideoStream,
+    duration_seconds: duration,
+    stream_count: streams.length,
+    error: hasVideoStream && duration !== null ? "" : "ffprobe did not report a video stream and positive duration."
+  };
+}
+
+export function validateMp4FileDescriptor(fileDescriptor: number): Mp4ValidationResult {
+  if (!Number.isInteger(fileDescriptor) || fileDescriptor < 0) {
+    return {
+      status: "FAIL",
+      path: "",
+      ffprobe_exit_code: null,
+      has_video_stream: false,
+      duration_seconds: null,
+      stream_count: 0,
+      error: "MP4 file descriptor is invalid."
+    };
+  }
+  return probeMp4("pipe:0", "", fileDescriptor);
+}
+
 export function validateMp4File(filePath: string): Mp4ValidationResult {
   if (!filePath) {
     return {
@@ -94,7 +177,10 @@ export function validateMp4File(filePath: string): Mp4ValidationResult {
   }
 
   try {
-    readFileSync(filePath);
+    accessSync(filePath, constants.R_OK);
+    if (lstatSync(filePath).isSymbolicLink() || !statSync(filePath).isFile()) {
+      throw new Error("MP4 path is not a regular file.");
+    }
   } catch (error) {
     return {
       status: "FAIL",
@@ -107,70 +193,7 @@ export function validateMp4File(filePath: string): Mp4ValidationResult {
     };
   }
 
-  const ffprobe = findFfprobeExecutable();
-  if (!ffprobe) {
-    return {
-      status: "NOT_TESTED",
-      path: filePath,
-      ffprobe_exit_code: null,
-      has_video_stream: false,
-      duration_seconds: null,
-      stream_count: 0,
-      error: "ffprobe is unavailable."
-    };
-  }
-
-  const result = spawnSync(
-    ffprobe,
-    ["-v", "error", "-show_entries", "format=duration", "-show_streams", "-of", "json", filePath],
-    {
-      encoding: "utf8",
-      maxBuffer: 1024 * 1024 * 10,
-      windowsHide: true
-    }
-  );
-  const exitCode = typeof result.status === "number" ? result.status : 1;
-  if (exitCode !== 0) {
-    return {
-      status: "FAIL",
-      path: filePath,
-      ffprobe_exit_code: exitCode,
-      has_video_stream: false,
-      duration_seconds: null,
-      stream_count: 0,
-      error: result.stderr?.trim() || result.error?.message || "ffprobe failed."
-    };
-  }
-
-  let parsed: FfprobeOutput;
-  try {
-    parsed = JSON.parse(result.stdout) as FfprobeOutput;
-  } catch {
-    return {
-      status: "FAIL",
-      path: filePath,
-      ffprobe_exit_code: exitCode,
-      has_video_stream: false,
-      duration_seconds: null,
-      stream_count: 0,
-      error: "ffprobe output was not valid JSON."
-    };
-  }
-
-  const streams = parsed.streams ?? [];
-  const videoStreams = streams.filter((stream) => stream.codec_type === "video");
-  const duration = parseDuration(parsed.format?.duration) ?? parseDuration(videoStreams[0]?.duration);
-  const hasVideoStream = videoStreams.length > 0;
-
-  return {
-    status: hasVideoStream && duration !== null ? "PASS" : "FAIL",
-    path: filePath,
-    ffprobe_exit_code: exitCode,
-    has_video_stream: hasVideoStream,
-    duration_seconds: duration,
-    stream_count: streams.length,
-    error: hasVideoStream && duration !== null ? "" : "ffprobe did not report a video stream and positive duration."
-  };
+  return probeMp4(filePath, filePath);
 }
 
 export function summarizeMp4Validations(results: Mp4ValidationResult[]): MediaValiditySummary {

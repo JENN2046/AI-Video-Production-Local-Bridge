@@ -6,6 +6,7 @@ import { ArtifactStructuredDriftError, validateAcceptedClipReference, validateAc
 import { listProjectShots, type Project, type Shot } from "../tools/projects.js";
 import { collectProjectOperationalBundle, OperationalStateIntegrityError } from "../tools/operationalStateFacts.js";
 import { requireShotWorkflowWriteAction } from "../tools/operationalWriteGates.js";
+import { getWorkbenchExportIntegrityStatus } from "../tools/workbenchDelivery.js";
 import { getWorkbenchProjectSummary, getWorkbenchProjectWorkspace } from "../tools/workbenchV2.js";
 import {
   assertWorkbenchContentMutationAllowed,
@@ -482,7 +483,7 @@ export function listProductionProjects(
     const project = parseBoundJson<Project>(row.data_json, "project_id");
     if (project.project_id !== row.project_id) dataIntegrityViolation("project_id");
     project.shot_ids = listProjectShots(db, row.project_id).map((shot) => shot.shot_id);
-    const summary = getWorkbenchProjectSummary(row.project_id, db);
+    const summary = getWorkbenchProjectSummary(row.project_id, db, { verify_export: false });
     return sanitize({ project, lifecycle: row.lifecycle, pinned: row.pinned === 1, last_opened_at: row.last_opened_at, updated_at: row.updated_at, summary }) as Record<string, unknown>;
   });
   const hasMore = offset + items.length < total;
@@ -628,6 +629,7 @@ export function getProductionDeliveryStatus(input: { project_id: string }, db: M
       ? validateActiveArtifactReference(db, { artifact_id: deliveryState.current_final_artifact_id, project_id: input.project_id, shot_id: "", role: "final_video", artifact_type: "video" })
       : null;
     const finalArtifact = finalValidated?.ok ? publicArtifact(finalValidated.artifact) : null;
+    const exportIntegrity = getWorkbenchExportIntegrityStatus(db, input.project_id, "full");
     return ok(id, {
       project_id: project.project_id,
       project_status: project.status,
@@ -638,7 +640,9 @@ export function getProductionDeliveryStatus(input: { project_id: string }, db: M
       readiness_checks: accepted.map((item) => item.check),
       final_artifact: finalArtifact,
       final_artifact_reason_code: finalValidated?.ok ? null : finalValidated ? finalValidated.error.code : "FINAL_ARTIFACT_NOT_CREATED",
-      delivered: deliveryState.workflow_state === "closed" && Boolean(finalArtifact)
+      export_verification_state: exportIntegrity.state,
+      export_verification_reason_code: exportIntegrity.reason_code,
+      delivered: deliveryState.workflow_state === "closed" && Boolean(finalArtifact) && exportIntegrity.state === "verified"
     });
   } catch (error) {
     return fail(id, domainErrorBody(error));

@@ -1,4 +1,4 @@
-import type { ApiEnvelope, GenerationIntent, PageMeta, ShellData } from "./types";
+import type { ApiEnvelope, AssemblyPreflight, DeliveryJob, GenerationIntent, PageMeta, ShellData, WorkbenchExport } from "./types";
 
 let actionNonce = "";
 
@@ -59,4 +59,42 @@ export function reconcileGeneration(jobId: string, body: {
   human_confirmation: true;
 }) {
   return apiMutation<{ job: { job_id: string; state: string }; intent: GenerationIntent }>(`/api/v2/generation/jobs/${encodeURIComponent(jobId)}/reconcile`, "POST", body);
+}
+
+export function preflightDeliveryAssembly(projectId: string) {
+  return apiMutation<AssemblyPreflight>(`/api/v2/projects/${encodeURIComponent(projectId)}/delivery/assembly/preflight`, "POST", {});
+}
+
+export function startDeliveryAssembly(projectId: string, inputFingerprint: string, retryOfJobId?: string) {
+  return apiMutation<{ job: DeliveryJob; preflight: AssemblyPreflight }>(`/api/v2/projects/${encodeURIComponent(projectId)}/delivery/assembly`, "POST", {
+    input_fingerprint: inputFingerprint,
+    human_confirmation: true,
+    ...(retryOfJobId ? { retry_of_job_id: retryOfJobId } : {})
+  });
+}
+
+export function submitFinalReview(projectId: string, body: {
+  artifact_id: string;
+  decision: "accept" | "reassemble" | "regenerate_shots";
+  shot_ids?: string[];
+  reason?: string;
+}) {
+  return apiMutation(`/api/v2/projects/${encodeURIComponent(projectId)}/delivery/final-review`, "POST", {
+    ...body,
+    human_confirmation: true
+  });
+}
+
+export function startDeliveryExport(projectId: string, artifactId: string, retryOfJobId?: string) {
+  return apiMutation<{ reused: boolean; export: WorkbenchExport | null; job: DeliveryJob | null }>(`/api/v2/projects/${encodeURIComponent(projectId)}/delivery/export`, "POST", {
+    artifact_id: artifactId,
+    human_confirmation: true,
+    ...(retryOfJobId ? { retry_of_job_id: retryOfJobId } : {})
+  });
+}
+
+export function closeoutDelivery(projectId: string, confirmationPhrase: string) {
+  return apiMutation(`/api/v2/projects/${encodeURIComponent(projectId)}/delivery/closeout`, "POST", {
+    confirmation_phrase: confirmationPhrase
+  });
 }

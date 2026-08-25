@@ -2606,6 +2606,435 @@ const DURABLE_ASSEMBLY_SQL = `
   UPDATE m0_meta SET value = 'workbench-v2-9', updated_at = CURRENT_TIMESTAMP WHERE key = 'schema_version';
 `;
 
+const FINAL_REVIEW_EXPORT_CLOSEOUT_SQL = `
+  CREATE TABLE workbench_0015_admission_guard (
+    accepted INTEGER NOT NULL CHECK (accepted = 1)
+  );
+  INSERT INTO workbench_0015_admission_guard (accepted)
+  SELECT CASE
+    WHEN EXISTS (SELECT 1 FROM workbench_exports)
+      OR EXISTS (
+        SELECT 1 FROM workbench_delivery_jobs
+        WHERE job_type = 'export'
+      )
+      OR EXISTS (
+        SELECT 1 FROM workbench_delivery_events
+        WHERE event_type IN (
+          'export_queued','export_started','export_succeeded','export_failed','export_interrupted','export_reused'
+        )
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM workbench_delivery_events
+        WHERE job_id IS NULL
+          AND event_type IN (
+            'final_review_accepted','final_review_reassemble','final_review_regenerate_shots',
+            'export_reused','closeout'
+          )
+      )
+    THEN 0
+    ELSE 1
+  END;
+  DROP TABLE workbench_0015_admission_guard;
+
+  CREATE UNIQUE INDEX idx_workbench_exports_relative_path
+    ON workbench_exports(relative_path);
+
+  DROP TRIGGER workbench_delivery_state_production_owner;
+  CREATE TRIGGER workbench_delivery_state_production_owner
+  BEFORE UPDATE ON workbench_delivery_state
+  WHEN OLD.project_id IS NOT NEW.project_id
+    OR OLD.created_at IS NOT NEW.created_at
+    OR NOT (
+      (
+        OLD.workflow_state IS NEW.workflow_state
+        AND OLD.current_final_artifact_id IS NEW.current_final_artifact_id
+        AND OLD.legacy_final_artifact_id IS NEW.legacy_final_artifact_id
+        AND OLD.assembly_input_fingerprint IS NEW.assembly_input_fingerprint
+        AND OLD.approved_artifact_id IS NEW.approved_artifact_id
+        AND OLD.latest_export_id IS NEW.latest_export_id
+        AND OLD.last_assembled_at IS NEW.last_assembled_at
+        AND OLD.latest_exported_at IS NEW.latest_exported_at
+        AND OLD.closed_at IS NEW.closed_at
+      )
+      OR (
+        OLD.workflow_state = 'ready_to_assemble'
+        AND NEW.workflow_state = 'not_ready'
+        AND NEW.assembly_input_fingerprint IS NULL
+        AND OLD.current_final_artifact_id IS NEW.current_final_artifact_id
+        AND OLD.legacy_final_artifact_id IS NEW.legacy_final_artifact_id
+        AND OLD.approved_artifact_id IS NEW.approved_artifact_id
+        AND OLD.latest_export_id IS NEW.latest_export_id
+        AND OLD.last_assembled_at IS NEW.last_assembled_at
+        AND OLD.latest_exported_at IS NEW.latest_exported_at
+        AND OLD.closed_at IS NEW.closed_at
+      )
+      OR (
+        OLD.workflow_state IN ('not_ready','revision_requested')
+        AND NEW.workflow_state = 'ready_to_assemble'
+        AND NEW.assembly_input_fingerprint IS NULL
+        AND workbench_production_mutation_authorized('readiness_refresh', OLD.project_id, OLD.project_id) = 1
+        AND OLD.current_final_artifact_id IS NEW.current_final_artifact_id
+        AND OLD.legacy_final_artifact_id IS NEW.legacy_final_artifact_id
+        AND OLD.approved_artifact_id IS NEW.approved_artifact_id
+        AND OLD.latest_export_id IS NEW.latest_export_id
+        AND OLD.last_assembled_at IS NEW.last_assembled_at
+        AND OLD.latest_exported_at IS NEW.latest_exported_at
+        AND OLD.closed_at IS NEW.closed_at
+      )
+      OR (
+        OLD.workflow_state = 'ready_to_assemble'
+        AND NEW.workflow_state = 'assembling'
+        AND length(NEW.assembly_input_fingerprint) = 64
+        AND NEW.assembly_input_fingerprint NOT GLOB '*[^0-9a-f]*'
+        AND workbench_production_mutation_authorized('assembly_queue', OLD.project_id, OLD.project_id) = 1
+        AND OLD.current_final_artifact_id IS NEW.current_final_artifact_id
+        AND OLD.legacy_final_artifact_id IS NEW.legacy_final_artifact_id
+        AND OLD.approved_artifact_id IS NEW.approved_artifact_id
+        AND OLD.latest_export_id IS NEW.latest_export_id
+        AND OLD.last_assembled_at IS NEW.last_assembled_at
+        AND OLD.latest_exported_at IS NEW.latest_exported_at
+        AND OLD.closed_at IS NEW.closed_at
+      )
+      OR (
+        OLD.workflow_state = 'assembling'
+        AND NEW.workflow_state = 'ready_to_assemble'
+        AND NEW.assembly_input_fingerprint IS NULL
+        AND (
+          workbench_production_mutation_authorized('assembly_failure', OLD.project_id, OLD.project_id) = 1
+          OR workbench_production_mutation_authorized('assembly_interruption', OLD.project_id, OLD.project_id) = 1
+        )
+        AND OLD.current_final_artifact_id IS NEW.current_final_artifact_id
+        AND OLD.legacy_final_artifact_id IS NEW.legacy_final_artifact_id
+        AND OLD.approved_artifact_id IS NEW.approved_artifact_id
+        AND OLD.latest_export_id IS NEW.latest_export_id
+        AND OLD.last_assembled_at IS NEW.last_assembled_at
+        AND OLD.latest_exported_at IS NEW.latest_exported_at
+        AND OLD.closed_at IS NEW.closed_at
+      )
+      OR (
+        OLD.workflow_state = 'assembling'
+        AND NEW.workflow_state = 'final_review'
+        AND NEW.current_final_artifact_id IS NOT NULL
+        AND NEW.assembly_input_fingerprint IS OLD.assembly_input_fingerprint
+        AND NEW.approved_artifact_id IS NULL
+        AND NEW.latest_export_id IS NULL
+        AND NEW.latest_exported_at IS NULL
+        AND NEW.last_assembled_at IS NOT NULL
+        AND workbench_production_mutation_authorized('assembly_finalization', OLD.project_id, OLD.project_id) = 1
+        AND OLD.legacy_final_artifact_id IS NEW.legacy_final_artifact_id
+        AND OLD.closed_at IS NEW.closed_at
+      )
+      OR (
+        OLD.workflow_state = 'final_review'
+        AND NEW.workflow_state = 'approved'
+        AND NEW.current_final_artifact_id IS OLD.current_final_artifact_id
+        AND NEW.approved_artifact_id IS NEW.current_final_artifact_id
+        AND NEW.assembly_input_fingerprint IS OLD.assembly_input_fingerprint
+        AND NEW.latest_export_id IS NULL
+        AND NEW.latest_exported_at IS NULL
+        AND OLD.last_assembled_at IS NEW.last_assembled_at
+        AND OLD.legacy_final_artifact_id IS NEW.legacy_final_artifact_id
+        AND OLD.closed_at IS NEW.closed_at
+        AND workbench_production_mutation_authorized('final_review_accept', OLD.project_id, OLD.project_id) = 1
+      )
+      OR (
+        OLD.workflow_state IN ('final_review','approved','exported','legacy_review_required')
+        AND NEW.workflow_state = 'ready_to_assemble'
+        AND NEW.current_final_artifact_id IS OLD.current_final_artifact_id
+        AND NEW.legacy_final_artifact_id IS NULL
+        AND NEW.assembly_input_fingerprint IS NULL
+        AND NEW.approved_artifact_id IS NULL
+        AND NEW.latest_export_id IS NULL
+        AND NEW.latest_exported_at IS NULL
+        AND OLD.last_assembled_at IS NEW.last_assembled_at
+        AND OLD.closed_at IS NEW.closed_at
+        AND workbench_production_mutation_authorized('final_review_reassemble', OLD.project_id, OLD.project_id) = 1
+      )
+      OR (
+        OLD.workflow_state IN ('final_review','approved','exported')
+        AND NEW.workflow_state = 'revision_requested'
+        AND NEW.current_final_artifact_id IS OLD.current_final_artifact_id
+        AND NEW.legacy_final_artifact_id IS OLD.legacy_final_artifact_id
+        AND NEW.assembly_input_fingerprint IS NULL
+        AND NEW.approved_artifact_id IS NULL
+        AND NEW.latest_export_id IS NULL
+        AND NEW.latest_exported_at IS NULL
+        AND OLD.last_assembled_at IS NEW.last_assembled_at
+        AND OLD.closed_at IS NEW.closed_at
+        AND workbench_production_mutation_authorized('final_review_regenerate_shots', OLD.project_id, OLD.project_id) = 1
+      )
+      OR (
+        OLD.workflow_state IN ('approved','exported')
+        AND NEW.workflow_state = 'exported'
+        AND NEW.current_final_artifact_id IS OLD.current_final_artifact_id
+        AND NEW.approved_artifact_id IS NEW.current_final_artifact_id
+        AND NEW.assembly_input_fingerprint IS OLD.assembly_input_fingerprint
+        AND NEW.latest_export_id IS NOT NULL
+        AND NEW.latest_exported_at IS NOT NULL
+        AND OLD.last_assembled_at IS NEW.last_assembled_at
+        AND OLD.legacy_final_artifact_id IS NEW.legacy_final_artifact_id
+        AND OLD.closed_at IS NEW.closed_at
+        AND (
+          workbench_production_mutation_authorized('export_finalization', OLD.project_id, OLD.project_id) = 1
+          OR workbench_production_mutation_authorized('export_reuse', OLD.project_id, OLD.project_id) = 1
+        )
+      )
+      OR (
+        OLD.workflow_state = 'exported'
+        AND NEW.workflow_state = 'closed'
+        AND NEW.current_final_artifact_id IS OLD.current_final_artifact_id
+        AND NEW.approved_artifact_id IS OLD.approved_artifact_id
+        AND NEW.legacy_final_artifact_id IS OLD.legacy_final_artifact_id
+        AND NEW.assembly_input_fingerprint IS OLD.assembly_input_fingerprint
+        AND NEW.latest_export_id IS OLD.latest_export_id
+        AND NEW.latest_exported_at IS OLD.latest_exported_at
+        AND NEW.last_assembled_at IS OLD.last_assembled_at
+        AND NEW.closed_at IS NOT NULL
+        AND workbench_production_mutation_authorized('closeout', OLD.project_id, OLD.project_id) = 1
+      )
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_PROJECTION_OWNER_REQUIRED');
+  END;
+
+  DROP TRIGGER workbench_delivery_state_legacy_marker_immutable;
+  CREATE TRIGGER workbench_delivery_state_legacy_marker_immutable
+  BEFORE UPDATE OF legacy_final_artifact_id ON workbench_delivery_state
+  WHEN OLD.legacy_final_artifact_id IS NOT NEW.legacy_final_artifact_id
+    AND NOT (
+      OLD.workflow_state = 'legacy_review_required'
+      AND NEW.workflow_state = 'ready_to_assemble'
+      AND NEW.legacy_final_artifact_id IS NULL
+      AND workbench_production_mutation_authorized('final_review_reassemble', OLD.project_id, OLD.project_id) = 1
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_LEGACY_FINAL_ARTIFACT_IMMUTABLE');
+  END;
+
+  CREATE TRIGGER workbench_delivery_state_final_projection_guard
+  BEFORE UPDATE ON workbench_delivery_state
+  WHEN (
+    NEW.workflow_state IN ('not_ready','ready_to_assemble','assembling','revision_requested')
+    AND (NEW.approved_artifact_id IS NOT NULL OR NEW.latest_export_id IS NOT NULL
+      OR NEW.latest_exported_at IS NOT NULL OR NEW.closed_at IS NOT NULL)
+  ) OR (
+    NEW.workflow_state IN ('final_review','legacy_review_required')
+    AND (NEW.current_final_artifact_id IS NULL OR NEW.approved_artifact_id IS NOT NULL
+      OR NEW.latest_export_id IS NOT NULL OR NEW.latest_exported_at IS NOT NULL OR NEW.closed_at IS NOT NULL)
+  ) OR (
+    NEW.workflow_state = 'approved'
+    AND (NEW.current_final_artifact_id IS NULL OR NEW.approved_artifact_id IS NOT NEW.current_final_artifact_id
+      OR NEW.latest_export_id IS NOT NULL OR NEW.latest_exported_at IS NOT NULL OR NEW.closed_at IS NOT NULL)
+  ) OR (
+    NEW.workflow_state IN ('exported','closed')
+    AND (
+      NEW.current_final_artifact_id IS NULL
+      OR NEW.approved_artifact_id IS NOT NEW.current_final_artifact_id
+      OR NEW.latest_export_id IS NULL
+      OR NEW.latest_exported_at IS NULL
+      OR (NEW.workflow_state = 'exported' AND NEW.closed_at IS NOT NULL)
+      OR (NEW.workflow_state = 'closed' AND NEW.closed_at IS NULL)
+      OR NOT EXISTS (
+        SELECT 1 FROM workbench_exports exported
+        WHERE exported.export_id = NEW.latest_export_id
+          AND exported.project_id = NEW.project_id
+          AND exported.artifact_id = NEW.current_final_artifact_id
+          AND exported.created_at = NEW.latest_exported_at
+      )
+    )
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_FINAL_PROJECTION_INVALID');
+  END;
+
+  CREATE TRIGGER workbench_exports_owner_insert
+  BEFORE INSERT ON workbench_exports
+  WHEN workbench_production_mutation_authorized('export_finalization', NEW.project_id, NEW.export_id) <> 1
+    OR NOT EXISTS (
+      SELECT 1 FROM workbench_delivery_state state
+      WHERE state.project_id = NEW.project_id
+        AND state.workflow_state IN ('approved','exported')
+        AND state.current_final_artifact_id = NEW.artifact_id
+        AND state.approved_artifact_id = NEW.artifact_id
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_EXPORT_OWNER_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_delivery_events_action_owner
+  BEFORE INSERT ON workbench_delivery_events
+  WHEN NEW.job_id IS NULL AND NOT (
+    (NEW.event_type = 'final_review_accepted'
+      AND workbench_production_mutation_authorized('final_review_accept', NEW.project_id, NEW.event_id) = 1)
+    OR (NEW.event_type = 'final_review_reassemble'
+      AND workbench_production_mutation_authorized('final_review_reassemble', NEW.project_id, NEW.event_id) = 1)
+    OR (NEW.event_type = 'final_review_regenerate_shots'
+      AND workbench_production_mutation_authorized('final_review_regenerate_shots', NEW.project_id, NEW.event_id) = 1)
+    OR (NEW.event_type = 'export_reused'
+      AND workbench_production_mutation_authorized('export_reuse', NEW.project_id, NEW.event_id) = 1)
+    OR (NEW.event_type = 'closeout'
+      AND workbench_production_mutation_authorized('closeout', NEW.project_id, NEW.event_id) = 1)
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_EVENT_OWNER_REQUIRED');
+  END;
+
+  CREATE TRIGGER workbench_delivery_events_final_action_guard
+  BEFORE INSERT ON workbench_delivery_events
+  WHEN NEW.job_id IS NULL AND NOT (
+    (NEW.event_type = 'final_review_accepted'
+      AND NEW.from_state = 'final_review' AND NEW.to_state = 'approved'
+      AND NEW.artifact_id IS NOT NULL AND NEW.export_id IS NULL
+      AND EXISTS (
+        SELECT 1 FROM workbench_delivery_state state
+        WHERE state.project_id = NEW.project_id AND state.workflow_state = 'approved'
+          AND state.current_final_artifact_id = NEW.artifact_id
+          AND state.approved_artifact_id = NEW.artifact_id
+      ))
+    OR (NEW.event_type = 'final_review_reassemble'
+      AND NEW.from_state IN ('final_review','approved','exported','legacy_review_required')
+      AND NEW.to_state = 'ready_to_assemble' AND NEW.artifact_id IS NOT NULL AND NEW.export_id IS NULL
+      AND EXISTS (
+        SELECT 1 FROM workbench_delivery_state state
+        WHERE state.project_id = NEW.project_id AND state.workflow_state = 'ready_to_assemble'
+          AND state.current_final_artifact_id = NEW.artifact_id
+          AND state.approved_artifact_id IS NULL AND state.latest_export_id IS NULL
+      ))
+    OR (NEW.event_type = 'final_review_regenerate_shots'
+      AND NEW.from_state IN ('final_review','approved','exported')
+      AND NEW.to_state = 'revision_requested' AND NEW.artifact_id IS NOT NULL AND NEW.export_id IS NULL
+      AND EXISTS (
+        SELECT 1 FROM workbench_delivery_state state
+        WHERE state.project_id = NEW.project_id AND state.workflow_state = 'revision_requested'
+          AND state.current_final_artifact_id = NEW.artifact_id
+          AND state.approved_artifact_id IS NULL AND state.latest_export_id IS NULL
+      ))
+    OR (NEW.event_type = 'export_reused'
+      AND NEW.from_state IN ('approved','exported') AND NEW.to_state = 'exported'
+      AND NEW.artifact_id IS NOT NULL AND NEW.export_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM workbench_delivery_state state
+        JOIN workbench_exports exported
+          ON exported.project_id = state.project_id AND exported.export_id = state.latest_export_id
+        WHERE state.project_id = NEW.project_id AND state.workflow_state = 'exported'
+          AND state.current_final_artifact_id = NEW.artifact_id
+          AND state.approved_artifact_id = NEW.artifact_id
+          AND exported.export_id = NEW.export_id AND exported.artifact_id = NEW.artifact_id
+      ))
+    OR (NEW.event_type = 'closeout'
+      AND NEW.from_state = 'exported' AND NEW.to_state = 'closed'
+      AND NEW.artifact_id IS NOT NULL AND NEW.export_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM workbench_delivery_state state
+        JOIN workbench_exports exported
+          ON exported.project_id = state.project_id AND exported.export_id = state.latest_export_id
+        WHERE state.project_id = NEW.project_id AND state.workflow_state = 'closed'
+          AND state.current_final_artifact_id = NEW.artifact_id
+          AND state.approved_artifact_id = NEW.artifact_id
+          AND exported.export_id = NEW.export_id AND exported.artifact_id = NEW.artifact_id
+      ))
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_ACTION_EVENT_INVALID');
+  END;
+
+  CREATE TRIGGER workbench_delivery_events_export_guard
+  BEFORE INSERT ON workbench_delivery_events
+  WHEN NEW.event_type IN ('export_queued','export_started','export_succeeded','export_failed','export_interrupted')
+    AND NOT EXISTS (
+      SELECT 1 FROM workbench_delivery_jobs job
+      WHERE job.job_id = NEW.job_id AND job.project_id = NEW.project_id AND job.job_type = 'export'
+        AND job.input_fingerprint IS NEW.input_fingerprint
+        AND json_extract(job.input_json, '$.artifact_id') IS NEW.artifact_id
+        AND (
+          (NEW.event_type = 'export_queued' AND job.state = 'queued'
+            AND NEW.from_state IN ('approved','exported') AND NEW.to_state = NEW.from_state AND NEW.export_id IS NULL)
+          OR (NEW.event_type = 'export_started' AND job.state = 'running'
+            AND NEW.from_state IN ('approved','exported') AND NEW.to_state = NEW.from_state AND NEW.export_id IS NULL)
+          OR (NEW.event_type = 'export_succeeded' AND job.state = 'succeeded'
+            AND job.export_id = NEW.export_id AND NEW.export_id IS NOT NULL
+            AND NEW.from_state IN ('approved','exported') AND NEW.to_state = 'exported')
+          OR (NEW.event_type = 'export_failed' AND job.state = 'failed'
+            AND NEW.from_state IN ('approved','exported') AND NEW.to_state = NEW.from_state AND NEW.export_id IS NULL)
+          OR (NEW.event_type = 'export_interrupted' AND job.state = 'interrupted'
+            AND NEW.from_state IN ('approved','exported') AND NEW.to_state = NEW.from_state AND NEW.export_id IS NULL)
+        )
+    )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_EXPORT_EVENT_INVALID');
+  END;
+
+  DROP TRIGGER workbench_projects_update_owner;
+  CREATE TRIGGER workbench_projects_update_owner
+  BEFORE UPDATE OF data_json ON projects
+  WHEN (
+    json_remove(OLD.data_json, '$.title') IS json_remove(NEW.data_json, '$.title')
+    AND workbench_production_mutation_authorized('project_title', OLD.project_id, OLD.project_id) <> 1
+    AND workbench_production_mutation_authorized('project_content', OLD.project_id, OLD.project_id) <> 1
+    AND workbench_production_mutation_authorized('assembly_finalization', OLD.project_id, OLD.project_id) <> 1
+    AND workbench_production_mutation_authorized('closeout', OLD.project_id, OLD.project_id) <> 1
+  ) OR (
+    json_remove(OLD.data_json, '$.title') IS NOT json_remove(NEW.data_json, '$.title')
+    AND workbench_production_mutation_authorized('project_content', OLD.project_id, OLD.project_id) <> 1
+    AND workbench_production_mutation_authorized('assembly_finalization', OLD.project_id, OLD.project_id) <> 1
+    AND workbench_production_mutation_authorized('closeout', OLD.project_id, OLD.project_id) <> 1
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_PRODUCTION_OWNER_REQUIRED');
+  END;
+
+  DROP TRIGGER workbench_projects_delivery_projection_guard;
+  CREATE TRIGGER workbench_projects_delivery_projection_guard
+  BEFORE UPDATE OF data_json ON projects
+  WHEN (
+    COALESCE(json_extract(OLD.data_json, '$.exports.final_video_artifact_id'), '')
+      IS NOT COALESCE(json_extract(NEW.data_json, '$.exports.final_video_artifact_id'), '')
+    OR (COALESCE(json_extract(OLD.data_json, '$.status'), '') = 'final_approved')
+      IS NOT (COALESCE(json_extract(NEW.data_json, '$.status'), '') = 'final_approved')
+  ) AND NOT (
+    (
+      workbench_production_mutation_authorized('assembly_finalization', OLD.project_id, OLD.project_id) = 1
+      AND COALESCE(json_extract(NEW.data_json, '$.status'), '') = 'video_review'
+      AND EXISTS (
+        SELECT 1 FROM media_artifacts artifact
+        WHERE artifact.artifact_id = json_extract(NEW.data_json, '$.exports.final_video_artifact_id')
+          AND artifact.project_id = OLD.project_id AND COALESCE(artifact.shot_id, '') = ''
+          AND artifact.role = 'final_video' AND artifact.artifact_type = 'video' AND artifact.status = 'active'
+      )
+    ) OR (
+      workbench_production_mutation_authorized('closeout', OLD.project_id, OLD.project_id) = 1
+      AND COALESCE(json_extract(NEW.data_json, '$.status'), '') = 'final_approved'
+      AND COALESCE(json_extract(NEW.data_json, '$.exports.final_video_artifact_id'), '')
+        IS COALESCE(json_extract(OLD.data_json, '$.exports.final_video_artifact_id'), '')
+      AND EXISTS (
+        SELECT 1 FROM workbench_delivery_state state
+        WHERE state.project_id = OLD.project_id AND state.workflow_state = 'exported'
+          AND state.current_final_artifact_id = json_extract(NEW.data_json, '$.exports.final_video_artifact_id')
+          AND state.approved_artifact_id = state.current_final_artifact_id
+      )
+    )
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'WORKBENCH_DELIVERY_PROJECTION_OWNER_REQUIRED');
+  END;
+
+  DROP TRIGGER workbench_projects_final_content_guard;
+  CREATE TRIGGER workbench_projects_final_content_guard
+  BEFORE UPDATE OF data_json ON projects
+  WHEN EXISTS (
+    SELECT 1 FROM workbench_delivery_state state
+    WHERE state.project_id = OLD.project_id
+      AND state.workflow_state IN ('final_review','approved','exported','legacy_review_required')
+  ) AND json_remove(OLD.data_json, '$.title') IS NOT json_remove(NEW.data_json, '$.title')
+    AND workbench_production_mutation_authorized('closeout', OLD.project_id, OLD.project_id) <> 1
+  BEGIN
+    SELECT RAISE(ABORT, 'DELIVERY_REWORK_REQUIRED');
+  END;
+
+  UPDATE m0_meta SET value = 'workbench-v2-10', updated_at = CURRENT_TIMESTAMP WHERE key = 'schema_version';
+`;
+
 export const DATABASE_MIGRATIONS: readonly Migration[] = [
   {
     id: "0001",
@@ -2697,6 +3126,12 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
     name: "durable_ffmpeg_assembly",
     canonical: `${DURABLE_ASSEMBLY_SQL}\nWORKER durable_ffmpeg_assembly_v1\nRECOVERY interrupt_without_resume_v1\nCONTRACT final_assembly_v1`,
     apply: (db) => db.exec(DURABLE_ASSEMBLY_SQL)
+  },
+  {
+    id: "0015",
+    name: "final_review_export_closeout",
+    canonical: `${FINAL_REVIEW_EXPORT_CLOSEOUT_SQL}\nCONTRACT final_review_export_closeout_v1\nRECOVERY export_interrupt_without_resume_v1\nRECEIPT immutable_export_and_closeout_v1`,
+    apply: (db) => db.exec(FINAL_REVIEW_EXPORT_CLOSEOUT_SQL)
   }
 ];
 
@@ -2887,6 +3322,7 @@ function expectedSchemaDefinitions(includeJobs: boolean, expectedColumns: Record
       installWorkbenchProductionMutationAuthority(reference);
       reference.exec(PRODUCTION_MUTATION_AUTHORITY_SQL);
       reference.exec(DURABLE_ASSEMBLY_SQL);
+      reference.exec(FINAL_REVIEW_EXPORT_CLOSEOUT_SQL);
     }
     const columns = new Map<string, Map<string, string>>();
     const checks = new Map<string, string[]>();
@@ -2967,7 +3403,8 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
     "idx_workbench_delivery_events_job_type",
     "idx_workbench_delivery_jobs_project",
     "idx_workbench_delivery_events_project",
-    "idx_workbench_exports_project"
+    "idx_workbench_exports_project",
+    "idx_workbench_exports_relative_path"
   ] : [...V24_EXPECTED_INDEXES];
   const expectedTriggers = includeJobs
     ? [
@@ -3005,6 +3442,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "storyboard_package_version_events_no_update",
         "storyboard_package_version_events_no_delete",
         "workbench_exports_validate_artifact",
+        "workbench_exports_owner_insert",
         "workbench_exports_no_update",
         "workbench_exports_no_delete",
         "workbench_delivery_jobs_identity_immutable",
@@ -3022,6 +3460,9 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_events_projection_guard",
         "workbench_delivery_events_production_owner",
         "workbench_delivery_events_assembly_guard",
+        "workbench_delivery_events_action_owner",
+        "workbench_delivery_events_final_action_guard",
+        "workbench_delivery_events_export_guard",
         "workbench_delivery_events_no_update",
         "workbench_delivery_events_no_delete",
         "workbench_delivery_state_no_replace",
@@ -3035,6 +3476,7 @@ function schemaObjects(db: M0Database, includeJobs: boolean): string[] {
         "workbench_delivery_state_after_project_insert",
         "workbench_delivery_state_closed_immutable",
         "workbench_delivery_state_production_owner",
+        "workbench_delivery_state_final_projection_guard",
         "workbench_delivery_state_ready_truth",
         "workbench_projects_insert_owner",
         "workbench_projects_identity_immutable",

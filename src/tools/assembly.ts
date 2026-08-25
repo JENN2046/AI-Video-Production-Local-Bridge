@@ -26,6 +26,10 @@ import {
 import { saveGenerationRun, type Confirmation, type GenerationRun } from "./generation.js";
 import { getProject, listProjectShots, type Project, type Shot, type ToolError } from "./projects.js";
 import {
+  inspectInterruptedWorkbenchExportEvidence,
+  interruptedWorkbenchExportArtifactId
+} from "./workbenchDelivery.js";
+import {
   getActiveWorkbenchDeliveryJob,
   getWorkbenchDeliveryState,
   workbenchProductionMutationError,
@@ -675,7 +679,10 @@ export async function queueWorkbenchAssembly(
   }
   if (input.retry_of_job_id) {
     const prior = getDeliveryJob(db, input.retry_of_job_id);
-    if (!prior || prior.project_id !== input.project_id || prior.job_type !== "assembly" || !["failed", "interrupted"].includes(prior.state)) {
+    if (!latestPrior || latestPrior.job_id !== input.retry_of_job_id
+      || !["failed", "interrupted"].includes(latestPrior.state)
+      || !prior || prior.project_id !== input.project_id || prior.job_type !== "assembly"
+      || !["failed", "interrupted"].includes(prior.state)) {
       return { ok: false, error: { code: "ASSEMBLY_RETRY_INVALID", message: "Assembly retry target is invalid." } };
     }
   }
@@ -697,6 +704,18 @@ export async function queueWorkbenchAssembly(
       throw new AssemblyFailure("ASSEMBLY_NOT_READY", "Project delivery state is not ready for assembly.");
     }
     const fromState = delivery.workflow_state;
+    const lockedPrior = db.prepare(`SELECT job_id, state FROM workbench_delivery_jobs
+      WHERE project_id = ? AND job_type = 'assembly'
+      ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(input.project_id) as { job_id: string; state: string } | undefined;
+    if (lockedPrior && ["failed", "interrupted"].includes(lockedPrior.state)
+      && input.retry_of_job_id !== lockedPrior.job_id) {
+      throw new AssemblyFailure("ASSEMBLY_RETRY_REQUIRED", "Explicit retry lineage is required after an interrupted or failed assembly.");
+    }
+    if (input.retry_of_job_id
+      && (!lockedPrior || lockedPrior.job_id !== input.retry_of_job_id
+        || !["failed", "interrupted"].includes(lockedPrior.state))) {
+      throw new AssemblyFailure("ASSEMBLY_RETRY_INVALID", "Assembly retry must reference the latest failed or interrupted assembly Job.");
+    }
     withWorkbenchProductionMutationAuthority(db, {
       kind: "assembly_queue", project_id: input.project_id, object_id: input.project_id
     }, () => db.prepare(`UPDATE workbench_delivery_state
@@ -1033,9 +1052,12 @@ export function interruptUnfinishedWorkbenchDeliveryJobs(
     FROM workbench_delivery_jobs WHERE state IN ('queued','running') ORDER BY created_at, job_id`)
     .all() as DeliveryJobRow[];
   if (jobs.length === 0) return { interrupted: 0, recovery_evidence_preserved: 0 };
-  const recoveryEvidence = new Map(jobs
-    .filter((job) => job.job_type === "assembly")
-    .map((job) => [job.job_id, existsSync(stagingJobDirectory(job.job_id))]));
+  const recoveryEvidence = new Map(jobs.map((job) => [
+    job.job_id,
+    job.job_type === "assembly"
+      ? existsSync(stagingJobDirectory(job.job_id))
+      : inspectInterruptedWorkbenchExportEvidence(job)
+  ]));
   let transactionOpen = false;
   try {
     db.exec("BEGIN IMMEDIATE");
@@ -1065,13 +1087,19 @@ export function interruptUnfinishedWorkbenchDeliveryJobs(
           SET state = 'interrupted', terminal_event_id = ?, error_code = 'PROCESS_RESTART',
             finished_at = ?, updated_at = ? WHERE job_id = ?`)
           .run(terminalEventId, timestamp, timestamp, job.job_id);
+        const artifactId = job.job_type === "export" ? interruptedWorkbenchExportArtifactId(job) : null;
+        if (job.job_type === "export" && !artifactId) {
+          throw new AssemblyFailure("ASSEMBLY_INPUT_CHANGED", "Export recovery inputs failed integrity validation.");
+        }
         db.prepare(`INSERT INTO workbench_delivery_events
-          (event_id, project_id, job_id, event_type, from_state, to_state, input_fingerprint, reason_code, data_json, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'PROCESS_RESTART', ?, ?)`)
+          (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,
+            input_fingerprint, reason_code, data_json, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PROCESS_RESTART', ?, ?)`)
           .run(terminalEventId, job.project_id, job.job_id,
             job.job_type === "assembly" ? "assembly_interrupted" : "export_interrupted",
             fromState,
             job.job_type === "assembly" && fromState === "assembling" ? "ready_to_assemble" : fromState,
+            artifactId,
             job.input_fingerprint,
             canonicalizeJcs({
               recovery_evidence_preserved: recoveryEvidence.get(job.job_id) === true,
