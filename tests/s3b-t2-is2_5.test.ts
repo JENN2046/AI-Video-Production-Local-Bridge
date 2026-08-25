@@ -1164,8 +1164,8 @@ test("P1 known Provider task keeps ownership across every GenerationPlan validat
       const intentData = JSON.parse(intentRow.data_json) as Record<string, unknown>;
       const pollStartedAt = Date.now();
       intentData.provider_poll_started_at = new Date(pollStartedAt).toISOString();
-      intentData.provider_poll_timeout_ms = 1_000;
-      intentData.provider_poll_deadline_at = new Date(pollStartedAt + 1_000).toISOString();
+      intentData.provider_poll_timeout_ms = 60_000;
+      intentData.provider_poll_deadline_at = new Date(pollStartedAt + 60_000).toISOString();
       if (variant === "invalid_plan") {
         intentData.generation_plan = { schema_version: "generation_plan.v1" };
       } else {
@@ -1211,7 +1211,7 @@ test("P1 known Provider task keeps ownership across every GenerationPlan validat
   }
 });
 
-test("P1 known Provider task bypasses ordinary first-submit authority failure and keeps ownership", async () => {
+test("P1 known Provider task keeps ownership when current authority fails before poll", async () => {
   const fixture = createFixture();
   try {
     const counters = { preflight_requests: 0, adapter_constructs: 0, provider_submits: 0 };
@@ -1221,8 +1221,8 @@ test("P1 known Provider task bypasses ordinary first-submit authority failure an
     mutatePersistedIntentData(fixture, intentId, (data) => {
       const now = Date.now();
       data.provider_poll_started_at = new Date(now).toISOString();
-      data.provider_poll_timeout_ms = 1_000;
-      data.provider_poll_deadline_at = new Date(now + 1_000).toISOString();
+      data.provider_poll_timeout_ms = 60_000;
+      data.provider_poll_deadline_at = new Date(now + 60_000).toISOString();
     });
     fixture.db.prepare("UPDATE generation_intents SET provider_task_id = ?, status = 'running' WHERE intent_id = ?")
       .run(taskId, intentId);
@@ -1239,14 +1239,14 @@ test("P1 known Provider task bypasses ordinary first-submit authority failure an
       .get(promoted.confirmed.data.job_id) as { state: string; reconciliation_reason: string; lease_token: string };
     assert.equal(intent.status, "running");
     assert.equal(intent.provider_task_id, taskId);
-    assert.equal((JSON.parse(intent.sanitized_error_json) as { code?: string }).code, "FIXTURE_PROVIDER_STOP");
+    assert.equal((JSON.parse(intent.sanitized_error_json) as { code?: string }).code, "GENERATION_EXECUTION_AUTHORITY_STALE");
     assert.deepEqual({ ...job }, {
       state: "manual_reconciliation",
-      reconciliation_reason: "PROVIDER_POLL_REQUIRES_RECONCILIATION",
+      reconciliation_reason: "GENERATION_EXECUTION_AUTHORITY_REQUIRES_RECONCILIATION",
       lease_token: ""
     });
     assert.equal(generationRightConflict(fixture.db)?.intent_id, intentId);
-    assert.deepEqual(counters, { preflight_requests: 2, adapter_constructs: 1, provider_submits: 0 });
+    assert.deepEqual(counters, { preflight_requests: 2, adapter_constructs: 0, provider_submits: 0 });
   } finally {
     closeFixture(fixture);
   }

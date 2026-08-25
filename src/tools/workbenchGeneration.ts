@@ -2686,8 +2686,31 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       );
       return;
     }
-    // Preserve the more specific durable Director and T2 admission failures
-    // before applying the broader execution snapshot guard. These checks are
+    if (!knownTaskId && !isProviderExecutionAuthorized(intent)) {
+      failIntent(
+        db,
+        intent,
+        "failed",
+        providerError("OFFICIAL_PREFLIGHT_REQUIRED", "Official preflight authorization is required before Provider execution."),
+        leaseToken,
+        job
+      );
+      return;
+    }
+    if (intent.generation_plan) {
+      const mediaGuard = revalidateGenerationPlanMedia(intent.generation_plan, db);
+      if (!mediaGuard.ok) {
+        failOrReconcileKnownTask(
+          intent,
+          job,
+          providerError(mediaGuard.code, mediaGuard.message),
+          "GENERATION_PLAN_REQUIRES_RECONCILIATION"
+        );
+        return;
+      }
+    }
+    // Preserve specific durable Director, T2 admission, and media failures
+    // before applying the broader execution snapshot guard. Every check is
     // synchronous and side-effect free; the snapshot still gates Provider
     // selection and every subsequent external await boundary.
     const initialExecutionAuthorityError = generationExecutionAuthorityError(db, intent, job, job.state as GenerationExecutionBindingInput["expected_job_state"]);
@@ -2711,29 +2734,6 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       const error = providerError("PROVIDER_CAPABILITY_CONTRACT_MISMATCH", "Generation intent no longer matches the declared Provider capability.");
       failOrReconcileKnownTask(intent, job, error, "PROVIDER_CAPABILITY_REQUIRES_RECONCILIATION");
       return;
-    }
-    if (!knownTaskId && !isProviderExecutionAuthorized(intent)) {
-      failIntent(
-        db,
-        intent,
-        "failed",
-        providerError("OFFICIAL_PREFLIGHT_REQUIRED", "Official preflight authorization is required before Provider execution."),
-        leaseToken,
-        job
-      );
-      return;
-    }
-    if (intent.generation_plan) {
-      const mediaGuard = revalidateGenerationPlanMedia(intent.generation_plan, db);
-      if (!mediaGuard.ok) {
-        failOrReconcileKnownTask(
-          intent,
-          job,
-          providerError(mediaGuard.code, mediaGuard.message),
-          "GENERATION_PLAN_REQUIRES_RECONCILIATION"
-        );
-        return;
-      }
     }
     const automation = directorAuthorization.required ? directorAuthorization.automation : null;
     const selection = selectM1ProviderPort({ provider: "real", provider_name: "runninghub", model_name: capability.key.model, cost_acknowledged: true }, dependencies.env ?? process.env);
