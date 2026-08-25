@@ -2607,6 +2607,26 @@ const DURABLE_ASSEMBLY_SQL = `
 `;
 
 const FINAL_REVIEW_EXPORT_CLOSEOUT_SQL = `
+  CREATE TABLE workbench_0015_admission_guard (
+    accepted INTEGER NOT NULL CHECK (accepted = 1)
+  );
+  INSERT INTO workbench_0015_admission_guard (accepted)
+  SELECT CASE
+    WHEN EXISTS (SELECT 1 FROM workbench_exports)
+      OR EXISTS (
+        SELECT 1
+        FROM workbench_delivery_events
+        WHERE job_id IS NULL
+          AND event_type IN (
+            'final_review_accepted','final_review_reassemble','final_review_regenerate_shots',
+            'export_reused','closeout'
+          )
+      )
+    THEN 0
+    ELSE 1
+  END;
+  DROP TABLE workbench_0015_admission_guard;
+
   CREATE UNIQUE INDEX idx_workbench_exports_relative_path
     ON workbench_exports(relative_path);
 

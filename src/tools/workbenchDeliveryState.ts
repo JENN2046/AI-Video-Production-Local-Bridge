@@ -315,7 +315,7 @@ export function refreshWorkbenchAssemblyReadiness(db: M0Database, projectId: str
       END,
       assembly_input_fingerprint = NULL,
       updated_at = CURRENT_TIMESTAMP
-      WHERE project_id = ? AND workflow_state IN ('not_ready','ready_to_assemble')
+      WHERE project_id = ? AND workflow_state IN ('not_ready','ready_to_assemble','revision_requested')
     `).run(projectId, projectId, projectId));
     const state = requireWorkbenchDeliveryState(db, projectId);
     if (ownsTransaction) db.exec("COMMIT");

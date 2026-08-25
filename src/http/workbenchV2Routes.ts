@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createReadStream } from "node:fs";
 
-import { openM0Database } from "../storage/sqlite.js";
+import { openM0Database, openM0ReadonlyDatabase } from "../storage/sqlite.js";
 import { WorkbenchProductionMutationError, workbenchProductionMutationError } from "../tools/workbenchDeliveryState.js";
 import {
   PersonalReadonlyOperationsError,
@@ -161,6 +161,15 @@ function withDatabase<T>(operation: (db: ReturnType<typeof openM0Database>) => T
   }
 }
 
+function withReadonlyDatabase<T>(operation: (db: ReturnType<typeof openM0ReadonlyDatabase>) => T): T {
+  const db = openM0ReadonlyDatabase();
+  try {
+    return operation(db);
+  } finally {
+    db.close();
+  }
+}
+
 function hasNonce(request: IncomingMessage, actionNonce: string): boolean {
   return request.headers["x-h1-action-nonce"] === actionNonce;
 }
@@ -213,19 +222,19 @@ export async function handleWorkbenchV2Api(
   if (!url.pathname.startsWith("/api/v2/")) return false;
 
   if (request.method === "GET" && url.pathname === "/api/v2/shell") {
-    const data = withDatabase((db) => getWorkbenchShell(db));
+    const data = withReadonlyDatabase((db) => getWorkbenchShell(db));
     sendOk(response, { ...data, action_nonce: actionNonce });
     return true;
   }
   if (request.method === "GET" && url.pathname === "/api/v2/dashboard") {
-    sendOk(response, withDatabase((db) => getWorkbenchDashboard(db)));
+    sendOk(response, withReadonlyDatabase((db) => getWorkbenchDashboard(db)));
     return true;
   }
 
   const directorTowerMatch = url.pathname.match(/^\/api\/v2\/director\/projects\/([^/]+)$/);
   if (request.method === "GET" && directorTowerMatch) {
     const projectId = decodeSegment(directorTowerMatch[1]);
-    sendResult(response, withDatabase((db) => getDirectorApprovalTower(projectId, db)));
+    sendResult(response, withReadonlyDatabase((db) => getDirectorApprovalTower(projectId, db)));
     return true;
   }
   if (request.method === "POST" && url.pathname === "/api/v2/director/focus") {
@@ -310,7 +319,7 @@ export async function handleWorkbenchV2Api(
       send(response, 404, { ok: false, error: { code: "INBOX_TAB_NOT_FOUND", message: "Inbox tab was not found." } });
       return true;
     }
-    const result = withDatabase((db) => listWorkbenchInboxV21(tab as "pending" | "drafts" | "quarantine", {
+    const result = withReadonlyDatabase((db) => listWorkbenchInboxV21(tab as "pending" | "drafts" | "quarantine", {
       status: url.searchParams.get("status") ?? undefined,
       limit: numberParam(url.searchParams.get("limit")),
       offset: numberParam(url.searchParams.get("offset"))
@@ -322,7 +331,7 @@ export async function handleWorkbenchV2Api(
   if (request.method === "GET" && url.pathname === "/api/v2/projects") {
     const lifecycle = (url.searchParams.get("lifecycle") ?? "active") as WorkbenchProjectLifecycle | "all";
     const classification = (url.searchParams.get("classification") ?? "all") as WorkbenchProjectClassification | "all";
-    const result = withDatabase((db) => listWorkbenchProjects({
+    const result = withReadonlyDatabase((db) => listWorkbenchProjects({
       scope: (url.searchParams.get("scope") ?? "daily") as WorkbenchProjectScope,
       lifecycle,
       classification,
@@ -342,7 +351,7 @@ export async function handleWorkbenchV2Api(
       send(response, 404, { ok: false, error: { code: "PROJECT_WORKSPACE_NOT_FOUND", message: "Project workspace was not found." } });
       return true;
     }
-    sendResult(response, withDatabase((db) => getWorkbenchProjectWorkspace(projectId, workspace, db, { touch_last_opened: false })));
+    sendResult(response, withReadonlyDatabase((db) => getWorkbenchProjectWorkspace(projectId, workspace, db, { touch_last_opened: false })));
     return true;
   }
 
@@ -425,7 +434,7 @@ export async function handleWorkbenchV2Api(
   if (request.method === "GET" && exportFileMatch) {
     const projectId = decodeSegment(exportFileMatch[1]);
     const exportId = decodeSegment(exportFileMatch[2]);
-    const result = withDatabase((db) => resolveWorkbenchExportDownload(projectId, exportId, db));
+    const result = withReadonlyDatabase((db) => resolveWorkbenchExportDownload(projectId, exportId, db));
     if (!result.ok) {
       send(response, statusForError(result.error), { ok: false, error: result.error });
       return true;
@@ -453,7 +462,7 @@ export async function handleWorkbenchV2Api(
       send(response, 404, { ok: false, error: { code: "ASSET_TAB_NOT_FOUND", message: "Asset tab was not found." } });
       return true;
     }
-    const result = withDatabase((db) => listWorkbenchAssets(tab as "media" | "memory" | "reference" | "recall", {
+    const result = withReadonlyDatabase((db) => listWorkbenchAssets(tab as "media" | "memory" | "reference" | "recall", {
       project_id: url.searchParams.get("project_id") ?? undefined,
       shot_id: url.searchParams.get("shot_id") ?? undefined,
       scope: (url.searchParams.get("scope") ?? "daily") as "daily" | "unassigned" | "all",
@@ -526,7 +535,7 @@ export async function handleWorkbenchV2Api(
     return true;
   }
   if (request.method === "GET" && url.pathname === "/api/v2/system/governance") {
-    sendOk(response, withDatabase((db) => getWorkbenchGovernancePreview(db)));
+    sendOk(response, withReadonlyDatabase((db) => getWorkbenchGovernancePreview(db)));
     return true;
   }
 
@@ -663,7 +672,7 @@ export async function handleWorkbenchV2Api(
 
   const generationIntentMatch = url.pathname.match(/^\/api\/v2\/generation\/intents\/([^/]+)$/);
   if (request.method === "GET" && generationIntentMatch) {
-    sendResult(response, withDatabase((db) => getWorkbenchGenerationIntent(decodeSegment(generationIntentMatch[1]), db)));
+    sendResult(response, withReadonlyDatabase((db) => getWorkbenchGenerationIntent(decodeSegment(generationIntentMatch[1]), db)));
     return true;
   }
 

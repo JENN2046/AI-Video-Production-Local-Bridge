@@ -1,14 +1,28 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { closeSync, copyFileSync, existsSync, fstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import {
+  closeSync,
+  copyFileSync,
+  existsSync,
+  fstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync
+} from "node:fs";
+import { basename, dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import {
   buildStoryboardApprovedShot,
+  approveH3GeneratedClip,
   closeoutWorkbenchDelivery,
   createProject,
   decideWorkbenchFinalReview,
@@ -84,6 +98,29 @@ function commitAcknowledgementLost(db: M0Database, failAtCommit: number): M0Data
             if (commits === failAtCommit) {
               target.exec(sql);
               throw new Error("SIMULATED_COMMIT_ACK_LOST");
+            }
+          }
+          return target.exec(sql);
+        };
+      }
+      const value = Reflect.get(target, property, target) as unknown;
+      return typeof value === "function" ? value.bind(target) : value;
+    }
+  }) as M0Database;
+}
+
+function beginImmediateBusyOnce(db: M0Database, failAtBegin: number): M0Database {
+  let begins = 0;
+  return new Proxy(db, {
+    get(target, property) {
+      if (property === "exec") {
+        return (sql: string) => {
+          if (sql.trim().toUpperCase() === "BEGIN IMMEDIATE") {
+            begins += 1;
+            if (begins === failAtBegin) {
+              const error = new Error("database is locked") as Error & { code: string };
+              error.code = "SQLITE_BUSY";
+              throw error;
             }
           }
           return target.exec(sql);
@@ -179,14 +216,14 @@ function acceptFinal(db: M0Database, fixture: Awaited<ReturnType<typeof setupFin
   return accepted;
 }
 
-test("migration 0015 upgrades 0014 atomically with exact governed objects", () => {
+test("migration 0015 upgrades 0014 atomically with exact governed objects", async () => {
   const db = new DatabaseSync(":memory:");
   try {
     applyMigrationsThrough(db, "0014");
     assert.equal((db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-9");
     const migration = DATABASE_MIGRATIONS.find((candidate) => candidate.id === "0015");
     assert.ok(migration);
-    assert.equal(migrationChecksum(migration), migrationChecksum(migration));
+    assert.equal(migrationChecksum(migration), "28cfae31d34d6e121fe01b9b6d042c01ee44def3721bda4d4b37a72785f4ed93");
     assert.deepEqual(runDatabaseMigrations(db).applied, ["0015"]);
     assert.equal((db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-10");
     const relativePathIndex = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_workbench_exports_relative_path'")
@@ -215,6 +252,46 @@ test("migration 0015 upgrades 0014 atomically with exact governed objects", () =
     assert.equal(faulted.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'trigger' AND name = 'workbench_delivery_events_final_action_guard'").get(), undefined);
   } finally {
     faulted.close();
+  }
+
+  for (const poison of ["export", "action_event"] as const) {
+    const poisoned = new DatabaseSync(":memory:");
+    try {
+      applyMigrationsThrough(poisoned, "0014");
+      if (poison === "export") {
+        const fixture = await setupFinalReviewProject(poisoned, 1);
+        poisoned.prepare(`INSERT INTO workbench_exports
+          (export_id, project_id, artifact_id, relative_path, sha256, size_bytes)
+          VALUES ('poisoned_export', ?, ?, ?, ?, ?)`)
+          .run(fixture.project.project_id, fixture.final.artifact_id,
+            `data/exports/${fixture.project.project_id}/poisoned.mp4`,
+            fixture.final.metadata.sha256, readFileSync(fixture.final.storage.uri).byteLength);
+      } else {
+        const created = createProject({
+          title: `Poisoned 0014 ${poison}`,
+          video_spec: { duration_seconds: 1, aspect_ratio: "16:9", resolution: "320x180" }
+        }, poisoned);
+        assert.equal(created.ok, true);
+        if (!created.ok) continue;
+        poisoned.prepare(`INSERT INTO workbench_delivery_events
+          (event_id, project_id, event_type, from_state, to_state, reason_code, data_json)
+          VALUES ('poisoned_closeout', ?, 'closeout', 'exported', 'closed', 'FORGED', '{}')`)
+          .run(created.project.project_id);
+      }
+
+      assert.throws(() => runDatabaseMigrations(poisoned), /workbench_0015_admission_guard|CHECK constraint failed/i);
+      assert.equal((poisoned.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-9");
+      assert.equal((poisoned.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE migration_id = '0015'").get() as { count: number }).count, 0);
+      assert.equal(poisoned.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'workbench_0015_admission_guard'").get(), undefined);
+      assert.equal(poisoned.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'index' AND name = 'idx_workbench_exports_relative_path'").get(), undefined);
+      assert.equal(poisoned.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'trigger' AND name = 'workbench_delivery_events_final_action_guard'").get(), undefined);
+      const poisonCount = poison === "export"
+        ? (poisoned.prepare("SELECT COUNT(*) AS count FROM workbench_exports WHERE export_id = 'poisoned_export'").get() as { count: number }).count
+        : (poisoned.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_events WHERE event_id = 'poisoned_closeout'").get() as { count: number }).count;
+      assert.equal(poisonCount, 1);
+    } finally {
+      poisoned.close();
+    }
   }
 });
 
@@ -311,6 +388,28 @@ test("final review accepts, reassembles, and targets only selected SHOTs while p
       .get(targetedFixture.project.project_id) as { workflow_state: string; current_final_artifact_id: string }).workflow_state, "revision_requested");
     assert.equal(listWorkbenchFinalVersions(db, targetedFixture.project.project_id).some((version) => version.artifact_id === targetedFixture.final.artifact_id), true);
     assert.equal(getMediaArtifact(db, targetedFixture.final.artifact_id)?.status, "active");
+
+    const reaccepted = approveH3GeneratedClip({
+      shot_id: targetedFixture.shots[0].shot_id,
+      artifact_id: targetedFixture.clips[0].artifact_id,
+      write_report: false
+    }, db);
+    assert.equal(reaccepted.ok, true);
+    assert.equal((db.prepare("SELECT workflow_state FROM workbench_delivery_state WHERE project_id = ?")
+      .get(targetedFixture.project.project_id) as { workflow_state: string }).workflow_state, "ready_to_assemble");
+    const reworkPreflight = await preflightWorkbenchAssembly(targetedFixture.project.project_id, db);
+    assert.equal(reworkPreflight.ok, true);
+    if (reworkPreflight.ok) {
+      const reworkQueue = await queueWorkbenchAssembly({
+        project_id: targetedFixture.project.project_id,
+        input_fingerprint: reworkPreflight.data.input_fingerprint,
+        human_confirmation: true
+      }, db);
+      assert.equal(reworkQueue.ok, true);
+      if (reworkQueue.ok) {
+        assert.deepEqual(interruptUnfinishedWorkbenchDeliveryJobs(db), { interrupted: 1, recovery_evidence_preserved: 0 });
+      }
+    }
   } finally {
     db.close();
   }
@@ -436,6 +535,155 @@ test("export is persistent, exclusive, idempotent, drift-aware, and leaves state
     assert.equal(racedPartResult.ok, false);
     assert.notEqual(racedPart, "");
     assert.equal(readFileSync(racedPart).equals(sentinel), true);
+
+    const swappedPartFixture = await setupFinalReviewProject(db, 1);
+    acceptFinal(db, swappedPartFixture);
+    const swappedPartQueue = queueWorkbenchExport({ project_id: swappedPartFixture.project.project_id, artifact_id: swappedPartFixture.final.artifact_id, human_confirmation: true }, db);
+    assert.equal(swappedPartQueue.ok, true);
+    if (!swappedPartQueue.ok || !swappedPartQueue.data.job) return;
+    let swappedPart = "";
+    const swappedPartResult = await runWorkbenchExportJob(swappedPartQueue.data.job.job_id, db, {
+      after_export_copy: (partPath) => {
+        swappedPart = partPath;
+        unlinkSync(partPath);
+        writeFileSync(partPath, sentinel, { flag: "wx" });
+      }
+    });
+    assert.equal(swappedPartResult.ok, false);
+    assert.notEqual(swappedPart, "");
+    assert.equal(readFileSync(swappedPart).equals(sentinel), true);
+
+    const swappedFinalFixture = await setupFinalReviewProject(db, 1);
+    acceptFinal(db, swappedFinalFixture);
+    const swappedFinalQueue = queueWorkbenchExport({ project_id: swappedFinalFixture.project.project_id, artifact_id: swappedFinalFixture.final.artifact_id, human_confirmation: true }, db);
+    assert.equal(swappedFinalQueue.ok, true);
+    if (!swappedFinalQueue.ok || !swappedFinalQueue.data.job) return;
+    const swappedFinalInput = JSON.parse((db.prepare("SELECT input_json FROM workbench_delivery_jobs WHERE job_id = ?").get(swappedFinalQueue.data.job.job_id) as { input_json: string }).input_json) as { relative_path: string };
+    const swappedFinal = resolve(paths.exportsRoot, swappedFinalFixture.project.project_id, basename(swappedFinalInput.relative_path));
+    const swappedFinalResult = await runWorkbenchExportJob(swappedFinalQueue.data.job.job_id, db, {
+      before_export_commit: () => {
+        unlinkSync(swappedFinal);
+        writeFileSync(swappedFinal, sentinel, { flag: "wx" });
+      }
+    });
+    assert.equal(swappedFinalResult.ok, false);
+    assert.equal(readFileSync(swappedFinal).equals(sentinel), true);
+  } finally {
+    db.close();
+  }
+});
+
+test("export directory identity lease prevents a swapped project path from writing outside governance", async (t) => {
+  const db = openM0Database();
+  let originalDirectory = "";
+  let heldDirectory = "";
+  let outsideDirectory = "";
+  try {
+    const fixture = await setupFinalReviewProject(db, 1);
+    acceptFinal(db, fixture);
+    const queued = queueWorkbenchExport({
+      project_id: fixture.project.project_id,
+      artifact_id: fixture.final.artifact_id,
+      human_confirmation: true
+    }, db);
+    assert.equal(queued.ok, true);
+    if (!queued.ok || !queued.data.job) return;
+    const result = await runWorkbenchExportJob(queued.data.job.job_id, db, {
+      before_export_copy: (partPath) => {
+        originalDirectory = dirname(partPath);
+        heldDirectory = `${originalDirectory}.held-${randomUUID()}`;
+        outsideDirectory = resolve(paths.mediaRoot, ".delivery-actions-test-inputs", `outside-${randomUUID()}`);
+        mkdirSync(outsideDirectory, { recursive: true });
+        renameSync(originalDirectory, heldDirectory);
+        try {
+          symlinkSync(outsideDirectory, originalDirectory, process.platform === "win32" ? "junction" : "dir");
+        } catch (error) {
+          renameSync(heldDirectory, originalDirectory);
+          heldDirectory = "";
+          t.skip(`directory link unavailable on this platform: ${error instanceof Error ? error.message : "unknown"}`);
+        }
+      }
+    });
+    if (heldDirectory) {
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.error.code, "EXPORT_INTEGRITY_FAILED");
+      assert.deepEqual(readdirSync(outsideDirectory), []);
+      const job = db.prepare("SELECT state, error_code FROM workbench_delivery_jobs WHERE job_id = ?")
+        .get(queued.data.job.job_id) as { state: string; error_code: string };
+      assert.equal(job.state, "failed");
+      assert.equal(job.error_code, "EXPORT_INTEGRITY_FAILED");
+    }
+  } finally {
+    if (originalDirectory && heldDirectory) {
+      rmSync(originalDirectory, { recursive: true, force: true });
+      renameSync(heldDirectory, originalDirectory);
+    }
+    if (outsideDirectory) rmSync(outsideDirectory, { recursive: true, force: true });
+    db.close();
+  }
+});
+
+test("export finalization busy and failure terminalization reconcile the durable Job", async () => {
+  const db = openM0Database();
+  try {
+    const busyFixture = await setupFinalReviewProject(db, 1);
+    acceptFinal(db, busyFixture);
+    const busyQueue = queueWorkbenchExport({
+      project_id: busyFixture.project.project_id,
+      artifact_id: busyFixture.final.artifact_id,
+      human_confirmation: true
+    }, db);
+    assert.equal(busyQueue.ok, true);
+    if (!busyQueue.ok || !busyQueue.data.job) return;
+    const busyResult = await runWorkbenchExportJob(busyQueue.data.job.job_id, beginImmediateBusyOnce(db, 2));
+    assert.equal(busyResult.ok, false);
+    if (!busyResult.ok) assert.equal(busyResult.error.code, "PRODUCTION_MUTATION_CONFLICT");
+    const busyJob = db.prepare("SELECT state, error_code FROM workbench_delivery_jobs WHERE job_id = ?")
+      .get(busyQueue.data.job.job_id) as { state: string; error_code: string };
+    assert.equal(busyJob.state, "failed");
+    assert.equal(busyJob.error_code, "PRODUCTION_MUTATION_CONFLICT");
+    const busyEvent = db.prepare(`SELECT json_extract(data_json, '$.recovery_evidence_preserved') AS preserved
+      FROM workbench_delivery_events WHERE job_id = ? AND event_type = 'export_failed'`)
+      .get(busyQueue.data.job.job_id) as { preserved: number };
+    assert.equal(Boolean(busyEvent.preserved), true);
+
+    const beginRetryFixture = await setupFinalReviewProject(db, 1);
+    acceptFinal(db, beginRetryFixture);
+    const beginRetryQueue = queueWorkbenchExport({
+      project_id: beginRetryFixture.project.project_id,
+      artifact_id: beginRetryFixture.final.artifact_id,
+      human_confirmation: true
+    }, db);
+    assert.equal(beginRetryQueue.ok, true);
+    if (!beginRetryQueue.ok || !beginRetryQueue.data.job) return;
+    const beginRetryResult = await runWorkbenchExportJob(beginRetryQueue.data.job.job_id, beginImmediateBusyOnce(db, 2), {
+      after_export_copy: (partPath) => writeFileSync(partPath, "tampered", "utf8")
+    });
+    assert.equal(beginRetryResult.ok, false);
+    if (!beginRetryResult.ok) assert.equal(beginRetryResult.error.code, "EXPORT_INTEGRITY_FAILED");
+    assert.equal((db.prepare("SELECT state FROM workbench_delivery_jobs WHERE job_id = ?")
+      .get(beginRetryQueue.data.job.job_id) as { state: string }).state, "failed");
+
+    const commitFixture = await setupFinalReviewProject(db, 1);
+    acceptFinal(db, commitFixture);
+    const commitQueue = queueWorkbenchExport({
+      project_id: commitFixture.project.project_id,
+      artifact_id: commitFixture.final.artifact_id,
+      human_confirmation: true
+    }, db);
+    assert.equal(commitQueue.ok, true);
+    if (!commitQueue.ok || !commitQueue.data.job) return;
+    const commitResult = await runWorkbenchExportJob(commitQueue.data.job.job_id, commitAcknowledgementLost(db, 2), {
+      after_export_copy: (partPath) => writeFileSync(partPath, "tampered", "utf8")
+    });
+    assert.equal(commitResult.ok, false);
+    if (!commitResult.ok) assert.equal(commitResult.error.code, "EXPORT_INTEGRITY_FAILED");
+    const commitJob = db.prepare("SELECT state, error_code, terminal_event_id FROM workbench_delivery_jobs WHERE job_id = ?")
+      .get(commitQueue.data.job.job_id) as { state: string; error_code: string; terminal_event_id: string };
+    assert.equal(commitJob.state, "failed");
+    assert.equal(commitJob.error_code, "EXPORT_INTEGRITY_FAILED");
+    assert.equal((db.prepare("SELECT COUNT(*) AS count FROM workbench_delivery_events WHERE event_id = ? AND event_type = 'export_failed'")
+      .get(commitJob.terminal_event_id) as { count: number }).count, 1);
   } finally {
     db.close();
   }

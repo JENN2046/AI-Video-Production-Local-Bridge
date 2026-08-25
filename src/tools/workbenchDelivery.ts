@@ -1,8 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
-  constants,
   closeSync,
-  copyFileSync,
   existsSync,
   fstatSync,
   linkSync,
@@ -13,7 +11,8 @@ import {
   realpathSync,
   rmSync,
   statSync,
-  unlinkSync
+  unlinkSync,
+  writeSync
 } from "node:fs";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 
@@ -28,6 +27,7 @@ import { markShotClipReview } from "./review.js";
 import {
   getActiveWorkbenchDeliveryJob,
   getWorkbenchDeliveryState,
+  refreshWorkbenchAssemblyReadiness,
   workbenchProductionMutationError,
   type WorkbenchCloseoutReceipt,
   type WorkbenchDeliveryJobRecord,
@@ -92,6 +92,22 @@ interface FileIdentity {
   ctime_ms: number;
   device: number;
   inode: number;
+}
+
+interface DirectoryIdentity {
+  real_path: string;
+  device: number;
+  inode: number;
+  birthtime_ms: number;
+}
+
+interface ExportDirectoryLease {
+  data_root: DirectoryIdentity;
+  export_root: DirectoryIdentity;
+  project_directory: DirectoryIdentity;
+  data_root_path: string;
+  export_root_path: string;
+  project_directory_path: string;
 }
 
 interface FileFacts extends FileIdentity {
@@ -231,6 +247,36 @@ function fileFacts(filePath: string): FileFacts {
   }
 }
 
+function copyToExclusivePart(sourcePath: string, partPath: string, assertDirectoryLease: () => void): FileIdentity {
+  let sourceDescriptor: number | null = null;
+  let partDescriptor: number | null = null;
+  try {
+    sourceDescriptor = openSync(sourcePath, "r");
+    assertDirectoryLease();
+    partDescriptor = openSync(partPath, "wx");
+    assertDirectoryLease();
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    let offset = 0;
+    while (true) {
+      const count = readSync(sourceDescriptor, buffer, 0, buffer.length, offset);
+      if (count === 0) break;
+      let written = 0;
+      while (written < count) {
+        const next = writeSync(partDescriptor, buffer, written, count - written, offset + written);
+        if (next <= 0) throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Export staging copy did not complete.");
+        written += next;
+      }
+      offset += count;
+    }
+    const identity = identityFromStat(fstatSync(partDescriptor));
+    assertDirectoryLease();
+    return identity;
+  } finally {
+    if (partDescriptor !== null) closeSync(partDescriptor);
+    if (sourceDescriptor !== null) closeSync(sourceDescriptor);
+  }
+}
+
 function validateExportFile(
   filePath: string,
   expected: Pick<WorkbenchExportSnapshot, "blob_sha256" | "size_bytes">,
@@ -363,7 +409,28 @@ function chooseExportRelativePath(projectId: string, artifactId: string, date: D
   throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "A unique export filename could not be allocated.");
 }
 
-function ensureSafeExportDirectory(projectId: string): string {
+function directoryIdentity(directoryPath: string): DirectoryIdentity {
+  const link = lstatSync(directoryPath);
+  const value = statSync(directoryPath);
+  if (link.isSymbolicLink() || !value.isDirectory()) {
+    throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Export directory identity is unsafe.");
+  }
+  return {
+    real_path: realpathSync(directoryPath),
+    device: Number(value.dev),
+    inode: Number(value.ino),
+    birthtime_ms: Number(value.birthtimeMs)
+  };
+}
+
+function sameDirectoryIdentity(left: DirectoryIdentity, right: DirectoryIdentity): boolean {
+  return left.real_path === right.real_path
+    && left.device === right.device
+    && left.inode === right.inode
+    && left.birthtime_ms === right.birthtime_ms;
+}
+
+function ensureSafeExportDirectory(projectId: string): ExportDirectoryLease {
   assertSafeProjectSegment(projectId);
   const dataRoot = resolve(paths.dataRoot);
   const root = resolve(paths.exportsRoot);
@@ -386,7 +453,24 @@ function ensureSafeExportDirectory(projectId: string): string {
     || !isPathInside(realpathSync(directory), realpathSync(root))) {
     throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Project export path is unsafe.");
   }
-  return directory;
+  return {
+    data_root: directoryIdentity(dataRoot),
+    export_root: directoryIdentity(root),
+    project_directory: directoryIdentity(directory),
+    data_root_path: dataRoot,
+    export_root_path: root,
+    project_directory_path: directory
+  };
+}
+
+function assertExportDirectoryLease(lease: ExportDirectoryLease): void {
+  if (hasExistingSymlinkAncestor(lease.export_root_path, lease.data_root_path)
+    || hasExistingSymlinkAncestor(lease.project_directory_path, lease.export_root_path)
+    || !sameDirectoryIdentity(directoryIdentity(lease.data_root_path), lease.data_root)
+    || !sameDirectoryIdentity(directoryIdentity(lease.export_root_path), lease.export_root)
+    || !sameDirectoryIdentity(directoryIdentity(lease.project_directory_path), lease.project_directory)) {
+    throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Export directory identity changed during execution.");
+  }
 }
 
 function exportRecord(db: M0Database, projectId: string, exportId: string): WorkbenchExportRecord | null {
@@ -594,21 +678,7 @@ export function refreshWorkbenchDeliveryAssemblyReadiness(db: M0Database, projec
   const delivery = getWorkbenchDeliveryState(db, projectId);
   if (!delivery || delivery.workflow_state === "closed" || getActiveWorkbenchDeliveryJob(db, projectId)) return delivery;
   if (!new Set(["not_ready", "ready_to_assemble", "revision_requested"]).has(delivery.workflow_state)) return delivery;
-  const shots = listProjectShots(db, projectId);
-  const ready = shots.length > 0
-    && shots.every((shot) => Boolean(shot.accepted_clip_artifact_id) && validateAcceptedClipReference(db, shot).ok);
-  const next = ready ? "ready_to_assemble"
-    : delivery.workflow_state === "ready_to_assemble" ? "not_ready"
-      : delivery.workflow_state;
-  if (next !== delivery.workflow_state) {
-    withWorkbenchProductionMutationAuthority(db, {
-      kind: "readiness_refresh", project_id: projectId, object_id: projectId
-    }, () => db.prepare(`UPDATE workbench_delivery_state
-        SET workflow_state = ?, assembly_input_fingerprint = NULL, updated_at = CURRENT_TIMESTAMP
-        WHERE project_id = ?`)
-      .run(next, projectId));
-  }
-  return getWorkbenchDeliveryState(db, projectId);
+  return refreshWorkbenchAssemblyReadiness(db, projectId);
 }
 
 export function decideWorkbenchFinalReview(
@@ -1000,11 +1070,13 @@ function exportSnapshotFromJob(job: DeliveryJobRow): WorkbenchExportSnapshot {
   }
 }
 
-function cleanupRegularFile(filePath: string, parent: string): boolean {
+function cleanupRegularFile(filePath: string, parent: string, expectedIdentity: FileIdentity): boolean {
   try {
     if (!existsSync(filePath)) return true;
     if (!isPathInside(filePath, parent) || hasExistingSymlinkAncestor(filePath, parent)
       || lstatSync(filePath).isSymbolicLink() || !statSync(filePath).isFile()) return false;
+    const currentIdentity = inspectExportFileIdentity(filePath);
+    if (!sameFileIdentity(currentIdentity, expectedIdentity)) return false;
     rmSync(filePath, { force: true });
     return !existsSync(filePath);
   } catch {
@@ -1042,46 +1114,67 @@ function markExportJobFailed(
   errorCode: string,
   dependencies: WorkbenchDeliveryDependencies
 ): void {
-  let transactionOpen = false;
-  try {
-    db.exec("BEGIN IMMEDIATE");
-    transactionOpen = true;
-    const job = getDeliveryJob(db, jobId);
-    if (!job || job.job_type !== "export" || !["queued", "running"].includes(job.state)) {
-      db.exec("COMMIT");
+  let lastError: unknown = new Error("EXPORT_FAILURE_FINALIZATION_NOT_ATTEMPTED");
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let transactionOpen = false;
+    try {
+      db.exec("BEGIN IMMEDIATE");
+      transactionOpen = true;
+      const job = getDeliveryJob(db, jobId);
+      if (!job || job.job_type !== "export") {
+        throw new DeliveryFailure("EXPORT_RECOVERY_REQUIRED", "Export failure evidence is unavailable.");
+      }
+      if (!["queued", "running"].includes(job.state)) {
+        db.exec("ROLLBACK");
+        transactionOpen = false;
+        return;
+      }
+      const delivery = getWorkbenchDeliveryState(db, job.project_id);
+      if (!delivery || !["approved", "exported"].includes(delivery.workflow_state)) {
+        throw new DeliveryFailure("FINAL_REVIEW_ARTIFACT_STALE", "Export delivery state changed before failure finalization.");
+      }
+      const timestamp = now(dependencies);
+      const terminalEventId = `delivery_event_${uuid(dependencies)}`;
+      let artifactId: string | null = null;
+      try { artifactId = exportSnapshotFromJob(job).artifact_id; } catch { /* keep low-disclosure failure evidence */ }
+      withWorkbenchProductionMutationAuthority(db, {
+        kind: "export_failure", project_id: job.project_id, object_id: jobId
+      }, () => {
+        db.prepare(`UPDATE workbench_delivery_jobs
+          SET state = 'failed', terminal_event_id = ?, error_code = ?, finished_at = ?, updated_at = ?
+          WHERE job_id = ?`)
+          .run(terminalEventId, errorCode, timestamp, timestamp, jobId);
+        db.prepare(`INSERT INTO workbench_delivery_events
+          (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,
+            input_fingerprint, reason_code, data_json, created_at)
+          VALUES (?, ?, ?, 'export_failed', ?, ?, ?, ?, ?, ?, ?)`)
+          .run(terminalEventId, job.project_id, jobId, delivery.workflow_state, delivery.workflow_state,
+            artifactId, job.input_fingerprint, errorCode,
+            canonicalizeJcs({ recovery_evidence_preserved: inspectInterruptedWorkbenchExportEvidence(job) }), timestamp);
+      });
+      commitWithVerifiedOutcome(db, () => {
+        const terminalJob = getDeliveryJob(db, jobId);
+        const terminalEvent = db.prepare(`SELECT 1 AS present FROM workbench_delivery_events
+          WHERE event_id = ? AND project_id = ? AND job_id = ? AND event_type = 'export_failed'
+            AND reason_code = ?`)
+          .get(terminalEventId, job.project_id, jobId, errorCode) as { present: number } | undefined;
+        return Boolean(terminalJob?.state === "failed"
+          && terminalJob.terminal_event_id === terminalEventId
+          && terminalJob.error_code === errorCode
+          && terminalEvent);
+      }, "EXPORT_RECOVERY_REQUIRED", "Export failure outcome requires explicit recovery.");
       transactionOpen = false;
       return;
-    }
-    const delivery = getWorkbenchDeliveryState(db, job.project_id);
-    if (!delivery || !["approved", "exported"].includes(delivery.workflow_state)) {
-      throw new DeliveryFailure("FINAL_REVIEW_ARTIFACT_STALE", "Export delivery state changed before failure finalization.");
-    }
-    const timestamp = now(dependencies);
-    const terminalEventId = `delivery_event_${uuid(dependencies)}`;
-    let artifactId: string | null = null;
-    try { artifactId = exportSnapshotFromJob(job).artifact_id; } catch { /* keep low-disclosure failure evidence */ }
-    withWorkbenchProductionMutationAuthority(db, {
-      kind: "export_failure", project_id: job.project_id, object_id: jobId
-    }, () => {
-      db.prepare(`UPDATE workbench_delivery_jobs
-        SET state = 'failed', terminal_event_id = ?, error_code = ?, finished_at = ?, updated_at = ?
-        WHERE job_id = ?`)
-        .run(terminalEventId, errorCode, timestamp, timestamp, jobId);
-      db.prepare(`INSERT INTO workbench_delivery_events
-        (event_id, project_id, job_id, event_type, from_state, to_state, artifact_id,
-          input_fingerprint, reason_code, data_json, created_at)
-        VALUES (?, ?, ?, 'export_failed', ?, ?, ?, ?, ?, ?, ?)`)
-        .run(terminalEventId, job.project_id, jobId, delivery.workflow_state, delivery.workflow_state,
-          artifactId, job.input_fingerprint, errorCode,
-          canonicalizeJcs({ recovery_evidence_preserved: inspectInterruptedWorkbenchExportEvidence(job) }), timestamp);
-    });
-    db.exec("COMMIT");
-    transactionOpen = false;
-  } catch {
-    if (transactionOpen) {
-      try { db.exec("ROLLBACK"); } catch { /* retain original failure */ }
+    } catch (error) {
+      lastError = error;
+      if (transactionOpen && (db as unknown as { isTransaction?: boolean }).isTransaction === true) {
+        try { db.exec("ROLLBACK"); } catch { /* the next attempt performs a fresh durable reconciliation */ }
+      }
     }
   }
+  throw lastError instanceof DeliveryFailure && lastError.code === "EXPORT_RECOVERY_REQUIRED"
+    ? lastError
+    : new DeliveryFailure("EXPORT_RECOVERY_REQUIRED", "Export failure outcome requires explicit recovery.");
 }
 
 export async function runWorkbenchExportJob(
@@ -1092,9 +1185,10 @@ export async function runWorkbenchExportJob(
   const connection = db ?? openM0Database();
   const ownsConnection = !db;
   let claimed = false;
-  let partOwned = false;
-  let finalOwned = false;
+  let partOwnedIdentity: FileIdentity | null = null;
+  let finalOwnedIdentity: FileIdentity | null = null;
   let preserveRecoveryEvidence = false;
+  let retainOwnedFiles = false;
   let location: ReturnType<typeof exportFileLocation> | null = null;
   try {
     let claimOpen = false;
@@ -1162,31 +1256,38 @@ export async function runWorkbenchExportJob(
       throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Approved final Artifact bytes changed before export.");
     }
 
-    ensureSafeExportDirectory(snapshot.project_id);
+    const directoryLease = ensureSafeExportDirectory(snapshot.project_id);
     location = exportFileLocation(snapshot.relative_path, snapshot.project_id);
     if (existsSync(location.part) || existsSync(location.final)
       || hasExistingSymlinkAncestor(location.part, paths.exportsRoot)) {
       throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Export output path is already occupied or unsafe.");
     }
     if (dependencies.before_export_copy) await dependencies.before_export_copy(location.part);
-    copyFileSync(source.artifact.storage.uri, location.part, constants.COPYFILE_EXCL);
-    partOwned = true;
+    assertExportDirectoryLease(directoryLease);
+    partOwnedIdentity = copyToExclusivePart(
+      source.artifact.storage.uri,
+      location.part,
+      () => assertExportDirectoryLease(directoryLease)
+    );
     if (dependencies.after_export_copy) await dependencies.after_export_copy(location.part);
+    assertExportDirectoryLease(directoryLease);
     validateExportFile(location.part, snapshot, dependencies);
+    assertExportDirectoryLease(directoryLease);
     linkSync(location.part, location.final);
-    finalOwned = true;
+    assertExportDirectoryLease(directoryLease);
     unlinkSync(location.part);
-    partOwned = false;
+    partOwnedIdentity = null;
+    finalOwnedIdentity = inspectExportFileIdentity(location.final);
     validateExportFile(location.final, snapshot, dependencies);
     if (dependencies.before_export_commit) await dependencies.before_export_commit();
 
     const exportId = `export_${uuid(dependencies)}`;
     const terminalEventId = `delivery_event_${uuid(dependencies)}`;
     const timestamp = now(dependencies);
-    let finalizationOpen = false;
+    let finalizationPhase: "before_begin" | "in_transaction" | "commit_attempted" = "before_begin";
     try {
       connection.exec("BEGIN IMMEDIATE");
-      finalizationOpen = true;
+      finalizationPhase = "in_transaction";
       const lockedJob = getDeliveryJob(connection, jobId);
       const locked = projectForDelivery(connection, snapshot.project_id);
       if (!lockedJob || lockedJob.state !== "running"
@@ -1238,11 +1339,18 @@ export async function runWorkbenchExportJob(
             canonicalizeJcs({ relative_path: snapshot.relative_path, sha256: snapshot.blob_sha256,
               size_bytes: snapshot.size_bytes }), timestamp);
       });
+      finalizationPhase = "commit_attempted";
       connection.exec("COMMIT");
-      finalizationOpen = false;
+      finalizationPhase = "before_begin";
     } catch (error) {
+      if (finalizationPhase === "before_begin") {
+        if (workbenchProductionMutationError(error).code === "PRODUCTION_MUTATION_CONFLICT") {
+          retainOwnedFiles = true;
+        }
+        throw error;
+      }
       let rollbackConfirmed = false;
-      if (finalizationOpen) {
+      if ((connection as unknown as { isTransaction?: boolean }).isTransaction === true) {
         try {
           connection.exec("ROLLBACK");
           rollbackConfirmed = true;
@@ -1254,7 +1362,7 @@ export async function runWorkbenchExportJob(
       }
       throw error;
     }
-    finalOwned = false;
+    finalOwnedIdentity = null;
     const completedJob = getDeliveryJob(connection, jobId);
     const completedExport = exportRecord(connection, snapshot.project_id, exportId);
     if (!completedJob || !completedExport) {
@@ -1265,13 +1373,23 @@ export async function runWorkbenchExportJob(
   } catch (error) {
     const failure = error instanceof DeliveryFailure
       ? error
-      : new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Local export did not complete.");
-    if (claimed && !preserveRecoveryEvidence) markExportJobFailed(connection, jobId, failure.code, dependencies);
-    if (location && !preserveRecoveryEvidence) {
-      if (partOwned) cleanupRegularFile(location.part, location.directory);
-      if (finalOwned) cleanupRegularFile(location.final, location.directory);
+      : workbenchProductionMutationError(error).code === "PRODUCTION_MUTATION_CONFLICT"
+        ? new DeliveryFailure("PRODUCTION_MUTATION_CONFLICT", "Production mutation failed closed because the database is busy.")
+        : new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Local export did not complete.");
+    let reportedFailure = failure;
+    if (claimed && !preserveRecoveryEvidence) {
+      try {
+        markExportJobFailed(connection, jobId, failure.code, dependencies);
+      } catch {
+        preserveRecoveryEvidence = true;
+        reportedFailure = new DeliveryFailure("EXPORT_RECOVERY_REQUIRED", "Export failure outcome requires explicit recovery.");
+      }
     }
-    return deliveryError(failure);
+    if (location && !preserveRecoveryEvidence && !retainOwnedFiles) {
+      if (partOwnedIdentity) cleanupRegularFile(location.part, location.directory, partOwnedIdentity);
+      if (finalOwnedIdentity) cleanupRegularFile(location.final, location.directory, finalOwnedIdentity);
+    }
+    return deliveryError(reportedFailure);
   } finally {
     if (ownsConnection) connection.close();
   }

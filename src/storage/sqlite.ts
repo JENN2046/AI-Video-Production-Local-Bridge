@@ -48,6 +48,17 @@ export function openM0Database(sqlitePath = paths.sqlitePath): M0Database {
   }
 }
 
+export function openM0ReadonlyDatabase(sqlitePath = paths.sqlitePath): M0Database {
+  const db = openM0DatabaseConnection(sqlitePath, { readOnly: true });
+  try {
+    assertSchemaCurrent(db);
+    return db;
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+}
+
 export function initializeM0Schema(db: M0Database): void {
   runDatabaseMigrations(db);
 }

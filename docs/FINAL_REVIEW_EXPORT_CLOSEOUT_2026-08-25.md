@@ -117,12 +117,16 @@ Targeted tests cover the isolated `0014 → 0015` upgrade, deterministic checksu
 required index and trigger expressions, migration failure atomicity, direct-SQL
 rejection, stale Artifact checks, selected-SHOT regeneration, old-version
 retention, Export no-overwrite, byte drift, idempotent reuse, explicit retry,
-pre-existing and raced `.part` ownership, restart interruption, lost commit
-acknowledgement at pre-side-effect and finalization boundaries, exact Closeout phrase,
+pre-existing, raced, and identity-swapped output ownership, export-directory lease
+drift, restart interruption, busy failure reconciliation, lost commit acknowledgement
+at pre-side-effect and finalization boundaries, poisoned-`0014` admission rollback,
+exact Closeout phrase,
 closed-project write rejection, cold-versus-full Export verification, Dashboard
 blocker propagation, sanitized Workspace DTOs, and same-descriptor verified
-download. Snapshot projection tests cover current-source Export verification
-state while preserving verification compatibility for older signed source pairs.
+download. Snapshot compatibility tests accept the current `0015/workbench-v2-10`
+source pair and preserve older signed source-pair compatibility. The populated
+Snapshot fixture currently proves legacy-final projection; populated current-source
+Export verification and drift rejection remain part of PR 8 fixture acceptance.
 
 ## Remaining gates
 
