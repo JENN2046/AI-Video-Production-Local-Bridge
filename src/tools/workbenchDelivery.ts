@@ -35,6 +35,26 @@ import {
 export const FINAL_EXPORT_CONTRACT_VERSION = "final-export-v1" as const;
 export const CLOSEOUT_CONFIRMATION_PHRASE = "确认结案" as const;
 
+const NATIVE_EXPORT_CONTROL_TIMEOUT_MS = 10_000;
+const NATIVE_EXPORT_COPY_MIN_TIMEOUT_MS = 5 * 60_000;
+const NATIVE_EXPORT_COPY_MAX_TIMEOUT_MS = 6 * 60 * 60_000;
+const NATIVE_EXPORT_COPY_FLUSH_GRACE_MS = 60_000;
+const NATIVE_EXPORT_COPY_MIN_BYTES_PER_SECOND = 1024 * 1024;
+
+export function calculateNativeExportCopyTimeoutMs(sourceSizeBytes: number): number {
+  if (!Number.isSafeInteger(sourceSizeBytes) || sourceSizeBytes < 0) {
+    throw new DeliveryFailure("EXPORT_INTEGRITY_FAILED", "Export source size is invalid.");
+  }
+  // The helper durably copies source -> .part -> final and flushes both files.
+  const throughputBudget = Math.ceil(
+    ((sourceSizeBytes * 2) / NATIVE_EXPORT_COPY_MIN_BYTES_PER_SECOND) * 1000
+  ) + NATIVE_EXPORT_COPY_FLUSH_GRACE_MS;
+  return Math.min(
+    NATIVE_EXPORT_COPY_MAX_TIMEOUT_MS,
+    Math.max(NATIVE_EXPORT_COPY_MIN_TIMEOUT_MS, throughputBudget)
+  );
+}
+
 export type WorkbenchDeliveryResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: ToolError & { field?: string } };
@@ -437,14 +457,18 @@ function assertExportDirectoryLease(lease: ExportDirectoryLease): void {
   }
 }
 
-class NativeExportFileLease {
+export class NativeExportFileLease {
   private readonly pendingLines: string[] = [];
   private readonly waiters: Array<{ resolve: (line: string) => void; reject: (error: Error) => void }> = [];
   private outputBuffer = "";
   private terminalError: Error | null = null;
   private readonly exitPromise: Promise<number | null>;
 
-  constructor(private readonly child: ChildProcessWithoutNullStreams) {
+  constructor(
+    private readonly child: ChildProcessWithoutNullStreams,
+    private readonly controlTimeoutMs = NATIVE_EXPORT_CONTROL_TIMEOUT_MS,
+    private readonly copyTimeoutForSize: (sourceSizeBytes: number) => number = calculateNativeExportCopyTimeoutMs
+  ) {
     child.stdout.setEncoding("utf8");
     child.stderr.resume();
     child.stdin.on("error", () => this.failPending(new Error("EXPORT_NATIVE_HANDLE_STDIN_FAILED")));
@@ -474,20 +498,25 @@ class NativeExportFileLease {
     for (const waiter of this.waiters.splice(0)) waiter.reject(error);
   }
 
-  private nextLine(): Promise<string> {
+  private nextLine(timeoutMs = this.controlTimeoutMs): Promise<string> {
     if (this.pendingLines.length > 0) return Promise.resolve(this.pendingLines.shift()!);
     if (this.terminalError) return Promise.reject(this.terminalError);
     return new Promise((resolveLine, rejectLine) => {
-      const timer = setTimeout(() => rejectLine(new Error("EXPORT_NATIVE_HANDLE_TIMEOUT")), 10_000);
-      this.waiters.push({
+      const waiter: { resolve: (line: string) => void; reject: (error: Error) => void } = {
         resolve: (line) => { clearTimeout(timer); resolveLine(line); },
         reject: (error) => { clearTimeout(timer); rejectLine(error); }
-      });
+      };
+      const timer = setTimeout(() => {
+        const index = this.waiters.indexOf(waiter);
+        if (index >= 0) this.waiters.splice(index, 1);
+        rejectLine(new Error("EXPORT_NATIVE_HANDLE_TIMEOUT"));
+      }, timeoutMs);
+      this.waiters.push(waiter);
     });
   }
 
-  private async expect(expected: string): Promise<void> {
-    if (await this.nextLine() !== expected) {
+  private async expect(expected: string, timeoutMs = this.controlTimeoutMs): Promise<void> {
+    if (await this.nextLine(timeoutMs) !== expected) {
       const error = new Error("EXPORT_NATIVE_HANDLE_PROTOCOL_INVALID");
       this.failPending(error);
       throw error;
@@ -511,9 +540,9 @@ class NativeExportFileLease {
     });
   }
 
-  async copy(): Promise<void> {
+  async copy(sourceSizeBytes: number): Promise<void> {
     await this.send("COPY");
-    await this.expect("COPIED");
+    await this.expect("COPIED", this.copyTimeoutForSize(sourceSizeBytes));
   }
 
   async release(preserveFinal: boolean): Promise<void> {
@@ -1357,7 +1386,7 @@ export async function runWorkbenchExportJob(
     if (dependencies.after_export_directory_revalidation) {
       await dependencies.after_export_directory_revalidation(location.part);
     }
-    await nativeLease.copy();
+    await nativeLease.copy(snapshot.size_bytes);
     if (dependencies.after_export_copy) await dependencies.after_export_copy(location.part);
     assertExportDirectoryLease(directoryLease);
     validateExportFile(location.part, snapshot, dependencies);

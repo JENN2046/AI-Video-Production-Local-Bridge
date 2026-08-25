@@ -125,8 +125,9 @@ Targeted tests cover the isolated `0014 → 0015` upgrade plus poisoned real
 required index and trigger expressions, migration failure atomicity, direct-SQL
 rejection, stale Artifact checks, selected-SHOT regeneration, old-version
 retention, Export no-overwrite, byte drift, idempotent reuse, explicit retry,
-pre-existing, raced, and identity-swapped output ownership, native relative-handle
-creation across a post-revalidation junction swap, export-directory lease drift,
+pre-existing, raced, and identity-swapped output ownership, native directory-handle
+rejection of post-revalidation renames (with relative-handle fail-closed fallback),
+bounded size-aware durable-copy waits, export-directory lease drift,
 restart interruption, busy failure reconciliation, lost commit acknowledgement
 at pre-side-effect and finalization boundaries, poisoned-`0014` admission rollback,
 exact Closeout phrase,

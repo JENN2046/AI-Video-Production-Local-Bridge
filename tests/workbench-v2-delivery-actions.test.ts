@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { createServer } from "node:http";
 import {
   closeSync,
@@ -16,7 +17,8 @@ import {
   writeFileSync
 } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { PassThrough } from "node:stream";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
@@ -50,6 +52,7 @@ import { handleWorkbenchV2Api } from "../src/http/workbenchV2Routes.js";
 import { DATABASE_MIGRATIONS, migrationChecksum, runDatabaseMigrations } from "../src/storage/migrations.js";
 import { installWorkbenchProductionMutationAuthority } from "../src/storage/productionMutationAuthority.js";
 import type { M0Database } from "../src/storage/sqlite.js";
+import { calculateNativeExportCopyTimeoutMs, NativeExportFileLease } from "../src/tools/workbenchDelivery.js";
 import {
   assertWorkbenchProjectWritable,
   decideWorkbenchClip,
@@ -61,6 +64,39 @@ import {
 import { getProductionDeliveryStatus } from "../src/webgpt-v4/domain.js";
 
 const FFMPEG = process.env.FFMPEG_PATH ?? "ffmpeg";
+
+test("native export COPY has a bounded durable-copy timeout independent of control responses", () => {
+  assert.equal(calculateNativeExportCopyTimeoutMs(1), 5 * 60_000);
+  assert.equal(calculateNativeExportCopyTimeoutMs(1024 * 1024 * 1024), 2_108_000);
+  assert.equal(calculateNativeExportCopyTimeoutMs(Number.MAX_SAFE_INTEGER), 6 * 60 * 60_000);
+  assert.throws(() => calculateNativeExportCopyTimeoutMs(-1), /Export source size is invalid/);
+});
+
+test("native export COPY waits past the control-response deadline for a delayed helper response", async () => {
+  const fake = new EventEmitter() as EventEmitter & Record<string, unknown>;
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  fake.stdin = stdin;
+  fake.stdout = stdout;
+  fake.stderr = stderr;
+  fake.exitCode = null;
+  fake.kill = () => {
+    fake.exitCode = 1;
+    fake.emit("close", 1);
+    return true;
+  };
+  const child = fake as unknown as ChildProcessWithoutNullStreams;
+  const lease = new NativeExportFileLease(child, 5, () => 100);
+  let command = "";
+  stdin.on("data", (chunk) => { command += chunk.toString("utf8"); });
+
+  const copy = lease.copy(1);
+  setTimeout(() => stdout.write("COPIED\n"), 25);
+  await copy;
+  assert.equal(command, "COPY\n");
+  lease.terminate();
+});
 
 function applyMigrationsThrough(db: DatabaseSync, through: string): void {
   installWorkbenchProductionMutationAuthority(db);
@@ -779,11 +815,13 @@ test("native directory identities reject a normal-directory replacement before l
   }
 });
 
-test("native relative creation cannot follow a junction swapped after directory revalidation", async (t) => {
+test("native directory lease blocks a post-revalidation swap or keeps relative creation bound", async (t) => {
   const db = openM0Database();
   let originalDirectory = "";
+  let attemptedHeldDirectory = "";
   let heldDirectory = "";
   let outsideDirectory = "";
+  let renameBlocked = false;
   try {
     const fixture = await setupFinalReviewProject(db, 1);
     acceptFinal(db, fixture);
@@ -797,10 +835,16 @@ test("native relative creation cannot follow a junction swapped after directory 
     const result = await runWorkbenchExportJob(queued.data.job.job_id, db, {
       after_export_directory_revalidation: (partPath) => {
         originalDirectory = dirname(partPath);
-        heldDirectory = `${originalDirectory}.held-${randomUUID()}`;
+        attemptedHeldDirectory = `${originalDirectory}.held-${randomUUID()}`;
+        try {
+          renameSync(originalDirectory, attemptedHeldDirectory);
+          heldDirectory = attemptedHeldDirectory;
+        } catch {
+          renameBlocked = true;
+          return;
+        }
         outsideDirectory = resolve(paths.mediaRoot, ".delivery-actions-test-inputs", `outside-${randomUUID()}`);
         mkdirSync(outsideDirectory, { recursive: true });
-        renameSync(originalDirectory, heldDirectory);
         try {
           symlinkSync(outsideDirectory, originalDirectory, process.platform === "win32" ? "junction" : "dir");
         } catch (error) {
@@ -810,7 +854,12 @@ test("native relative creation cannot follow a junction swapped after directory 
         }
       }
     });
-    if (heldDirectory) {
+    if (renameBlocked) {
+      assert.equal(result.ok, true);
+      assert.equal(existsSync(originalDirectory), true);
+      assert.equal(existsSync(attemptedHeldDirectory), false);
+      assert.equal(outsideDirectory, "");
+    } else if (heldDirectory) {
       assert.equal(result.ok, false);
       if (!result.ok) assert.equal(result.error.code, "EXPORT_INTEGRITY_FAILED");
       assert.deepEqual(readdirSync(outsideDirectory), []);
@@ -821,7 +870,7 @@ test("native relative creation cannot follow a junction swapped after directory 
       assert.equal(job.error_code, "EXPORT_INTEGRITY_FAILED");
     }
   } finally {
-    if (originalDirectory && heldDirectory) {
+    if (originalDirectory && heldDirectory && existsSync(heldDirectory)) {
       rmSync(originalDirectory, { recursive: true, force: true });
       renameSync(heldDirectory, originalDirectory);
     }
