@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 
 import { withWorkbenchProductionMutationAuthority } from "../storage/productionMutationAuthority.js";
 import type { M0Database } from "../storage/sqlite.js";
-import { getGenerationRun } from "./generation.js";
+import { getGenerationRun, type GenerationRun } from "./generation.js";
 import { validateActiveArtifactReference } from "./mediaArtifacts.js";
 import { getProject, getShot } from "./projects.js";
+import { parseGenerationPlan } from "./s3bT2AdmissionPlan.js";
 import { getStoryboardPackage } from "./storyboardPackages.js";
 import { assertWorkbenchContentMutationAllowed } from "./workbenchDeliveryState.js";
 import type { GenerationPlan } from "./s3bT2Types.js";
@@ -21,15 +22,22 @@ export type GenerationExecutionReceiptState =
 export interface GenerationExecutionBindingInput {
   intent_id: string;
   job_id: string;
+  expected_job_state: "queued" | "submitting" | "polling" | "downloading" | "finalizing";
   run_id: string;
   project_id: string;
   shot_id: string;
   provider: "runninghub";
+  account_label: "personal" | "team";
   model: string;
   input_artifact_id: string;
   provider_task_id: string;
   duration_seconds: number;
   resolution: string;
+  estimated_cost_value: number;
+  budget_limit_value: number;
+  currency: string;
+  confirmed: boolean;
+  expires_at: string;
   input_snapshot: {
     video_prompt: string;
     negative_prompt: string;
@@ -52,12 +60,28 @@ export interface GenerationExecutionAuthoritySnapshot {
     project_id: string;
     shot_id: string;
     provider: "runninghub";
+    account_label: "personal" | "team";
     model: string;
     input_artifact_id: string;
     duration_seconds: number;
     resolution: string;
+    estimated_cost_value: number;
+    budget_limit_value: number;
+    currency: string;
+    confirmed: true;
+    expires_at: string;
     input_snapshot: GenerationExecutionBindingInput["input_snapshot"];
     generation_plan: GenerationPlan | null;
+  };
+  run: {
+    run_id: string;
+    batch_id: string;
+    project_id: string;
+    shot_id: string;
+    run_type: GenerationRun["run_type"];
+    input: GenerationRun["input"];
+    provider: Pick<GenerationRun["provider"], "provider" | "provider_name" | "model_name">;
+    versioning: GenerationRun["versioning"];
   };
   project: {
     active_storyboard_package_id: string;
@@ -122,6 +146,27 @@ interface GenerationExecutionReceiptRow {
   updated_at: string;
 }
 
+interface CurrentGenerationIntentRow {
+  intent_id: string;
+  run_id: string | null;
+  project_id: string;
+  shot_id: string;
+  provider: string;
+  account_label: string;
+  model: string;
+  input_artifact_id: string;
+  provider_task_id: string;
+  duration_seconds: number;
+  resolution: string;
+  estimated_cost_value: number;
+  budget_limit_value: number;
+  currency: string;
+  confirmed: number;
+  expires_at: string;
+  status: string;
+  data_json: string;
+}
+
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -140,6 +185,53 @@ function receiptFromRow(row: GenerationExecutionReceiptRow): GenerationExecution
   }
 }
 
+function currentIntentBinding(
+  db: M0Database,
+  intentId: string,
+  jobId: string,
+  expectedJobState: GenerationExecutionBindingInput["expected_job_state"]
+): GenerationExecutionBindingInput | null {
+  const row = db.prepare(`SELECT intent_id, run_id, project_id, shot_id, provider, account_label, model,
+      input_artifact_id, provider_task_id, duration_seconds, resolution, estimated_cost_value,
+      budget_limit_value, currency, confirmed, expires_at, status, data_json
+    FROM generation_intents WHERE intent_id = ?`).get(intentId) as CurrentGenerationIntentRow | undefined;
+  if (!row || row.provider !== "runninghub" || !["personal", "team"].includes(row.account_label)
+    || !row.run_id || row.confirmed !== 1 || !["queued", "running"].includes(row.status)) return null;
+  try {
+    const data = JSON.parse(row.data_json) as unknown;
+    if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+    const record = data as Record<string, unknown>;
+    if (!record.input_snapshot || typeof record.input_snapshot !== "object" || Array.isArray(record.input_snapshot)) return null;
+    const hasGenerationPlan = Object.prototype.hasOwnProperty.call(record, "generation_plan");
+    const generationPlan = hasGenerationPlan ? parseGenerationPlan(record.generation_plan) : undefined;
+    if (hasGenerationPlan && !generationPlan) return null;
+    return {
+      intent_id: row.intent_id,
+      job_id: jobId,
+      expected_job_state: expectedJobState,
+      run_id: row.run_id,
+      project_id: row.project_id,
+      shot_id: row.shot_id,
+      provider: row.provider,
+      account_label: row.account_label as "personal" | "team",
+      model: row.model,
+      input_artifact_id: row.input_artifact_id,
+      provider_task_id: row.provider_task_id,
+      duration_seconds: row.duration_seconds,
+      resolution: row.resolution,
+      estimated_cost_value: row.estimated_cost_value,
+      budget_limit_value: row.budget_limit_value,
+      currency: row.currency,
+      confirmed: true,
+      expires_at: row.expires_at,
+      input_snapshot: record.input_snapshot as GenerationExecutionBindingInput["input_snapshot"],
+      ...(generationPlan ? { generation_plan: generationPlan } : {})
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function getGenerationExecutionReceipt(db: M0Database, intentId: string): GenerationExecutionReceipt | null {
   const row = db.prepare("SELECT * FROM generation_execution_receipts WHERE intent_id = ?").get(intentId) as GenerationExecutionReceiptRow | undefined;
   return row ? receiptFromRow(row) : null;
@@ -151,6 +243,7 @@ export function buildGenerationExecutionAuthority(
 ): GenerationExecutionAuthorityResult {
   const writable = assertWorkbenchContentMutationAllowed(db, input.project_id);
   if (!writable.ok) return authorityStale("Project delivery state no longer permits generation execution.");
+  if (input.confirmed !== true) return authorityStale("Generation Intent human confirmation is no longer current.");
   const project = getProject(db, input.project_id);
   const shot = getShot(db, input.shot_id);
   const storyboardPackage = project?.active_storyboard_package_id
@@ -163,6 +256,7 @@ export function buildGenerationExecutionAuthority(
     state: string;
   } | undefined;
   if (!project || !shot || !storyboardPackage || !run || !job
+    || run.run_id !== input.run_id
     || shot.project_id !== project.project_id
     || storyboardPackage.project_id !== project.project_id
     || job.intent_id !== input.intent_id
@@ -170,10 +264,24 @@ export function buildGenerationExecutionAuthority(
     || run.shot_id !== shot.shot_id
     || shot.generation_run_ids.filter((runId) => runId === input.run_id).length !== 1
     || !["queued", "running"].includes(run.status)
-    || !["queued", "submitting", "polling", "downloading", "finalizing", "manual_reconciliation"].includes(job.state)
+    || job.state !== input.expected_job_state
+    || !["queued", "submitting", "polling", "downloading", "finalizing"].includes(job.state)
     || project.status !== "video_generation_in_progress"
     || shot.status !== "video_pending") {
     return authorityStale("Project, SHOT, Run, or Job generation binding changed after confirmation.");
+  }
+  if (run.input.storyboard_image_artifact_id !== input.input_artifact_id
+    || run.input.video_prompt !== input.input_snapshot.video_prompt
+    || run.input.negative_prompt !== input.input_snapshot.negative_prompt
+    || run.input.duration_seconds !== input.duration_seconds
+    || run.input.aspect_ratio !== input.input_snapshot.aspect_ratio
+    || run.input.resolution !== input.resolution
+    || run.provider.provider !== "real"
+    || run.provider.provider_name !== input.provider
+    || run.provider.model_name !== input.model
+    || !Number.isSafeInteger(run.versioning.attempt_number)
+    || run.versioning.attempt_number < 1) {
+    return authorityStale("Generation Run inputs, Provider binding, or versioning changed after confirmation.");
   }
   if (!project.active_storyboard_package_id
     || (input.generation_plan && input.generation_plan.storyboard_package_id !== project.active_storyboard_package_id)) {
@@ -221,12 +329,32 @@ export function buildGenerationExecutionAuthority(
       project_id: input.project_id,
       shot_id: input.shot_id,
       provider: input.provider,
+      account_label: input.account_label,
       model: input.model,
       input_artifact_id: input.input_artifact_id,
       duration_seconds: input.duration_seconds,
       resolution: input.resolution,
+      estimated_cost_value: input.estimated_cost_value,
+      budget_limit_value: input.budget_limit_value,
+      currency: input.currency,
+      confirmed: true,
+      expires_at: input.expires_at,
       input_snapshot: structuredClone(input.input_snapshot),
       generation_plan: input.generation_plan ? structuredClone(input.generation_plan) : null
+    },
+    run: {
+      run_id: run.run_id,
+      batch_id: run.batch_id,
+      project_id: run.project_id,
+      shot_id: run.shot_id,
+      run_type: run.run_type,
+      input: structuredClone(run.input),
+      provider: {
+        provider: run.provider.provider,
+        provider_name: run.provider.provider_name,
+        model_name: run.provider.model_name
+      },
+      versioning: structuredClone(run.versioning)
     },
     project: {
       active_storyboard_package_id: project.active_storyboard_package_id,
@@ -286,12 +414,17 @@ export function revalidateGenerationExecutionAuthority(
     || receipt.provider !== input.provider || receipt.state === "failed" || receipt.state === "cancelled") {
     return authorityStale("The durable generation execution receipt no longer matches this worker.");
   }
+  const currentInput = currentIntentBinding(db, receipt.intent_id, receipt.job_id, input.expected_job_state);
+  if (!currentInput) {
+    return authorityStale("The current Generation Intent is missing, malformed, or no longer executable.");
+  }
   if (receipt.provider_task_id !== input.provider_task_id
+    || receipt.provider_task_id !== currentInput.provider_task_id
     || (["reserved", "ambiguous"].includes(receipt.state) && input.provider_task_id !== "")
-    || (["submitted", "reconciling", "succeeded"].includes(receipt.state) && input.provider_task_id === "")) {
+    || (["submitted", "reconciling", "succeeded"].includes(receipt.state) && currentInput.provider_task_id === "")) {
     return authorityStale("Provider task identity no longer matches the durable execution receipt.");
   }
-  const current = buildGenerationExecutionAuthority(db, input);
+  const current = buildGenerationExecutionAuthority(db, currentInput);
   if (!current.ok) return current;
   if (current.fingerprint !== receipt.authority_fingerprint
     || JSON.stringify(current.snapshot) !== JSON.stringify(receipt.authority_snapshot)) {

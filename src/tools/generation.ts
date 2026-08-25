@@ -142,8 +142,30 @@ export function getGenerationBatch(db: M0Database, batchId: string): GenerationB
 }
 
 export function getGenerationRun(db: M0Database, runId: string): GenerationRun | null {
-  const row = db.prepare("SELECT data_json FROM generation_runs WHERE run_id = ?").get(runId) as { data_json: string } | undefined;
-  return row ? (JSON.parse(row.data_json) as GenerationRun) : null;
+  const row = db.prepare(`SELECT run_id, batch_id, project_id, shot_id, run_type, status, data_json
+    FROM generation_runs WHERE run_id = ?`).get(runId) as {
+      run_id: string;
+      batch_id: string | null;
+      project_id: string | null;
+      shot_id: string | null;
+      run_type: string;
+      status: string;
+      data_json: string;
+    } | undefined;
+  if (!row) return null;
+  try {
+    const run = JSON.parse(row.data_json) as GenerationRun;
+    if (!run || typeof run !== "object"
+      || run.run_id !== row.run_id
+      || run.batch_id !== (row.batch_id ?? "")
+      || run.project_id !== (row.project_id ?? "")
+      || run.shot_id !== (row.shot_id ?? "")
+      || run.run_type !== row.run_type
+      || run.status !== row.status) return null;
+    return run;
+  } catch {
+    return null;
+  }
 }
 
 export function listBatchRuns(db: M0Database, batchId: string): GenerationRun[] {

@@ -3115,7 +3115,7 @@ const EXTERNAL_EXECUTION_INTEGRITY_SQL = `
     SELECT RAISE(ABORT, 'GENERATION_EXECUTION_RECEIPT_IMMUTABLE');
   END;
 
-  INSERT OR IGNORE INTO generation_job_events
+  INSERT INTO generation_job_events
     (event_id, job_id, from_state, to_state, reason_code, data_json)
   SELECT 'job_event_0016_' || job.job_id, job.job_id, job.state, 'manual_reconciliation',
     'GENERATION_EXECUTION_SNAPSHOT_MISSING', '{"source":"migration_0016"}'

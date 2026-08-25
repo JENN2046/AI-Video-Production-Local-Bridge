@@ -898,7 +898,7 @@ test("M1 provider output downloader retries every validated public address", asy
   }
 });
 
-test("M1 provider output downloader revalidates authority after DNS, fetch, and body awaits", async () => {
+test("[EEI-AWAIT-03] M1 provider output downloader revalidates authority after DNS, fetch, and body awaits", async () => {
   const db = openM0Database(":memory:");
   const root = mkdtempSync(join(tmpdir(), "provider-output-authority-awaits-"));
   const fixtureBytes = readFileSync(join(paths.workspaceRoot, "fixtures", "video", "mock_clip.mp4"));

@@ -986,7 +986,7 @@ test("migration 0016 rolls back every partial schema object when its final trigg
       const migration0016 = DATABASE_MIGRATIONS.at(-1);
       assert.ok(migration0016);
       assert.equal(migration0016.id, "0016");
-      assert.equal(migrationChecksum(migration0016), "7033e5d836a9ec4bebfde449f62120fcda0361e8fe5de1224fb00ca39b1e8cb9");
+    assert.equal(migrationChecksum(migration0016), "7105f7b2f2bfdd6838bb39b018ff22dbbe1c882cc3f37374459dd785760f7a43");
       for (const migration of DATABASE_MIGRATIONS.slice(0, -1)) migration.apply(db);
       db.exec(`CREATE TABLE schema_migrations (
         migration_id TEXT PRIMARY KEY,
@@ -1014,6 +1014,63 @@ test("migration 0016 rolls back every partial schema object when its final trigg
       assert.equal(table, undefined);
       assert.deepEqual(partialTriggers, []);
       assert.match(sentinel.sql, /SENTINEL_TRIGGER/);
+    } finally {
+      db.close();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("migration 0016 rolls back quarantine state when its deterministic Job Event identity is occupied", () => {
+  const root = tempRoot();
+  try {
+    const sqlitePath = join(root, "migration-0016-event-collision.sqlite");
+    const db = new DatabaseSync(sqlitePath);
+    try {
+      const migration0016 = DATABASE_MIGRATIONS.at(-1);
+      assert.ok(migration0016);
+      for (const migration of DATABASE_MIGRATIONS.slice(0, -1)) migration.apply(db);
+      db.exec(`CREATE TABLE schema_migrations (
+        migration_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        checksum TEXT NOT NULL,
+        applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`);
+      for (const migration of DATABASE_MIGRATIONS.slice(0, -1)) {
+        db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)")
+          .run(migration.id, migration.name, migrationChecksum(migration));
+      }
+      const insertIntent = db.prepare(`INSERT INTO generation_intents
+        (intent_id, project_id, shot_id, provider, account_label, model, input_artifact_id,
+         duration_seconds, resolution, estimated_cost_value, budget_limit_value, currency,
+         confirmed, expires_at, status, data_json)
+        VALUES (?, ?, ?, 'runninghub', 'personal', 'model', ?, 6, '1080x1920', 0.08, 1,
+          'CNY', 1, '2099-01-01T00:00:00.000Z', ?, '{}')`);
+      insertIntent.run("intent_0016_active", "project_0016_active", "shot_0016_active", "artifact_0016_active", "queued");
+      insertIntent.run("intent_0016_other", "project_0016_other", "shot_0016_other", "artifact_0016_other", "failed");
+      db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, ?)")
+        .run("job_0016_active", "intent_0016_active", "queued");
+      db.prepare("INSERT INTO generation_jobs (job_id, intent_id, state) VALUES (?, ?, ?)")
+        .run("job_0016_other", "intent_0016_other", "failed");
+      db.prepare(`INSERT INTO generation_job_events
+        (event_id, job_id, from_state, to_state, reason_code, data_json)
+        VALUES (?, ?, 'queued', 'failed', 'SENTINEL_EVENT', '{"source":"sentinel"}')`)
+        .run("job_event_0016_job_0016_active", "job_0016_other");
+
+      assert.throws(() => runDatabaseMigrations(db), /UNIQUE constraint failed: generation_job_events.event_id/);
+      const activeJob = db.prepare("SELECT state, reconciliation_reason FROM generation_jobs WHERE job_id = 'job_0016_active'")
+        .get() as { state: string; reconciliation_reason: string };
+      const collision = db.prepare("SELECT job_id, reason_code, data_json FROM generation_job_events WHERE event_id = 'job_event_0016_job_0016_active'")
+        .get() as { job_id: string; reason_code: string; data_json: string };
+      const ledger = db.prepare("SELECT migration_id FROM schema_migrations WHERE migration_id = '0016'").get();
+      const receiptTable = db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'generation_execution_receipts'").get();
+      const version = db.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string };
+      assert.deepEqual({ ...activeJob }, { state: "queued", reconciliation_reason: "" });
+      assert.deepEqual({ ...collision }, { job_id: "job_0016_other", reason_code: "SENTINEL_EVENT", data_json: '{"source":"sentinel"}' });
+      assert.equal(ledger, undefined);
+      assert.equal(receiptTable, undefined);
+      assert.equal(version.value, "workbench-v2-10");
     } finally {
       db.close();
     }

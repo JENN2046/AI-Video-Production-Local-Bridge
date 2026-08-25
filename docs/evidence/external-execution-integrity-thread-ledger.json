@@ -9,88 +9,96 @@
       "thread_id": "PRRT_kwDOTTDtUM6ZfJwv",
       "semantics": "Provider submit, poll, and download awaits revalidate execution authority after returning.",
       "tests": [
-        { "file": "tests/workbench-v2-domain.test.ts", "name": "rejected Provider awaits stay low-disclosure and preserve reconciliation rights" },
-        { "file": "tests/workbench-v2-domain.test.ts", "name": "a paid submit is persisted before post-await Project authority drift enters reconciliation" },
-        { "file": "tests/workbench-v2-domain.test.ts", "name": "post-poll SHOT drift preserves the retained task and blocks download" },
-        { "file": "tests/m1-provider-boundary.test.ts", "name": "M1 provider output downloader revalidates authority after DNS, fetch, and body awaits" }
+        { "test_id": "EEI-AWAIT-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-AWAIT-01] rejected Provider awaits stay low-disclosure and preserve reconciliation rights" },
+        { "test_id": "EEI-AWAIT-02", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-AWAIT-02] Intent drift during resolved and rejected Provider awaits fails closed" },
+        { "test_id": "EEI-TASK-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-TASK-01] a paid submit is persisted before post-await Project authority drift enters reconciliation" },
+        { "test_id": "EEI-SHOT-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-SHOT-01] post-poll SHOT drift preserves the retained task and blocks download" },
+        { "test_id": "EEI-JOB-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-JOB-01] external Job stage ownership cannot be overwritten across Provider awaits" },
+        { "test_id": "EEI-AWAIT-03", "file": "tests/m1-provider-boundary.test.ts", "name": "[EEI-AWAIT-03] M1 provider output downloader revalidates authority after DNS, fetch, and body awaits" }
       ]
     },
     {
       "thread_id": "PRRT_kwDOTTDtUM6ZfJww",
       "semantics": "Media activation markers survive an outer transaction rollback and are cleaned only after the true commit.",
       "tests": [
-        { "file": "tests/workbench-v2-domain.test.ts", "name": "Provider Artifact finalization rollback retains its marker and reconciliation binding" },
-        { "file": "tests/media-activation-integrity.test.ts", "name": "an outer transaction rollback cannot leave an unrecorded active file" }
+        { "test_id": "EEI-ACTIVATION-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-ACTIVATION-01] Provider Artifact finalization rollback retains its marker and reconciliation binding" },
+        { "test_id": "EEI-ACTIVATION-02", "file": "tests/media-activation-integrity.test.ts", "name": "[EEI-ACTIVATION-02] an outer transaction rollback cannot leave an unrecorded active file" }
       ]
     },
     {
       "thread_id": "PRRT_kwDOTTDtUM6ZfjJd",
       "semantics": "The persistent worker checks receipt authority before Provider effects and again inside final persistence.",
       "tests": [
-        { "file": "tests/workbench-v2-domain.test.ts", "name": "worker preserves a known paid task when a resumed capability drifts" },
-        { "file": "tests/workbench-v2-domain.test.ts", "name": "final activation transaction revalidates SHOT authority immediately before Artifact persistence" }
+        { "test_id": "EEI-AUTH-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-AUTH-01] worker preserves a known paid task when a resumed capability drifts" },
+        { "test_id": "EEI-AUTH-02", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-AUTH-02] final activation transaction revalidates SHOT authority immediately before Artifact persistence" },
+        { "test_id": "EEI-INTENT-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-INTENT-01] revoked Intent confirmation blocks initial and post-await Provider execution" },
+        { "test_id": "EEI-RUN-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-RUN-01] Generation Run authority is frozen before effects, after submit, and inside final activation" },
+        { "test_id": "EEI-MIGRATION-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-MIGRATION-01] a genuine 0015 to 0016 execution quarantine admits its random-ID Job for explicit reconciliation" }
       ]
     },
     {
       "thread_id": "PRRT_kwDOTTDtUM6Z9w6i",
       "semantics": "A successful paid submit persists the Provider task before a changed authority boundary can return.",
       "tests": [
-        { "file": "tests/workbench-v2-domain.test.ts", "name": "a paid submit is persisted before post-await Project authority drift enters reconciliation" },
-        { "file": "tests/workbench-v2-domain.test.ts", "name": "provider task persistence failure enters manual reconciliation without losing the paid task ID" }
+        { "test_id": "EEI-TASK-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-TASK-01] a paid submit is persisted before post-await Project authority drift enters reconciliation" },
+        { "test_id": "EEI-TASK-02", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-TASK-02] provider task persistence failure enters manual reconciliation without losing the paid task ID" },
+        { "test_id": "EEI-TASK-04", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-TASK-04] a bounded but noncanonical returned Provider task identity is retained for reconciliation" },
+        { "test_id": "EEI-DIRECTOR-01", "file": "tests/director-workbench-approval.test.ts", "name": "[EEI-DIRECTOR-01] a paid Director task remains durable when Grant settlement changes during submit await" }
       ]
     },
     {
       "thread_id": "PRRT_kwDOTTDtUM6Z_11q",
       "semantics": "Filesystem or database rollback preserves an auditable activation marker or recovery Journal.",
       "tests": [
-        { "file": "tests/workbench-v2-domain.test.ts", "name": "Provider Artifact finalization rollback retains its marker and reconciliation binding" },
-        { "file": "tests/media-activation-integrity.test.ts", "name": "an outer transaction rollback cannot leave an unrecorded active file" }
+        { "test_id": "EEI-ACTIVATION-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-ACTIVATION-01] Provider Artifact finalization rollback retains its marker and reconciliation binding" },
+        { "test_id": "EEI-ACTIVATION-02", "file": "tests/media-activation-integrity.test.ts", "name": "[EEI-ACTIVATION-02] an outer transaction rollback cannot leave an unrecorded active file" }
       ]
     },
     {
       "thread_id": "PRRT_kwDOTTDtUM6aAoJM",
       "semantics": "Async regeneration rechecks authority and commits Artifact, GenerationRun, and SHOT as one unit.",
       "tests": [
-        { "file": "tests/m0-e-review-regeneration.test.ts", "name": "mock regeneration revalidates authority after await and writes no partial Artifact or Run" },
-        { "file": "tests/m0-e-review-regeneration.test.ts", "name": "M0-E revision_needed saves rejection and regeneration preserves old artifact" }
+        { "test_id": "EEI-REGEN-01", "file": "tests/m0-e-review-regeneration.test.ts", "name": "[EEI-REGEN-01] mock regeneration revalidates authority after await and writes no partial Artifact or Run" },
+        { "test_id": "EEI-REGEN-02", "file": "tests/m0-e-review-regeneration.test.ts", "name": "[EEI-REGEN-02] M0-E revision_needed saves rejection and regeneration preserves old artifact" }
       ]
     },
     {
       "thread_id": "PRRT_kwDOTTDtUM6aDPTh",
       "semantics": "Generation execution receipts freeze the Project video specification used by the Provider result.",
       "tests": [
-        { "file": "tests/workbench-v2-domain.test.ts", "name": "a paid submit is persisted before post-await Project authority drift enters reconciliation" }
+        { "test_id": "EEI-TASK-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-TASK-01] a paid submit is persisted before post-await Project authority drift enters reconciliation" }
       ]
     },
     {
       "thread_id": "PRRT_kwDOTTDtUM6aD6D_",
       "semantics": "The active Storyboard Package identity and immutable content are rebound from current authority before persistence.",
       "tests": [
-        { "file": "tests/workbench-v2-domain.test.ts", "name": "post-poll Storyboard Package replacement preserves the retained task and frozen package receipt" }
+        { "test_id": "EEI-PACKAGE-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-PACKAGE-01] post-poll Storyboard Package replacement preserves the retained task and frozen package receipt" }
       ]
     },
     {
       "thread_id": "PRRT_kwDOTTDtUM6aEawF",
       "semantics": "A retained Provider task remains bound to its frozen SHOT and enters reconciliation on SHOT drift.",
       "tests": [
-        { "file": "tests/workbench-v2-domain.test.ts", "name": "post-poll SHOT drift preserves the retained task and blocks download" },
-        { "file": "tests/workbench-v2-domain.test.ts", "name": "switching a persisted Provider task is rejected without changing recovery Artifact bindings" }
+        { "test_id": "EEI-SHOT-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-SHOT-01] post-poll SHOT drift preserves the retained task and blocks download" },
+        { "test_id": "EEI-TASK-03", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-TASK-03] switching a persisted Provider task is rejected without changing recovery Artifact bindings" }
       ]
     },
     {
       "thread_id": "PRRT_kwDOTTDtUM6acFef",
       "semantics": "G0 writes use a live transaction and preserve target and backup evidence when rollback authority is uncertain.",
       "tests": [
-        { "file": "tests/workbench-v2-production-mutation-authority.test.ts", "name": "G0 prepared writes require a live owned transaction before creating filesystem state" },
-        { "file": "tests/workbench-v2-production-mutation-authority.test.ts", "name": "G0 retains target and backup evidence when commit outcome or database rollback is uncertain" }
+        { "test_id": "EEI-G0-01", "file": "tests/workbench-v2-production-mutation-authority.test.ts", "name": "[EEI-G0-01] G0 prepared writes require a live owned transaction before creating filesystem state" },
+        { "test_id": "EEI-G0-02", "file": "tests/workbench-v2-production-mutation-authority.test.ts", "name": "[EEI-G0-02] G0 retains target and backup evidence when commit outcome or database rollback is uncertain" }
       ]
     },
     {
       "thread_id": "PRRT_kwDOTTDtUM6asFkl",
       "semantics": "Provider task and receipt remain reconcilable when Artifact activation finalization rolls back.",
       "tests": [
-        { "file": "tests/workbench-v2-domain.test.ts", "name": "Provider Artifact finalization rollback retains its marker and reconciliation binding" },
-        { "file": "tests/workbench-v2-domain.test.ts", "name": "failed verified Blob recovery stays in manual reconciliation without polling or resubmitting" }
+        { "test_id": "EEI-ACTIVATION-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-ACTIVATION-01] Provider Artifact finalization rollback retains its marker and reconciliation binding" },
+        { "test_id": "EEI-DOWNLOAD-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-DOWNLOAD-01] an injected downloader cannot claim a Provider output outside the worker finalization capability" },
+        { "test_id": "EEI-RECOVERY-01", "file": "tests/workbench-v2-domain.test.ts", "name": "[EEI-RECOVERY-01] failed verified Blob recovery stays in manual reconciliation without polling or resubmitting" }
       ]
     }
   ]

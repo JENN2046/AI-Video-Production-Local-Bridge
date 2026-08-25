@@ -982,7 +982,7 @@
       "path": "tests/workbench-v2-domain.test.ts",
       "npm_script": "test:v2",
       "ci_step": "Workbench V2 domain tests",
-      "case_name": "provider task persistence failure enters manual reconciliation without losing the paid task ID"
+      "case_name": "[EEI-TASK-02] provider task persistence failure enters manual reconciliation without losing the paid task ID"
     },
     {
       "id": "sr3-activation-recovery-faults",

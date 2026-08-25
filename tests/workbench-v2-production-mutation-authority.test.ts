@@ -592,7 +592,7 @@ test("PRRT_kwDOTTDtUM6ZeDuS G0 writes fail before filesystem or database effects
   }
 });
 
-test("G0 prepared writes require a live owned transaction before creating filesystem state", () => {
+test("[EEI-G0-01] G0 prepared writes require a live owned transaction before creating filesystem state", () => {
   const fixture = currentFixture();
   const root = g0ProjectRoot(fixture.project.project_id);
   try {
@@ -609,7 +609,7 @@ test("G0 prepared writes require a live owned transaction before creating filesy
   }
 });
 
-test("G0 retains target and backup evidence when commit outcome or database rollback is uncertain", () => {
+test("[EEI-G0-02] G0 retains target and backup evidence when commit outcome or database rollback is uncertain", () => {
   for (const mode of ["commit_after_apply", "rollback_failed"] as const) {
     const fixture = currentFixture();
     const root = g0ProjectRoot(fixture.project.project_id);

@@ -23,6 +23,7 @@ import { requireShotWorkflowWriteAction } from "./operationalWriteGates.js";
 import {
   activateLocalMediaArtifact,
   cleanupCommittedMediaActivationMarkers,
+  transitionMediaArtifactStatus,
   validateActiveArtifactReference,
   type ActivateLocalMediaArtifactInput,
   type MediaArtifact,
@@ -224,20 +225,28 @@ function jobForIntent(db: M0Database, intentId: string): GenerationJob | null {
 
 function executionBinding(
   intent: WorkbenchGenerationIntent,
-  job: Pick<GenerationJob, "job_id">
+  job: Pick<GenerationJob, "job_id">,
+  expectedJobState: GenerationExecutionBindingInput["expected_job_state"]
 ): GenerationExecutionBindingInput {
   return {
     intent_id: intent.intent_id,
     job_id: job.job_id,
+    expected_job_state: expectedJobState,
     run_id: intent.run_id,
     project_id: intent.project_id,
     shot_id: intent.shot_id,
     provider: intent.provider,
+    account_label: intent.account_label,
     model: intent.model,
     input_artifact_id: intent.input_artifact_id,
     provider_task_id: intent.provider_task_id,
     duration_seconds: intent.duration_seconds,
     resolution: intent.resolution,
+    estimated_cost_value: intent.estimated_cost_value,
+    budget_limit_value: intent.budget_limit_value,
+    currency: intent.currency,
+    confirmed: intent.confirmed,
+    expires_at: intent.expires_at,
     input_snapshot: intent.input_snapshot,
     ...(intent.generation_plan ? { generation_plan: intent.generation_plan } : {})
   };
@@ -246,9 +255,10 @@ function executionBinding(
 function generationExecutionAuthorityError(
   db: M0Database,
   intent: WorkbenchGenerationIntent,
-  job: Pick<GenerationJob, "job_id">
+  job: Pick<GenerationJob, "job_id">,
+  expectedJobState: GenerationExecutionBindingInput["expected_job_state"]
 ): ProviderToolError | null {
-  const authority = revalidateGenerationExecutionAuthority(db, executionBinding(intent, job));
+  const authority = revalidateGenerationExecutionAuthority(db, executionBinding(intent, job, expectedJobState));
   return authority.ok ? null : providerError(authority.error.code, authority.error.message);
 }
 
@@ -268,10 +278,10 @@ function setJobState(
   try {
     const result = options.lease_token
       ? db.prepare(`UPDATE generation_jobs SET state = ?, reconciliation_reason = ?, updated_at = CURRENT_TIMESTAMP
-          WHERE job_id = ? AND lease_token = ? AND lease_expires_at IS NOT NULL AND datetime(lease_expires_at) > CURRENT_TIMESTAMP`)
-        .run(state, reasonCode, job.job_id, options.lease_token) as { changes: number | bigint }
-      : db.prepare("UPDATE generation_jobs SET state = ?, reconciliation_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?")
-        .run(state, reasonCode, job.job_id) as { changes: number | bigint };
+          WHERE job_id = ? AND state = ? AND lease_token = ? AND lease_expires_at IS NOT NULL AND datetime(lease_expires_at) > CURRENT_TIMESTAMP`)
+        .run(state, reasonCode, job.job_id, job.state, options.lease_token) as { changes: number | bigint }
+      : db.prepare("UPDATE generation_jobs SET state = ?, reconciliation_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE job_id = ? AND state = ?")
+        .run(state, reasonCode, job.job_id, job.state) as { changes: number | bigint };
     if (Number(result.changes) !== 1) {
       if (options.lease_token) throw new GenerationJobLeaseLostError();
       throw new Error("GENERATION_JOB_NOT_FOUND");
@@ -308,15 +318,15 @@ function enterManualReconciliationJob(
           SET state = 'manual_reconciliation', reconciliation_reason = ?,
             lease_owner = '', lease_token = '', lease_expires_at = NULL,
             next_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-          WHERE job_id = ? AND lease_token = ? AND lease_expires_at IS NOT NULL
+          WHERE job_id = ? AND state = ? AND lease_token = ? AND lease_expires_at IS NOT NULL
             AND datetime(lease_expires_at) > CURRENT_TIMESTAMP`)
-        .run(reasonCode, job.job_id, options.lease_token) as { changes: number | bigint }
+        .run(reasonCode, job.job_id, job.state, options.lease_token) as { changes: number | bigint }
       : db.prepare(`UPDATE generation_jobs
           SET state = 'manual_reconciliation', reconciliation_reason = ?,
             lease_owner = '', lease_token = '', lease_expires_at = NULL,
             next_attempt_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-          WHERE job_id = ?`)
-        .run(reasonCode, job.job_id) as { changes: number | bigint };
+          WHERE job_id = ? AND state = ?`)
+        .run(reasonCode, job.job_id, job.state) as { changes: number | bigint };
     if (Number(result.changes) !== 1) {
       if (options.lease_token) throw new GenerationJobLeaseLostError();
       throw new Error("GENERATION_JOB_NOT_FOUND");
@@ -386,6 +396,34 @@ function migratedReconciliationRestoreState(
     ? "video_review"
     : "storyboard_approved";
   return { shot_status: restoredShotStatus, project_status: projectStatus };
+}
+
+function isMigration0016ExecutionQuarantine(
+  db: M0Database,
+  job: GenerationJob,
+  intent: WorkbenchGenerationIntent,
+  project: Project,
+  shot: Shot
+): boolean {
+  if (job.reconciliation_reason !== "GENERATION_EXECUTION_SNAPSHOT_MISSING"
+    || getGenerationExecutionReceipt(db, intent.intent_id)
+    || !intent.confirmed
+    || (intent.status !== "queued" && intent.status !== "running")
+    || project.status !== "video_generation_in_progress"
+    || shot.status !== "video_pending") return false;
+  const event = db.prepare(`SELECT job_id, from_state, to_state, reason_code, data_json
+    FROM generation_job_events WHERE event_id = ?`).get(`job_event_0016_${job.job_id}`) as {
+      job_id: string;
+      from_state: string;
+      to_state: string;
+      reason_code: string;
+      data_json: string;
+    } | undefined;
+  return event?.job_id === job.job_id
+    && ["queued", "submitting", "polling", "downloading", "finalizing"].includes(event.from_state)
+    && event.to_state === "manual_reconciliation"
+    && event.reason_code === "GENERATION_EXECUTION_SNAPSHOT_MISSING"
+    && parseRecord(event.data_json).source === "migration_0016";
 }
 
 function persistReconciliationRestoreState(db: M0Database, intentId: string, restore: ReconciliationRestoreState): void {
@@ -1043,7 +1081,7 @@ export function commitCanonicalGenerationAdmission(
   appendJobEvent(db, jobId, "", "queued", input.admission_reason_code ?? (input.generation_plan ? "T2_ADMISSION_CONFIRMED" : "HUMAN_CONFIRMED"));
   const intent = getIntent(db, intentId);
   if (!intent) throw new Error("GENERATION_INTENT_NOT_FOUND");
-  const executionAuthority = createGenerationExecutionReceipt(db, executionBinding(intent, { job_id: jobId }));
+  const executionAuthority = createGenerationExecutionReceipt(db, executionBinding(intent, { job_id: jobId }, "queued"));
   if (!executionAuthority.ok) throw new Error(executionAuthority.error.code);
   return { intent, run_id: runId, job_id: jobId, status: "queued" };
 }
@@ -1758,10 +1796,22 @@ export function confirmWorkbenchGeneration(
   }
 }
 
-function failIntent(db: M0Database, intent: WorkbenchGenerationIntent, status: "failed" | "timeout", error: ProviderToolError | { code: string; message: string; retryable?: boolean }, leaseToken: string): void {
+function failIntent(
+  db: M0Database,
+  intent: WorkbenchGenerationIntent,
+  status: "failed" | "timeout",
+  error: ProviderToolError | { code: string; message: string; retryable?: boolean },
+  leaseToken: string,
+  expectedJob?: GenerationJob
+): boolean {
   const safe = sanitizedError(error);
   db.exec("BEGIN IMMEDIATE");
   try {
+    const currentJob = jobForIntent(db, intent.intent_id);
+    if (!currentJob || (expectedJob && currentJob.state !== expectedJob.state)) {
+      db.exec("ROLLBACK");
+      return false;
+    }
     const automation = directorAutomationLink(intent);
     if (automation && intent.run_id) {
       releaseDirectorGrantReservation(db, automation, {
@@ -1786,9 +1836,12 @@ function failIntent(db: M0Database, intent: WorkbenchGenerationIntent, status: "
       transitionGenerationExecutionReceipt(db, intent.intent_id, { state: "failed" });
     }
     restoreProjectAfterGenerationAutomationStops(db, intent);
-    const job = jobForIntent(db, intent.intent_id);
-    if (job) setJobState(db, job, "failed", String(safe.code ?? "PROVIDER_REQUEST_FAILED"), { lease_token: leaseToken, in_transaction: true });
+    setJobState(db, expectedJob ?? currentJob, "failed", String(safe.code ?? "PROVIDER_REQUEST_FAILED"), {
+      lease_token: leaseToken,
+      in_transaction: true
+    });
     db.exec("COMMIT");
+    return true;
   } catch (failure) {
     db.exec("ROLLBACK");
     throw failure;
@@ -1977,14 +2030,65 @@ function markKnownProviderTaskForReconciliation(
     return updated;
   } catch {
     db.exec("ROLLBACK");
-    // A broken audit trigger must not turn an already-created paid task into a retryable failed intent.
+    // First commit the known external identity without depending on accounting,
+    // Run projection, Project restoration, or an optional Job event. Those
+    // enrichments must never be able to erase an already-created paid task.
     db.exec("BEGIN IMMEDIATE");
     try {
-      const updated = persist(false);
+      const persistedTask = db.prepare(`UPDATE generation_intents
+        SET provider_task_id = ?, status = 'running', sanitized_error_json = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE intent_id = ? AND (provider_task_id = '' OR provider_task_id = ?)`)
+        .run(taskId, JSON.stringify(safe), intent.intent_id, taskId) as { changes: number | bigint };
+      if (Number(persistedTask.changes) !== 1) throw new Error("PROVIDER_TASK_IDENTITY_CONFLICT");
+      transitionGenerationExecutionReceipt(db, intent.intent_id, {
+        state: "reconciling",
+        provider_task_id: taskId,
+        provider_status: reasonCode
+      });
+      const updated = enterManualReconciliationJob(db, job, reasonCode, { record_event: false });
       db.exec("COMMIT");
-      return updated;
+      let finalJob = updated;
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        recordPaidDirectorSubmission();
+        const run = getGenerationRun(db, intent.run_id);
+        if (run) {
+          run.status = "running";
+          run.provider.provider_job_id = taskId;
+          run.provider.provider_status = reasonCode;
+          run.error = { code: String(safe.code ?? reasonCode), message: "Provider task requires human reconciliation.", retryable: false };
+          saveGenerationRun(db, run);
+        }
+        restoreProjectAfterGenerationAutomationStops(db, intent);
+        db.exec("COMMIT");
+      } catch {
+        try { db.exec("ROLLBACK"); } catch { /* transaction may already have rolled back */ }
+        if (automation) {
+          const accountingReason = "DIRECTOR_ACCOUNTING_REQUIRES_RECONCILIATION";
+          const accountingError = sanitizedError(providerError(
+            accountingReason,
+            "Director accounting could not be settled after Provider task creation."
+          ));
+          db.exec("BEGIN IMMEDIATE");
+          try {
+            db.prepare("UPDATE generation_intents SET sanitized_error_json = ?, updated_at = CURRENT_TIMESTAMP WHERE intent_id = ? AND provider_task_id = ?")
+              .run(JSON.stringify(accountingError), intent.intent_id, taskId);
+            transitionGenerationExecutionReceipt(db, intent.intent_id, {
+              state: "reconciling",
+              provider_task_id: taskId,
+              provider_status: accountingReason
+            });
+            finalJob = enterManualReconciliationJob(db, finalJob, accountingReason, { record_event: false });
+            db.exec("COMMIT");
+          } catch (accountingFailure) {
+            db.exec("ROLLBACK");
+            throw accountingFailure;
+          }
+        }
+      }
+      return finalJob;
     } catch (fallbackError) {
-      db.exec("ROLLBACK");
+      try { db.exec("ROLLBACK"); } catch { /* identity transaction may already have committed */ }
       throw fallbackError;
     }
   }
@@ -2065,6 +2169,26 @@ function existingOutputArtifact(
   shotId: string
 ): ExistingOutputArtifactResult {
   return providerOutputArtifactByIdentity(db, providerTaskId, projectId, shotId);
+}
+
+function quarantineUntrustedDownloadedArtifact(
+  db: M0Database,
+  artifactId: string,
+  intent: WorkbenchGenerationIntent,
+  providerTaskId: string
+): void {
+  if (typeof artifactId !== "string" || artifactId.length < 3 || artifactId.length > 300) return;
+  const candidate = validateActiveArtifactReference(db, {
+    artifact_id: artifactId,
+    project_id: intent.project_id,
+    shot_id: intent.shot_id,
+    role: "generated_clip",
+    artifact_type: "video"
+  });
+  if (!candidate.ok
+    || candidate.artifact.source.provider !== intent.provider
+    || candidate.artifact.source.provider_job_id !== providerTaskId) return;
+  transitionMediaArtifactStatus(candidate.artifact.artifact_id, "archived", db);
 }
 
 function providerOutputRecoveryFromIntent(
@@ -2337,7 +2461,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       if (knownTaskId) {
         job = markKnownProviderTaskForReconciliation(db, currentIntent, currentJob, knownTaskId, error, leaseToken, reconciliationReason);
       } else {
-        failIntent(db, currentIntent, "failed", error, leaseToken);
+        failIntent(db, currentIntent, "failed", error, leaseToken, currentJob);
       }
     };
     const recoveringLocalCompletion = knownTaskId !== ""
@@ -2405,7 +2529,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
     // before applying the broader execution snapshot guard. These checks are
     // synchronous and side-effect free; the snapshot still gates Provider
     // selection and every subsequent external await boundary.
-    const initialExecutionAuthorityError = generationExecutionAuthorityError(db, intent, job);
+    const initialExecutionAuthorityError = generationExecutionAuthorityError(db, intent, job, job.state as GenerationExecutionBindingInput["expected_job_state"]);
     if (initialExecutionAuthorityError) {
       failOrReconcileKnownTask(
         intent,
@@ -2433,7 +2557,8 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         intent,
         "failed",
         providerError("OFFICIAL_PREFLIGHT_REQUIRED", "Official preflight authorization is required before Provider execution."),
-        leaseToken
+        leaseToken,
+        job
       );
       return;
     }
@@ -2469,7 +2594,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         artifact_id: intent.input_artifact_id, project_id: intent.project_id, shot_id: intent.shot_id, role: "storyboard_image", artifact_type: "image"
       });
       if (!artifact.ok) {
-        failIntent(db, intent, "failed", providerError(artifact.error.code, artifact.error.message), leaseToken);
+        failIntent(db, intent, "failed", providerError(artifact.error.code, artifact.error.message), leaseToken, job);
         return;
       }
       if (!allowSubmit) {
@@ -2495,7 +2620,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         });
       } catch {
         assertJobLease(db, job.job_id, leaseToken);
-        const rejectedAwaitAuthorityError = generationExecutionAuthorityError(db, intent, job);
+        const rejectedAwaitAuthorityError = generationExecutionAuthorityError(db, intent, job, "submitting");
         job = markUnknownSubmission(
           db,
           intent,
@@ -2508,28 +2633,32 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       }
       if (!submit.ok) {
         assertJobLease(db, job.job_id, leaseToken);
-        if (submit.error.submission_outcome_unknown === true) {
-          job = markUnknownSubmission(db, intent, job, submit.error, leaseToken);
+        const postSubmitAuthorityError = generationExecutionAuthorityError(db, intent, job, "submitting");
+        if (postSubmitAuthorityError) {
+          if (submit.error.submission_outcome_unknown === true) {
+            job = markUnknownSubmission(db, intent, job, postSubmitAuthorityError, leaseToken);
+          } else {
+            failIntent(db, intent, "failed", postSubmitAuthorityError, leaseToken, job);
+          }
           return;
         }
-        const postSubmitAuthorityError = generationExecutionAuthorityError(db, intent, job);
-        if (postSubmitAuthorityError) {
-          failIntent(db, intent, "failed", postSubmitAuthorityError, leaseToken);
+        if (submit.error.submission_outcome_unknown === true) {
+          job = markUnknownSubmission(db, intent, job, submit.error, leaseToken);
           return;
         }
         if (submit.error.retryable === true) {
           const retried = queueDirectorKnownNoSubmitRetry(db, intent, job, automation, leaseToken, dependencies);
           if (retried.queued) return;
           if (retried.error) {
-            failIntent(db, intent, "failed", retried.error, leaseToken);
+            failIntent(db, intent, "failed", retried.error, leaseToken, job);
             return;
           }
         }
-        failIntent(db, intent, "failed", submit.error, leaseToken);
+        failIntent(db, intent, "failed", submit.error, leaseToken, job);
         return;
       }
-      taskId = submit.provider_job_id;
-      if (!/^[A-Za-z0-9._:-]{3,200}$/.test(taskId) || /^local_recovery_/i.test(taskId)) {
+      const returnedTaskId = submit.provider_job_id;
+      if (typeof returnedTaskId !== "string" || returnedTaskId.length === 0 || returnedTaskId.length > 512) {
         assertJobLease(db, job.job_id, leaseToken);
         job = markUnknownSubmission(
           db,
@@ -2540,8 +2669,51 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         );
         return;
       }
+      taskId = returnedTaskId;
       providerTaskMayExist = true;
       knownTaskId = taskId;
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const persistedTask = db.prepare(`UPDATE generation_intents
+          SET provider_task_id = ?, status = 'running', updated_at = CURRENT_TIMESTAMP
+          WHERE intent_id = ? AND (provider_task_id = '' OR provider_task_id = ?)`)
+          .run(taskId, intent.intent_id, taskId) as { changes: number | bigint };
+        if (Number(persistedTask.changes) !== 1) throw new Error("PROVIDER_TASK_IDENTITY_CONFLICT");
+        transitionGenerationExecutionReceipt(db, intent.intent_id, {
+          state: "submitted",
+          provider_task_id: taskId,
+          provider_status: submit.provider_status
+        });
+        db.exec("COMMIT");
+      } catch {
+        db.exec("ROLLBACK");
+        try {
+          job = markKnownProviderTaskForReconciliation(
+            db,
+            intent,
+            job,
+            taskId,
+            providerError("LOCAL_TASK_PERSISTENCE_UNKNOWN", "Provider task identity could not be persisted atomically."),
+            leaseToken,
+            "PROVIDER_TASK_PERSISTENCE_UNKNOWN"
+          );
+        } catch { /* restart recovery will quarantine any remaining submitting job */ }
+        return;
+      }
+      intent = getIntent(db, intent.intent_id) as WorkbenchGenerationIntent;
+      if (!/^[A-Za-z0-9._:-]{3,200}$/.test(taskId) || /^local_recovery_/i.test(taskId)) {
+        assertJobLease(db, job.job_id, leaseToken);
+        job = markKnownProviderTaskForReconciliation(
+          db,
+          intent,
+          job,
+          taskId,
+          providerError("PROVIDER_TASK_ID_INVALID", "Provider returned a task identity that requires human reconciliation."),
+          leaseToken,
+          "PROVIDER_TASK_IDENTITY_REQUIRES_RECONCILIATION"
+        );
+        return;
+      }
       db.exec("BEGIN IMMEDIATE");
       try {
         let leaseStillValid = true;
@@ -2583,7 +2755,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         });
         const persistedIntent = getIntent(db, intent.intent_id);
         if (!persistedIntent) throw new Error("GENERATION_INTENT_NOT_FOUND");
-        const postSubmitAuthorityError = generationExecutionAuthorityError(db, persistedIntent, job);
+        const postSubmitAuthorityError = generationExecutionAuthorityError(db, persistedIntent, job, "submitting");
         if (!leaseStillValid || postSubmitAuthorityError) {
           const reasonCode = leaseStillValid
             ? "GENERATION_EXECUTION_AUTHORITY_REQUIRES_RECONCILIATION"
@@ -2592,6 +2764,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
             state: "reconciling",
             provider_status: reasonCode
           });
+          restoreProjectAfterGenerationAutomationStops(db, persistedIntent);
           job = enterManualReconciliationJob(db, job, reasonCode, { record_event: true });
         } else {
           job = setJobState(db, job, "polling", "", { lease_token: leaseToken, in_transaction: true });
@@ -2767,7 +2940,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         assertJobLease(db, job.job_id, leaseToken);
         const rejectedPollIntent = getIntent(db, intent.intent_id);
         const rejectedAwaitAuthorityError = rejectedPollIntent
-          ? generationExecutionAuthorityError(db, rejectedPollIntent, job)
+          ? generationExecutionAuthorityError(db, rejectedPollIntent, job, "polling")
           : providerError("GENERATION_EXECUTION_AUTHORITY_STALE", "Generation Intent disappeared while polling the Provider task.");
         job = markKnownProviderTaskForReconciliation(
           db,
@@ -2786,7 +2959,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       assertJobLease(db, job.job_id, leaseToken);
       const postPollIntent = getIntent(db, intent.intent_id);
       const postPollAuthorityError = postPollIntent
-        ? generationExecutionAuthorityError(db, postPollIntent, job)
+        ? generationExecutionAuthorityError(db, postPollIntent, job, "polling")
         : providerError("GENERATION_EXECUTION_AUTHORITY_STALE", "Generation Intent disappeared while polling the Provider task.");
       if (postPollAuthorityError) {
         job = markKnownProviderTaskForReconciliation(
@@ -2888,6 +3061,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       const downloadIntent = intent;
       const downloadJob = job;
       let finalizedDuringActivation = false;
+      let activationExpectedJobState: GenerationExecutionBindingInput["expected_job_state"] = "downloading";
       const revalidateDownloadAuthority = (): ProviderToolError | null => {
         try {
           assertJobLease(db, downloadJob.job_id, leaseToken);
@@ -2896,7 +3070,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
           if (!currentIntent || !currentJob) {
             return providerError("GENERATION_EXECUTION_AUTHORITY_STALE", "Generation execution state disappeared during Provider output download.");
           }
-          return generationExecutionAuthorityError(db, currentIntent, currentJob);
+          return generationExecutionAuthorityError(db, currentIntent, currentJob, "downloading");
         } catch (caught) {
           return providerError(
             caught instanceof GenerationJobLeaseLostError ? "GENERATION_JOB_LEASE_LOST" : "GENERATION_EXECUTION_AUTHORITY_STALE",
@@ -2918,7 +3092,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
             const currentIntent = getIntent(db, downloadIntent.intent_id);
             const currentJob = jobForIntent(db, downloadIntent.intent_id);
             if (!currentIntent || !currentJob) throw new Error("GENERATION_EXECUTION_AUTHORITY_STALE");
-            const authorityError = generationExecutionAuthorityError(db, currentIntent, currentJob);
+            const authorityError = generationExecutionAuthorityError(db, currentIntent, currentJob, activationExpectedJobState);
             if (authorityError) throw new Error(authorityError.code);
             if (automation) {
               try {
@@ -2934,6 +3108,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
           const currentJob = jobForIntent(db, downloadIntent.intent_id);
           if (!currentJob) throw new Error("GENERATION_JOB_NOT_FOUND");
           job = setJobState(db, currentJob, "finalizing", "", { lease_token: leaseToken, in_transaction: true });
+          activationExpectedJobState = "finalizing";
           const activated = activateLocalMediaArtifact({
             ...activationInput,
             before_artifact_persist: () => {
@@ -2943,6 +3118,8 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
           }, db);
           if (!activated.ok) {
             db.exec("ROLLBACK");
+            job = downloadJob;
+            activationExpectedJobState = "downloading";
             return activated;
           }
           dependencies.fault_injection_after_provider_artifact_persist?.();
@@ -2968,7 +3145,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
           if (!currentIntent || !currentShot || !currentProject || !currentRun) {
             throw new Error("LOCAL_FINALIZATION_STATE_MISSING");
           }
-          const finalAuthorityError = generationExecutionAuthorityError(db, currentIntent, job ?? downloadJob);
+          const finalAuthorityError = generationExecutionAuthorityError(db, currentIntent, job ?? downloadJob, "finalizing");
           if (finalAuthorityError) throw new Error(finalAuthorityError.code);
           if (!currentShot.clip_versions.some((version) => version.artifact_id === finalArtifact.artifact_id)) {
             currentShot.clip_versions.push({
@@ -3007,6 +3184,8 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
           return { ok: true, artifact: finalArtifact };
         } catch (caught) {
           try { db.exec("ROLLBACK"); } catch { /* transaction may already have rolled back */ }
+          job = jobForIntent(db, downloadIntent.intent_id) ?? downloadJob;
+          activationExpectedJobState = "downloading";
           const rawCode = caught instanceof Error ? caught.message : "LOCAL_FINALIZATION_TRANSACTION_FAILED";
           const code = /^[A-Z][A-Z0-9_]+$/.test(rawCode) ? rawCode : "LOCAL_FINALIZATION_TRANSACTION_FAILED";
           return { ok: false, error: { code, message: "Provider output could not be finalized under current generation authority." } };
@@ -3030,15 +3209,16 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
           activate_artifact: activateAndFinalize
         });
       } catch {
-        assertJobLease(db, (job ?? downloadJob).job_id, leaseToken);
+        if (finalizedDuringActivation) return;
+        assertJobLease(db, downloadJob.job_id, leaseToken);
         const rejectedDownloadIntent = getIntent(db, downloadIntent.intent_id);
         const rejectedAwaitAuthorityError = rejectedDownloadIntent
-          ? generationExecutionAuthorityError(db, rejectedDownloadIntent, job ?? downloadJob)
+          ? generationExecutionAuthorityError(db, rejectedDownloadIntent, downloadJob, "downloading")
           : providerError("GENERATION_EXECUTION_AUTHORITY_STALE", "Generation Intent disappeared while downloading Provider output.");
         job = markKnownProviderTaskForReconciliation(
           db,
           rejectedDownloadIntent ?? downloadIntent,
-          job ?? downloadJob,
+          downloadJob,
           taskId,
           rejectedAwaitAuthorityError
             ?? providerError("PROVIDER_REQUEST_FAILED", "Provider output download failed and requires reconciliation."),
@@ -3049,51 +3229,37 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         );
         return;
       }
-      assertJobLease(db, (job ?? downloadJob).job_id, leaseToken);
-      if (!downloaded.ok) {
-        job = markKnownProviderTaskForReconciliation(db, downloadIntent, job ?? downloadJob, taskId, downloaded.error, leaseToken, "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION");
-        return;
-      }
       if (finalizedDuringActivation) return;
-      const postDownloadAuthorityError = generationExecutionAuthorityError(db, getIntent(db, downloadIntent.intent_id) ?? downloadIntent, job ?? downloadJob);
-      if (postDownloadAuthorityError) {
+      assertJobLease(db, downloadJob.job_id, leaseToken);
+      if (!downloaded.ok) {
+        const failedDownloadIntent = getIntent(db, downloadIntent.intent_id);
+        const failedDownloadAuthorityError = failedDownloadIntent
+          ? generationExecutionAuthorityError(db, failedDownloadIntent, downloadJob, "downloading")
+          : providerError("GENERATION_EXECUTION_AUTHORITY_STALE", "Generation Intent disappeared while downloading Provider output.");
         job = markKnownProviderTaskForReconciliation(
           db,
-          getIntent(db, downloadIntent.intent_id) ?? downloadIntent,
-          job ?? downloadJob,
+          failedDownloadIntent ?? downloadIntent,
+          downloadJob,
           taskId,
-          postDownloadAuthorityError,
+          failedDownloadAuthorityError ?? downloaded.error,
           leaseToken,
-          "GENERATION_EXECUTION_AUTHORITY_REQUIRES_RECONCILIATION"
+          failedDownloadAuthorityError
+            ? "GENERATION_EXECUTION_AUTHORITY_REQUIRES_RECONCILIATION"
+            : "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
         );
         return;
       }
-      if (recoveryNeedsDownload && recovery) {
-        const rebound = rebindRecoveredProviderOutput(
-          db,
-          downloadIntent,
-          job ?? downloadJob,
-          leaseToken,
-          taskId,
-          recovery,
-          downloaded.artifact.artifact_id
-        );
-        if (!rebound.ok) {
-          job = markKnownProviderTaskForReconciliation(
-            db,
-            downloadIntent,
-            job ?? downloadJob,
-            taskId,
-            rebound.error,
-            leaseToken,
-            "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
-          );
-          return;
-        }
-        output = rebound.artifact;
-      } else {
-        output = downloaded.artifact;
-      }
+      quarantineUntrustedDownloadedArtifact(db, downloaded.artifact.artifact_id, downloadIntent, taskId);
+      job = markKnownProviderTaskForReconciliation(
+        db,
+        getIntent(db, downloadIntent.intent_id) ?? downloadIntent,
+        downloadJob,
+        taskId,
+        providerError("PROVIDER_OUTPUT_ACTIVATION_REQUIRED", "Provider output did not use the worker finalization capability."),
+        leaseToken,
+        "PROVIDER_OUTPUT_REQUIRES_RECONCILIATION"
+      );
+      return;
     }
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -3107,8 +3273,17 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
       if (!currentIntent || !currentJob || !shot || !project || !run || !finalOutput) {
         throw new Error("LOCAL_FINALIZATION_STATE_MISSING");
       }
-      const finalAuthorityError = generationExecutionAuthorityError(db, currentIntent, currentJob);
+      const finalAuthorityError = generationExecutionAuthorityError(
+        db,
+        currentIntent,
+        currentJob,
+        job.state as GenerationExecutionBindingInput["expected_job_state"]
+      );
       if (finalAuthorityError) throw new Error(finalAuthorityError.code);
+      const durableOutput = existingOutputArtifact(db, taskId, currentIntent.project_id, currentIntent.shot_id);
+      if (!durableOutput.ok || !durableOutput.artifact || durableOutput.artifact.artifact_id !== finalOutput.artifact_id) {
+        throw new Error("PROVIDER_OUTPUT_BINDING_INVALID");
+      }
       if (automation) {
         try {
           loadDirectorGrantAuthorization(db, automation, "artifact.activate", dateNow(dependencies), { verify_target_state: false });
@@ -3154,7 +3329,7 @@ async function executeIntent(intentId: string, allowSubmit: boolean, dependencie
         job = markKnownProviderTaskForReconciliation(db, intent, job, knownTaskId, providerError("LOCAL_WORKER_STATE_UNKNOWN", "Generation worker failed after Provider task creation; manual reconciliation is required."), leaseToken, "LOCAL_WORKER_REQUIRES_RECONCILIATION");
       } catch { /* leave the active intent non-terminal for restart recovery */ }
     } else if (intent) {
-      failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", "Generation worker failed before a Provider task identity was established."), leaseToken);
+      failIntent(db, intent, "failed", providerError("PROVIDER_REQUEST_FAILED", "Generation worker failed before a Provider task identity was established."), leaseToken, job);
     }
   } finally {
     clearInterval(heartbeat);
@@ -3363,8 +3538,11 @@ export function reconcileGenerationJob(
         persistReconciliationRestoreState(db, intent.intent_id, restoreState);
       }
     }
+    const migration0016Quarantine = restoreState !== null && shot !== null
+      && isMigration0016ExecutionQuarantine(db, row, intent, writable.data.project, shot);
     const shotStateMatches = restoreState !== null && shot !== null
-      && (shot.status === restoreState.shot_status || (migratedRestoreState && shot.status === "video_pending"));
+      && (shot.status === restoreState.shot_status
+        || ((migratedRestoreState || migration0016Quarantine) && shot.status === "video_pending"));
     if (!restoreState || !shot || !run
       || writable.data.project.status === "final_approved"
       || !writable.data.project.shot_ids.includes(intent.shot_id)
@@ -3488,8 +3666,9 @@ export function reconcileGenerationJob(
       markProjectAndShotGenerationActive(db, intent);
       const attachedIntent = getIntent(db, intent.intent_id);
       if (!attachedIntent) throw new Error("GENERATION_INTENT_NOT_FOUND");
+      job = setJobState(db, row, "polling", "HUMAN_ATTACHED_EXISTING_TASK", { in_transaction: true });
       if (!getGenerationExecutionReceipt(db, intent.intent_id)) {
-        const createdReceipt = createGenerationExecutionReceipt(db, executionBinding(attachedIntent, row));
+        const createdReceipt = createGenerationExecutionReceipt(db, executionBinding(attachedIntent, job, "polling"));
         if (!createdReceipt.ok) {
           db.exec("ROLLBACK");
           return { ok: false, error: createdReceipt.error };
@@ -3500,7 +3679,6 @@ export function reconcileGenerationJob(
         provider_task_id: taskId,
         provider_status: "HUMAN_ATTACHED_EXISTING_TASK"
       });
-      job = setJobState(db, row, "polling", "HUMAN_ATTACHED_EXISTING_TASK", { in_transaction: true });
     } else {
       // Abandon ends this generation attempt. Retire any explicitly tracked
       // recovery Artifacts first; a previously consumed Grant remains spent.

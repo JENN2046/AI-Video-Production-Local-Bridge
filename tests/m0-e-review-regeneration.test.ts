@@ -77,7 +77,7 @@ test("M0-E approved review sets accepted clip", async () => {
   }
 });
 
-test("M0-E revision_needed saves rejection and regeneration preserves old artifact", async () => {
+test("[EEI-REGEN-02] M0-E revision_needed saves rejection and regeneration preserves old artifact", async () => {
   const db = openM0Database();
 
   try {
@@ -137,7 +137,7 @@ test("M0-E revision_needed saves rejection and regeneration preserves old artifa
   }
 });
 
-test("mock regeneration revalidates authority after await and writes no partial Artifact or Run", async () => {
+test("[EEI-REGEN-01] mock regeneration revalidates authority after await and writes no partial Artifact or Run", async () => {
   const db = openM0Database();
   try {
     const { shot, run, artifactId } = await setupGeneratedShot(db);
