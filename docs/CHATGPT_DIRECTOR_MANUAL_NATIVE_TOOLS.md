@@ -1,6 +1,10 @@
 # ChatGPT Director Manual/Native Tool Contract
 
-Status: `CANDIDATE` — PR2 contract plus PR3 isolated runtime implementation. No Director endpoint is deployed and no Provider call is enabled. The activity database separately completed `0010` on 2026-07-22; the controlled Artifact import-receipt candidate requires `0011`, and neither ledger state accepts this Director surface externally.
+Status: `HISTORICAL_CANDIDATE` — PR2 contract plus PR3 isolated runtime
+implementation. Its `0010` / `0011` database statements describe the recorded
+candidate boundary, not current state. Current operational status is owned by
+[Current State](../CURRENT_STATE.md). No Provider authority follows from this
+contract.
 
 ## Purpose
 

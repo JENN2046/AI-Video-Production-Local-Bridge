@@ -1,6 +1,9 @@
 # Architecture
 
-Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS` remains historical, commit-scoped evidence. Canonical source now includes Production Mutation Authority, Durable FFmpeg Assembly, Final Review, immutable Export, exact Closeout, and External Execution Integrity and requires `workbench-v2-11` / ledger `0016`; the activity database's last explicitly accepted runtime boundary remains `workbench-v2-6` / ledger `0011`, and current-main activity runtime acceptance is not established. Earlier bounded Unified Director and isolated Media Gateway MP4 fixture evidence remains commit-scoped. Byte-range plus broader Provider, Memory, Media and multi-user gates remain separate.
+Status: architecture contract. Current operational acceptance, remaining gates,
+and authorization state are owned by [Current State](../CURRENT_STATE.md).
+Earlier bounded Unified Director and isolated Media Gateway MP4 fixture evidence
+remains commit-scoped.
 Accepted package: `0.1.0-beta.5`
 
 ## System map
@@ -8,7 +11,7 @@ Accepted package: `0.1.0-beta.5`
 ```mermaid
 flowchart LR
     J["Jenn"] --> W["Local Workbench V2"]
-    W --> DB["SQLite activity database\nlast accepted: workbench-v2-6 / 0011\ncanonical source requires: workbench-v2-11 / 0016"]
+    W --> DB["SQLite activity database\nsource contract: workbench-v2-11 / 0016"]
     W --> FS["Governed local media store"]
     W --> PA["Manual Snapshot publisher\naccepted; never automatic"]
     PA --> SS["Signed ephemeral Snapshot v4"]
@@ -27,7 +30,13 @@ flowchart LR
     W --> PR["Provider adapters — explicit human gate"]
 ```
 
-The Unified Connector's solid lines describe one historically accepted, bounded single-Owner path. The activity database completed its authorized `0011` migration with backup, manifest, `db:check` and restore evidence; that evidence remains valid for its recorded runtime boundary but does not establish compatibility with canonical source at `0016`. Running current main against the activity database requires a separately authorized `0011 → 0016` admission/migration and runtime acceptance. Runtime startup does not perform that migration automatically. Unified Snapshot publishing remains manual and memory-only. The Unified media edge has one accepted isolated MP4 fixture playback path; no actual byte-range response was captured, and broader external recovery, revocation and persistence cases remain unaccepted.
+The Unified Connector's solid lines describe one historically accepted, bounded
+single-Owner path. Runtime startup never migrates a database automatically.
+Current source/runtime acceptance is recorded only in
+[Current State](../CURRENT_STATE.md). Unified Snapshot publishing remains manual
+and memory-only. The Unified media edge has one accepted isolated MP4 fixture
+playback path; no actual byte-range response was captured, and broader external
+recovery, revocation and persistence cases remain unaccepted.
 
 ## Sources of truth
 

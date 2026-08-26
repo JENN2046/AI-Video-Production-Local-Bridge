@@ -1,6 +1,10 @@
 # ChatGPT Director Bounded Orchestrator
 
-Status: `CANDIDATE` — PR5 local implementation. The later controlled Artifact import-receipt candidate raises the current code prerequisite to `workbench-v2-6` / ledger `0011`; the activity database remains at separately accepted `0010` and must not run this route until an independent migration gate passes. This does not enable a real Provider, deploy a Director runtime or alter external OAuth configuration.
+Status: `HISTORICAL_CANDIDATE` — PR5 local implementation. Its
+`workbench-v2-6` / `0010` / `0011` statements describe the recorded candidate
+boundary, not current state; see [Current State](../CURRENT_STATE.md). This does
+not enable a real Provider, deploy a Director runtime, or alter external OAuth
+configuration.
 
 ## Purpose
 

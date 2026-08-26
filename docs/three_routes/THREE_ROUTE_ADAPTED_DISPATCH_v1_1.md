@@ -1,5 +1,9 @@
 # AI Video Production Workspace - Three Route Adapted Dispatch v1.1
 
+> **HISTORICAL DISPATCH PACKAGE.** The committed queue protocol referenced in
+> this document is retired. Do not import these cards into `.agent_board/` or
+> treat them as current scope; see [State Surface Governance](../STATE_SURFACE_GOVERNANCE.md).
+
 Source package:
 
 ```text
@@ -507,7 +511,10 @@ acceptance:
   no_secret_exposure: true
 ```
 
-## Import Guidance For `.agent_board`
+## Historical Import Guidance — Retired
+
+The procedure below is preserved only to explain the 2026-07-06 dispatch
+package. It is not a current task-loading or authorization procedure.
 
 Do not paste this document directly into `.agent_board/TASK_BACKLOG.md` without
 queue-maintenance authorization. If the commander approves queue import, use the

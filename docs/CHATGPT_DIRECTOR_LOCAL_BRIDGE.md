@@ -1,8 +1,8 @@
 # ChatGPT Director Local Bridge
 
-Status: `PARTIALLY ACCEPTED / CURRENT-MAIN RESTART REQUIRED` — the Unified
-Director transport, ledger `0011` activity database and one bounded owner
-Proposal path have commit-scoped acceptance. A low-disclosure status check on
+Status: `HISTORICAL_PARTIAL_ACCEPTANCE` — the Unified Director transport,
+ledger `0011` activity database, and one bounded owner Proposal path have
+commit-scoped acceptance. A low-disclosure status check on
 2026-07-30 detected a managed Bridge process whose recorded source is
 `3a142bb`; relative to `main@bc3fa5a0` it reports `RESTART_REQUIRED`. The check
 did not revalidate configuration identity, heartbeat or authenticated Remote
@@ -109,7 +109,9 @@ WEBGPT_DIRECTOR_REMOTE_ORIGIN=
 AI_VIDEO_WORKSPACE_DB_PATH=
 ```
 
-The remote origin must be an exact credential-free HTTPS origin. The database must already be at `workbench-v2-6` / migration ledger `0011`; the bridge never migrates it.
+The remote origin must be an exact credential-free HTTPS origin. The bridge
+never migrates its database; any newly authorized run must use the source/runtime
+boundary recorded in [Current State](../CURRENT_STATE.md).
 
 Public commands:
 

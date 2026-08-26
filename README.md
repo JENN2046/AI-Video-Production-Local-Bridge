@@ -11,12 +11,12 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 | Remote App service | `readonly-remote-v1.0.0` |
 | Media Gateway code | `readonly-media-gateway-v1.0.0`（隔离 MP4 fixture 的公网播放已通过；byte-range 与广泛外部门禁仍未完成） |
 | Snapshot contract | `readonly-snapshot-v4`（已支持上述有界 fixture 验收；不得据此宣称完整公网媒体可用） |
-| Database | Canonical source: `workbench-v2-11` / ledger `0016`. The activity database's last explicitly accepted runtime boundary remains `workbench-v2-6` / ledger `0011`; current-main runtime acceptance is not established. Runtime startup still does not automatically migrate or roll back. |
+| Database | Current operational source/runtime status is owned by [CURRENT_STATE.md](CURRENT_STATE.md). Runtime startup still does not automatically migrate or roll back. |
 | ChatGPT Director | Historical, commit-scoped evidence covers 单 Owner Focus → Context → advisory Proposal → Human Workbench 决定 → controlled import receipt；Provider、Grant 启动与 Memory 写入仍关闭。 |
 | Unified ChatGPT Workspace | Historical, commit-scoped evidence covers the bounded `/workspace/mcp` OAuth、Bridge、Render 与活动库黄金路径；旧 `/mcp` 仍保留为回滚面。 |
-| Historical single-user closeout | `JENN_SINGLE_USER_MCP_APP_PASS` is retained as commit-scoped historical evidence only; it does not establish current-main Activity Runtime acceptance. |
-| Product status | `CODE_COMPLETE_ON_CURRENT_MAIN` on the exact current-main fixture-acceptance PR head; this is isolated code/fixture evidence, not Activity Runtime or `PRODUCT_COMPLETE` |
-| Operations status | Historical `MANUAL_PUBLISH_OPERATIONAL_READY` evidence is commit-scoped to an earlier schema. Current-main publish/recovery is `BLOCKED_PENDING_0016_ADMISSION_AND_RUNTIME_ACCEPTANCE`. |
+| Historical single-user closeout | `JENN_SINGLE_USER_MCP_APP_PASS` is retained as commit-scoped historical evidence only. |
+| Historical manual-publish closeout | `MANUAL_PUBLISH_OPERATIONAL_READY` is retained as commit-scoped historical evidence only; current authority remains [CURRENT_STATE.md](CURRENT_STATE.md). |
+| Product and operations status | See [CURRENT_STATE.md](CURRENT_STATE.md); this README does not independently own current gates or completion state. |
 | Multi-user status | `PARTIAL_MULTI_USER_GATE` |
 
 当前 `main` 已包含 Workbench V2、WebGPT V4、Auth0 Federated Readonly、签名 Snapshot、ChatGPT MCP App、共享派生状态、Human Workbench 人工发布、已接线的 Unified Workspace Remote，以及 Local Media Gateway 的代码和 Windows 运维入口。Unified Workspace 保留旧 `/mcp` 为回滚面。Cloudflare 媒体链路已通过一次隔离 MP4 fixture 的端到端 Widget 播放；实际 byte-range 响应、Windows 登录任务、自动 Snapshot 发布、剩余媒体恢复/撤权案例、真实 Provider canary、稳定 Memory 插件和多用户黄金路径仍是独立 gate。
@@ -25,15 +25,21 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 
 ## 当前 source / activity runtime 边界
 
-当前 canonical source 的 Workbench 与新 Snapshot export path 要求 `workbench-v2-11` / ledger `0016`。当前 main 的隔离 fixture 已覆盖 Generation、reconciliation、accepted clip、Assembly、Final Review、targeted regeneration、Export、Closeout，以及逐步 `0011 → 0016` 迁移、备份与双边界恢复，因此代码结论为 [`CODE_COMPLETE_ON_CURRENT_MAIN`](ops/reports/2026-08-25-workbench-current-main-fixture-acceptance.md)。活动库最后明确接受的 runtime boundary 仍是 `workbench-v2-6` / ledger `0011`，其 `0010`→`0011` 备份、隔离迁移、只读 `db:check`、恢复演练、逻辑 manifest 比较与 Director 黄金路径证据继续作为历史验收保留。任何 fixture 或历史证据都不自动转移为 current-main Activity Runtime；运行时不会自动迁移、回退或发布 Snapshot，针对活动库的 `0011 → 0016` admission/migration 与 runtime acceptance 需要单独授权。
-
-更广泛的历史状态见 [CURRENT_STATE.md](CURRENT_STATE.md)，文档入口见 [docs/README.md](docs/README.md)。`CURRENT_STATE.md` 尚待单独全量 reconciliation，不得覆盖本节冻结的 Foundation source/runtime boundary。
+当前 canonical source 的 Workbench 与新 Snapshot export path 要求
+`workbench-v2-11` / ledger `0016`。项目当前 operational/product state、已完成
+gate、剩余 gate 与授权状态只由 [CURRENT_STATE.md](CURRENT_STATE.md) 维护；
+隔离 fixture 的精确边界见 [Current-main Fixture Acceptance](ops/reports/2026-08-25-workbench-current-main-fixture-acceptance.md)。
+运行时不会自动迁移、回退或发布 Snapshot，任何真实 Provider 操作仍需其
+独立明确授权。文档入口见 [docs/README.md](docs/README.md)。
 
 ## 三个日常入口
 
-### 1. 本地 Workbench（历史 `0011` path accepted；current-main pending）
+### 1. 本地 Workbench
 
-活动库的 `0011` 有界 Unified activity path 已验证本地启动、Focus/Proposal、人工决定与受控 receipt；该结果是历史 runtime 验收基线，不是 current-main `0016` runtime acceptance。不要把拉取 current main 解释为现有活动库已可直接使用；在单独完成 `0011 → 0016` activity-database admission/migration 与 runtime acceptance 前，不应以已接受组合启动。仓库不会自动迁移、回退、发布 Snapshot 或启动 Provider。
+Workbench 的当前源/runtime 边界与 terminal state 见
+[CURRENT_STATE.md](CURRENT_STATE.md)。仓库不会自动迁移、回退、发布 Snapshot
+或启动 Provider；一个已接受 runtime boundary 也不授权新的启动或 Provider
+操作。
 
 ### 2. ChatGPT Readonly MCP App
 

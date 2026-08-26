@@ -1,5 +1,9 @@
 # R2G-H1｜MCP Schema And Descriptor Hardening Fix 任务书
 
+> **HISTORICAL TASKBOOK.** The implementation task and its former committed
+> `.agent_board` bookkeeping are complete/retired. This file is not current task
+> authority; see [State Surface Governance](../STATE_SURFACE_GOVERNANCE.md).
+
 ## 0. 任务结论
 
 ```yaml
