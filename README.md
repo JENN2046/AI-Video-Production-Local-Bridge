@@ -14,7 +14,8 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 | Database | Canonical source: `workbench-v2-11` / ledger `0016`. The activity database's last explicitly accepted runtime boundary remains `workbench-v2-6` / ledger `0011`; current-main runtime acceptance is not established. Runtime startup still does not automatically migrate or roll back. |
 | ChatGPT Director | Historical, commit-scoped evidence covers 单 Owner Focus → Context → advisory Proposal → Human Workbench 决定 → controlled import receipt；Provider、Grant 启动与 Memory 写入仍关闭。 |
 | Unified ChatGPT Workspace | Historical, commit-scoped evidence covers the bounded `/workspace/mcp` OAuth、Bridge、Render 与活动库黄金路径；旧 `/mcp` 仍保留为回滚面。 |
-| Product status | Historical, commit-scoped `JENN_SINGLE_USER_MCP_APP_PASS`; not current-main runtime or full-product acceptance |
+| Historical single-user closeout | `JENN_SINGLE_USER_MCP_APP_PASS` is retained as commit-scoped historical evidence only; it does not establish current-main Activity Runtime acceptance. |
+| Product status | `CODE_COMPLETE_ON_CURRENT_MAIN` on the exact current-main fixture-acceptance PR head; this is isolated code/fixture evidence, not Activity Runtime or `PRODUCT_COMPLETE` |
 | Operations status | Historical `MANUAL_PUBLISH_OPERATIONAL_READY` evidence is commit-scoped to an earlier schema. Current-main publish/recovery is `BLOCKED_PENDING_0016_ADMISSION_AND_RUNTIME_ACCEPTANCE`. |
 | Multi-user status | `PARTIAL_MULTI_USER_GATE` |
 
@@ -24,7 +25,7 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 
 ## 当前 source / activity runtime 边界
 
-当前 canonical source 的 Workbench 与新 Snapshot export path 要求 `workbench-v2-11` / ledger `0016`。活动库最后明确接受的 runtime boundary 仍是 `workbench-v2-6` / ledger `0011`，其 `0010`→`0011` 备份、隔离迁移、只读 `db:check`、恢复演练、逻辑 manifest 比较与 Director 黄金路径证据继续作为历史验收保留。该证据不自动转移到 current main；current-main activity runtime acceptance 尚未建立。运行时不会自动迁移、回退或发布 Snapshot，针对活动库的 `0011 → 0016` admission/migration 与 runtime acceptance 需要单独授权。
+当前 canonical source 的 Workbench 与新 Snapshot export path 要求 `workbench-v2-11` / ledger `0016`。当前 main 的隔离 fixture 已覆盖 Generation、reconciliation、accepted clip、Assembly、Final Review、targeted regeneration、Export、Closeout，以及逐步 `0011 → 0016` 迁移、备份与双边界恢复，因此代码结论为 [`CODE_COMPLETE_ON_CURRENT_MAIN`](ops/reports/2026-08-25-workbench-current-main-fixture-acceptance.md)。活动库最后明确接受的 runtime boundary 仍是 `workbench-v2-6` / ledger `0011`，其 `0010`→`0011` 备份、隔离迁移、只读 `db:check`、恢复演练、逻辑 manifest 比较与 Director 黄金路径证据继续作为历史验收保留。任何 fixture 或历史证据都不自动转移为 current-main Activity Runtime；运行时不会自动迁移、回退或发布 Snapshot，针对活动库的 `0011 → 0016` admission/migration 与 runtime acceptance 需要单独授权。
 
 更广泛的历史状态见 [CURRENT_STATE.md](CURRENT_STATE.md)，文档入口见 [docs/README.md](docs/README.md)。`CURRENT_STATE.md` 尚待单独全量 reconciliation，不得覆盖本节冻结的 Foundation source/runtime boundary。
 

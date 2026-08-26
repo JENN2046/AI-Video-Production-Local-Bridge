@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -79,6 +79,42 @@ function insertGovernedProject(db: DatabaseSync, projectId: string, data: Record
   withWorkbenchProductionMutationAuthority(db, {
     kind: "project_content", project_id: projectId, object_id: projectId
   }, () => db.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)").run(projectId, JSON.stringify(data)));
+}
+
+function applyMigrationsThrough(db: DatabaseSync, through: string): void {
+  installWorkbenchProductionMutationAuthority(db);
+  db.exec(`
+    PRAGMA busy_timeout = 5000;
+    PRAGMA foreign_keys = ON;
+    PRAGMA journal_mode = WAL;
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      migration_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      checksum TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  for (const migration of DATABASE_MIGRATIONS.filter((candidate) => candidate.id <= through)) {
+    db.exec("BEGIN EXCLUSIVE");
+    try {
+      migration.apply(db);
+      db.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)")
+        .run(migration.id, migration.name, migrationChecksum(migration));
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+}
+
+function businessProjection(db: DatabaseSync, projectId: string): Record<string, unknown> {
+  const project = db.prepare("SELECT project_id, data_json, created_at, updated_at FROM projects WHERE project_id = ?")
+    .get(projectId) as Record<string, unknown>;
+  const meta = db.prepare(`SELECT project_id, classification, lifecycle, pinned, next_action_override,
+      next_action_priority, next_action_expires_at, next_action_project_status
+    FROM workbench_project_meta WHERE project_id = ?`).get(projectId) as Record<string, unknown>;
+  return { project: { ...project }, meta: { ...meta } };
 }
 
 test("fresh database migrates explicitly and remains idempotent", () => {
@@ -973,6 +1009,167 @@ test("backup and isolated restore preserve a valid database", () => {
     copyFileSync(backup.backup_path, restoredPath);
     assert.equal(checkDatabase(restoredPath).result, "PASS");
     assert.deepEqual(databaseLogicalManifest(restoredPath), databaseLogicalManifest(sqlitePath));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("current-main acceptance upgrades an isolated 0011 fixture through every frozen migration and restores both boundaries", () => {
+  const root = tempRoot();
+  const sourcePath = join(root, "activity-0011.sqlite");
+  const migratedPath = join(root, "isolated-0011-to-0016.sqlite");
+  const restored0011Path = join(root, "restored-0011.sqlite");
+  const restored0016Path = join(root, "restored-0016.sqlite");
+  const projectId = "project_current_main_migration_acceptance";
+  const expectedVersions = new Map([
+    ["0011", "workbench-v2-6"],
+    ["0012", "workbench-v2-7"],
+    ["0013", "workbench-v2-8"],
+    ["0014", "workbench-v2-9"],
+    ["0015", "workbench-v2-10"],
+    ["0016", "workbench-v2-11"]
+  ]);
+  const acceptedLedger = [
+    { migration_id: "0001", name: "m0_baseline", checksum: "3f0a7ec4dd97525c4f40381c643e5af595ed305127a5fe951ce03d0c57298a95" },
+    { migration_id: "0002", name: "workbench_v2_4_baseline", checksum: "52dc1311414cd88468542159d215adce443717b087e65d73d3f60859e5727c75" },
+    { migration_id: "0003", name: "persistent_generation_jobs", checksum: "161aa27dec915827c0ab6d46bc768ca2734c2efdf4bc45ae2fa1b2f4b564fef8" },
+    { migration_id: "0004", name: "generation_jobs_stabilization", checksum: "033f245d6124477e08e7c728c025cd2435fd0b97adb3681551916d576d51e7ee" },
+    { migration_id: "0005", name: "immutable_media_blobs", checksum: "92297a3ce2996e427b8a8e3dae39a25f33a294c29142b5ca723cdcd4700ad8b0" },
+    { migration_id: "0006", name: "media_activation_journal", checksum: "e8f33049f9ef8e62ea010ac1bda6cbf93df64d2b71122cafbb5b2e4ba25a5fef" },
+    { migration_id: "0007", name: "webgpt_multi_user_authorization", checksum: "b1216ecd6ef1f4600c2b197103a7b263294006be2b79750cc463de5d14386b9f" },
+    { migration_id: "0008", name: "webgpt_issuer_bound_principals", checksum: "f7c604ed9f3ba84c3246179a70c060c44991136e8b8923383d43559d21f18df6" },
+    { migration_id: "0009", name: "chatgpt_director_domain", checksum: "7ccfa5f3302bbb3a35d6c9a21846bcaf2f1cf904dcb6ad1344d8f03999e1d0d7" },
+    { migration_id: "0010", name: "director_currency_contract", checksum: "e197c6f176cc7524f17680cdca981bfbd5b16ca7b5e12fe1d6b2729ed9ccf920" },
+    { migration_id: "0011", name: "director_artifact_import_receipts", checksum: "cb51fcd72bd54db77faf2f176fd42057bdc83ec64464ecf26158c525a44b5103" },
+    { migration_id: "0012", name: "delivery_state_foundation", checksum: "d62555638e5f27ebe7334c760475d264bd2988fbebaeb78d59fa571d0d383797" },
+    { migration_id: "0013", name: "production_mutation_authority", checksum: "358fe5c8b72db1e208a5ba0bd6880f7347b3ee28005ede19b654b84d32498d8f" },
+    { migration_id: "0014", name: "durable_ffmpeg_assembly", checksum: "b26829f34fd4b389d568d0874934a4e631d8ccdb04a2632faaddd7dfc14521e3" },
+    { migration_id: "0015", name: "final_review_export_closeout", checksum: "f0b57cea351f708cd10fceac74e2da47432061ca4864ddcb9ffecad4ed9fc0bb" },
+    { migration_id: "0016", name: "external_execution_integrity", checksum: "89898088b028d29d689aa95336163f3c88ade022515ca5f92c4bb1e048c79455" }
+  ];
+  const expectedObjects = new Map([
+    ["0012", { type: "trigger", name: "workbench_delivery_state_no_delete", token: "WORKBENCH_DELIVERY_STATE_IMMUTABLE" }],
+    ["0013", { type: "trigger", name: "workbench_projects_closed_guard", token: "PROJECT_CLOSED" }],
+    ["0014", { type: "trigger", name: "workbench_delivery_jobs_transition_guard", token: "WORKBENCH_DELIVERY_JOB_TRANSITION_INVALID" }],
+    ["0015", { type: "trigger", name: "workbench_exports_owner_insert", token: "workbench_production_mutation_authorized" }],
+    ["0016", { type: "trigger", name: "generation_execution_receipts_no_delete", token: "GENERATION_EXECUTION_RECEIPT_IMMUTABLE" }]
+  ]);
+  try {
+    const source = new DatabaseSync(sourcePath);
+    try {
+      applyMigrationsThrough(source, "0011");
+      const project = {
+        project_id: projectId,
+        title: "Current-main migration acceptance",
+        status: "draft",
+        video_spec: { duration_seconds: 6, aspect_ratio: "9:16", resolution: "1080x1920" },
+        shot_ids: [],
+        active_storyboard_package_id: "",
+        generation_batch_ids: [],
+        exports: { final_video_artifact_id: "", delivery_status: "not_started" },
+        business_note: "must survive 0011 through 0016"
+      };
+      source.prepare("INSERT INTO projects (project_id, data_json) VALUES (?, ?)")
+        .run(projectId, JSON.stringify(project));
+      source.prepare(`UPDATE workbench_project_meta
+        SET classification = 'production', lifecycle = 'active', pinned = 1,
+          next_action_override = 'migration acceptance'
+        WHERE project_id = ?`).run(projectId);
+      const sourceVersion = source.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string };
+      assert.equal(sourceVersion.value, expectedVersions.get("0011"));
+      const sourceLedger = source.prepare("SELECT migration_id, name, checksum FROM schema_migrations ORDER BY migration_id").all()
+        .map((row) => ({ ...(row as Record<string, unknown>) }));
+      assert.deepEqual(sourceLedger, acceptedLedger.slice(0, 11));
+    } finally {
+      source.close();
+    }
+
+    const sourceManifest = databaseLogicalManifest(sourcePath);
+    const sourceRead = new DatabaseSync(sourcePath, { readOnly: true });
+    const sourceBusiness = businessProjection(sourceRead, projectId);
+    sourceRead.close();
+    const preMigrationBackup = backupDatabase({
+      sqlite_path: sourcePath,
+      backup_root: join(root, "backups-0011"),
+      timestamp: new Date("2026-08-25T00:00:00.000Z")
+    });
+    assert.equal(databaseLogicalManifest(preMigrationBackup.backup_path).sha256, sourceManifest.sha256);
+    assert.equal(existsSync(migratedPath), false);
+    copyFileSync(preMigrationBackup.backup_path, migratedPath);
+
+    const migrated = new DatabaseSync(migratedPath);
+    try {
+      installWorkbenchProductionMutationAuthority(migrated);
+      migrated.exec("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
+      for (const migrationId of ["0012", "0013", "0014", "0015", "0016"]) {
+        const migration = DATABASE_MIGRATIONS.find((candidate) => candidate.id === migrationId);
+        assert.ok(migration);
+        const acceptedMigration = acceptedLedger.find((candidate) => candidate.migration_id === migrationId);
+        assert.ok(acceptedMigration);
+        assert.deepEqual({
+          migration_id: migration.id,
+          name: migration.name,
+          checksum: migrationChecksum(migration)
+        }, acceptedMigration);
+        migrated.exec("BEGIN EXCLUSIVE");
+        try {
+          migration.apply(migrated);
+          migrated.prepare("INSERT INTO schema_migrations (migration_id, name, checksum) VALUES (?, ?, ?)")
+            .run(migration.id, migration.name, migrationChecksum(migration));
+          migrated.exec("COMMIT");
+        } catch (error) {
+          migrated.exec("ROLLBACK");
+          throw error;
+        }
+        const version = migrated.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string };
+        const ledger = migrated.prepare("SELECT name, checksum FROM schema_migrations WHERE migration_id = ?")
+          .get(migration.id) as { name: string; checksum: string };
+        const expectedObject = expectedObjects.get(migrationId);
+        assert.equal(version.value, expectedVersions.get(migrationId));
+        assert.deepEqual({ ...ledger }, { name: acceptedMigration.name, checksum: acceptedMigration.checksum });
+        assert.ok(expectedObject);
+        const object = migrated.prepare("SELECT sql FROM sqlite_schema WHERE type = ? AND name = ?")
+          .get(expectedObject.type, expectedObject.name) as { sql: string };
+        assert.match(object.sql, new RegExp(expectedObject.token, "i"));
+        assert.deepEqual(businessProjection(migrated, projectId), sourceBusiness);
+      }
+      assertSchemaCurrent(migrated);
+    } finally {
+      migrated.close();
+    }
+
+    assert.deepEqual(databaseLogicalManifest(sourcePath), sourceManifest);
+    const unchangedSource = new DatabaseSync(sourcePath, { readOnly: true });
+    assert.equal((unchangedSource.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-6");
+    assert.deepEqual(businessProjection(unchangedSource, projectId), sourceBusiness);
+    unchangedSource.close();
+    assert.equal(checkDatabase(migratedPath).result, "PASS");
+
+    const currentManifest = databaseLogicalManifest(migratedPath);
+    const currentBackup = backupDatabase({
+      sqlite_path: migratedPath,
+      backup_root: join(root, "backups-0016"),
+      timestamp: new Date("2026-08-25T00:00:01.000Z")
+    });
+    assert.equal(existsSync(restored0011Path), false);
+    assert.equal(existsSync(restored0016Path), false);
+    copyFileSync(preMigrationBackup.backup_path, restored0011Path);
+    copyFileSync(currentBackup.backup_path, restored0016Path);
+
+    assert.deepEqual(databaseLogicalManifest(restored0011Path), sourceManifest);
+    assert.deepEqual(databaseLogicalManifest(restored0016Path), currentManifest);
+    assert.equal(checkDatabase(restored0016Path).result, "PASS");
+    const restored0011 = new DatabaseSync(restored0011Path, { readOnly: true });
+    const restored0016 = new DatabaseSync(restored0016Path, { readOnly: true });
+    try {
+      assert.equal((restored0011.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-6");
+      assert.equal((restored0016.prepare("SELECT value FROM m0_meta WHERE key = 'schema_version'").get() as { value: string }).value, "workbench-v2-11");
+      assert.deepEqual(businessProjection(restored0011, projectId), sourceBusiness);
+      assert.deepEqual(businessProjection(restored0016, projectId), sourceBusiness);
+    } finally {
+      restored0011.close();
+      restored0016.close();
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
