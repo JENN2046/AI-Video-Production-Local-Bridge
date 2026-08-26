@@ -14,6 +14,8 @@ CI, and review state; execution reports own their recorded execution boundary.
 current_state:
   code:
     status: CODE_COMPLETE_ON_CURRENT_MAIN
+    package: 0.1.0-beta.5
+    mcp_service: webgpt-v4.3.0
     source_schema: workbench-v2-11
     source_migration: "0016"
 
@@ -49,6 +51,12 @@ current_state:
     authorization: REQUIRED
 
   product_complete: false
+
+  preserved_bounded_labels:
+    single_user_mcp_app: JENN_SINGLE_USER_MCP_APP_PASS
+    manual_publish: MANUAL_PUBLISH_OPERATIONAL_READY
+    multi_user: PARTIAL_MULTI_USER_GATE
+    authority: HISTORICAL_OR_BOUNDED_EVIDENCE_ONLY
 ```
 
 `CODE_COMPLETE_ON_CURRENT_MAIN` is a code and isolated-fixture conclusion. The
@@ -83,6 +91,9 @@ release, deployment, or production configuration changes.
 - Gate 1C Activity Runtime acceptance is not Provider acceptance.
 - Current-main fixture acceptance is not real Project acceptance.
 - Historical Provider feasibility does not establish the current real canary.
+- Preserved single-user, manual-publish, and multi-user labels above retain
+  compatibility with their bounded historical evidence; they do not become
+  independent current-state authorities or authorize a new external operation.
 - `PRODUCT_COMPLETE = false`.
 
 ## Evidence and provenance

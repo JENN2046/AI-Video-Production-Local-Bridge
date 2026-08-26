@@ -15,6 +15,7 @@ AI Video Production Workspace 是 Jenn 的 Windows 本地 AI 视频生产与 Cha
 | ChatGPT Director | Historical, commit-scoped evidence covers 单 Owner Focus → Context → advisory Proposal → Human Workbench 决定 → controlled import receipt；Provider、Grant 启动与 Memory 写入仍关闭。 |
 | Unified ChatGPT Workspace | Historical, commit-scoped evidence covers the bounded `/workspace/mcp` OAuth、Bridge、Render 与活动库黄金路径；旧 `/mcp` 仍保留为回滚面。 |
 | Historical single-user closeout | `JENN_SINGLE_USER_MCP_APP_PASS` is retained as commit-scoped historical evidence only. |
+| Historical manual-publish closeout | `MANUAL_PUBLISH_OPERATIONAL_READY` is retained as commit-scoped historical evidence only; current authority remains [CURRENT_STATE.md](CURRENT_STATE.md). |
 | Product and operations status | See [CURRENT_STATE.md](CURRENT_STATE.md); this README does not independently own current gates or completion state. |
 | Multi-user status | `PARTIAL_MULTI_USER_GATE` |
 
