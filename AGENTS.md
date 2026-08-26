@@ -562,7 +562,7 @@ Do not output secrets, private-state contents, raw memory, raw audit rows, raw l
 11. Commit when appropriate.
 12. Push / PR when scoped by the current task or repository delivery policy and the action does not cross the explicit approval boundary.
 13. Record safe project memory / receipt when useful and allowed.
-14. If Sustained Task Queue Mode is active, update the task state machine and continue to the next eligible `READY` task.
+14. If sustained work is active, continue only with the next task explicitly provided by Jenn, the current taskbook, issue, or authorized work package. Local scratch must not create or authorize the next task.
 15. Report truthfully with evidence, limits, risks, and next step when the loop stops.
 
 Progress is valid only when it is scoped, evidenced, reversible, low-disclosure, and inside the active boundary.
