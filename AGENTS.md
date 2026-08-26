@@ -106,7 +106,7 @@ Default routing:
 
 | Project / topic | Target path |
 |---|---|
-| workspace protocol / agent behavior | `AGENTS.md`, `docs/`, or `.agent_board/` depending on task |
+| workspace protocol / agent behavior | `AGENTS.md` or `docs/`; ignored `.agent_board/` may hold local-only scratch |
 | active video project | `projects/<project>/` when present, otherwise inspect top-level structure before creating anything |
 | source media / references / brand assets | `assets/` or project-local asset folders |
 | prompts / model settings / style recipes | `prompts/` or project-local prompt folders |
@@ -160,7 +160,7 @@ When a task touches provider integrations, render automation, publishing, or del
 
 ## 6. Safe Local Production Lane — Default-Allow
 
-Agents may autonomously perform Safe Local Production Lane work when scoped by Jenn's current task, the active queue item, or project docs.
+Agents may autonomously perform Safe Local Production Lane work when scoped by Jenn's current task, an explicit taskbook / issue / authorized work package, or applicable project instructions.
 
 Allowed by default inside scope:
 
@@ -256,243 +256,70 @@ No hidden side effects:
 
 ---
 
-## 10. Single-Slot Task State Machine
+## 10. Task Coordination and State Authority
 
-AI Video Production Workspace may use a single-slot task state machine to prevent agents from selecting too many tasks at once.
+Task execution authority follows this order:
 
-Authoritative state file:
+1. Jenn's explicit current instruction.
+2. The current taskbook, issue, or authorized work package.
+3. Applicable `AGENTS.md` / `AGENTS.override.md` instructions.
+4. Root [`CURRENT_STATE.md`](CURRENT_STATE.md) for the high-level current project position.
+5. Immutable reports, GitHub, and historical documents as evidence for their recorded boundaries.
 
-```text
-.agent_board/NEXT_TASK.json
-```
+`CURRENT_STATE.md` describes where the project is and may recommend the next
+gate. It does not grant authorization for an operation that otherwise requires
+Jenn's explicit approval. For example, a next gate whose authorization is
+`REQUIRED` must not be executed until that exact authorization is provided.
 
-Human-readable display file:
+The repository has no committed single-slot task state machine, task queue,
+handoff ledger, validation ledger, or repository lock. A local agent may use the
+ignored `.agent_board/` directory as `LOCAL_EPHEMERAL_AGENT_SCRATCH` for:
 
-```text
-.agent_board/NEXT_TASK.md
-```
+- temporary task notes;
+- run-local locks and worker coordination;
+- transient validation notes;
+- run-local progress.
 
-History ledger:
-
-```text
-.agent_board/TASK_LEDGER.md
-```
-
-Validation log:
-
-```text
-.agent_board/VALIDATION_LOG.md
-```
-
-Handoff state:
-
-```text
-.agent_board/HANDOFF.md
-```
-
-Optional backlog:
-
-```text
-.agent_board/TASK_BACKLOG.md
-```
-
-Soft lock:
-
-```text
-.agent_board/RUN_LOCK.md
-```
-
-The state machine exposes only one current task at a time.
-
-Allowed states:
-
-- `EMPTY`
-- `READY`
-- `IN_PROGRESS`
-- `VERIFYING`
-- `DONE`
-- `BLOCKED`
-- `FAILED`
-- `SKIPPED`
-
-Use `FAILED` when execution or validation failed and the failure is not an approval boundary, safety stop, or Jenn decision.
-
-Use `BLOCKED` when an approval boundary, safety stop, authority conflict, unsafe state, or Jenn decision prevents safe continuation.
-
-Only `READY` tasks may be claimed automatically.
-
-A task's risk category does not decide whether it can be claimed. A `READY` task that includes an approval-required action may be claimed for analysis, preparation, safe validation, and handoff. It does not authorize the agent to execute the approval-required action.
-
-When claiming a task, the agent must update the state to `IN_PROGRESS` and record:
-
-- `claimed_by`
-- `claim_run_id`
-- `claimed_at`
-
-After claiming, the agent must re-read `NEXT_TASK.json`. If the task is not claimed by the current agent/run, stop and report `BLOCK`.
-
-When validating, the agent may update the state to `VERIFYING`.
-
-When completed, the agent must update the state to `DONE` and record:
-
-- `completed_by`
-- `completed_at`
-- `result`
-- `validation`
-- `evidence`
-- `commit`
-- `delivery`
-
-When blocked, the agent must update the state to `BLOCKED` and record:
-
-- `blocked_by`
-- `blocked_at`
-- `boundary_or_safety_stop`
-- `blocked_reason`
-- `safe_actions_completed`
-- `unsafe_action_not_performed`
-- `options_for_jenn`
-
-When failed, the agent must update the state to `FAILED` and record:
-
-- `failed_by`
-- `failed_at`
-- `failure_reason`
-- `validation`
-- `evidence`
-- `safe_actions_completed`
-- `next_safe_option`
-
-Every completed, blocked, failed, or skipped task must be appended to `.agent_board/TASK_LEDGER.md`.
-
-Before loading the next task, append the completed, blocked, failed, or skipped task to `.agent_board/TASK_LEDGER.md`. Preserve enough final state to audit who claimed it, who completed it, validation result, evidence, delivery status, and stop reason.
-
-The display file `.agent_board/NEXT_TASK.md` must be regenerated from the authoritative JSON state after each state transition.
-
-A completed task does not end sustained work by itself. After `DONE`, the agent may load the next eligible `READY` task from `.agent_board/TASK_BACKLOG.md` when:
-
-- the backlog exists;
-- dependencies are satisfied;
-- the task has clear scope;
-- the current run has not reached task, commit, or failure limits;
-- loading the task does not require immediately reading private-state contents or performing an unsafe action with no preparatory work available.
-
-Tasks that include one of the four approval-required actions may be loaded and claimed, but without exact Jenn authorization the agent must stop before that specific action. The agent should still complete all safe preparatory work first: analysis, planning, dry-run, mock validation, fixture validation, scoped docs, authorization checklist, risk notes, and handoff.
-
-Cross-project tasks may be loaded and claimed when scope is clear. The agent must report the cross-project boundary before writing unless the task card already authorizes the affected projects and write scope.
-
-Incidental findings must not be auto-loaded as executable tasks. Record them as `FOLLOW_UP` unless promoted to `READY` by Jenn, Commander, or an authorized queue-maintenance task.
-
-RUN_LOCK stale policy:
-
-- Default `stale_after_minutes`: 120.
-- A lock is stale only when its timestamp is older than `stale_after_minutes` and no matching active task state exists.
-- Do not silently overwrite an active lock.
-- If a lock appears stale, record the stale-lock finding in `HANDOFF.md` and report `BLOCK` unless the current task explicitly authorizes stale lock recovery.
-- Stale lock recovery must preserve the old lock contents in `TASK_LEDGER.md` before replacing it.
-
-If `NEXT_TASK.json` and `RUN_LOCK.md` disagree about active task, owner, run_id, or status, treat the state machine as inconsistent. Do not continue execution. Record the inconsistency in `HANDOFF.md` and report `BLOCK`.
+Local scratch is not repository authority, cross-clone truth, durable evidence,
+or a source of new scope. Its filenames and schemas are not repository
+contracts. It may be deleted locally and must never override Jenn's instruction,
+an authorized taskbook, applicable instructions, `CURRENT_STATE.md`, reports, or
+GitHub. No completion claim may depend solely on local scratch.
 
 ---
 
-## 11. Sustained Task Queue Mode
+## 11. Sustained Work and Validation Evidence
 
-When Jenn explicitly asks for sustained autonomous work, or when the current task explicitly asks the agent to execute the AI Video Production task queue, agents should continue consuming eligible `READY` tasks instead of stopping after a single task.
+Sustained or autonomous work remains allowed when its work sequence comes from:
 
-Default queue files:
+- an explicit current taskbook;
+- an explicit issue or authorized work package;
+- a queue explicitly provided by Jenn for the current run.
 
-- `.agent_board/NEXT_TASK.json`
-- `.agent_board/NEXT_TASK.md`
-- `.agent_board/TASK_BACKLOG.md`
-- `.agent_board/TASK_LEDGER.md`
-- `.agent_board/VALIDATION_LOG.md`
-- `.agent_board/HANDOFF.md`
-- `.agent_board/RUN_LOCK.md`
+Local scratch cannot create, promote, or authorize a task. When an authorized
+task sequence ends and no further authorized task remains, stop or report the
+recommended next gate from `CURRENT_STATE.md`; do not turn an incidental finding
+into production execution.
 
-Allowed backlog task states:
+For sustained work, keep one main task in progress unless parallel work is both
+safe and useful. Default run limits remain five tasks, five commits, and two
+consecutive failures unless the current task states otherwise. Validate each
+completed task before continuing and stop at any approval boundary, unsafe
+state, unowned conflicting work, or validation result that cannot be interpreted
+safely.
 
-- `READY`
-- `IN_PROGRESS`
-- `DONE`
-- `BLOCKED`
-- `FAILED`
-- `SKIPPED`
-- `FOLLOW_UP`
-- `CANCELLED`
+Validation evidence belongs to the surface that owns the fact:
 
-Only `READY` tasks are eligible for automatic execution. `FOLLOW_UP` tasks are not executable until promoted to `READY` by Jenn, Commander, or an explicitly authorized queue-maintenance task.
+- PR CI and review evidence belong to GitHub;
+- externally meaningful execution or acceptance evidence belongs in
+  `ops/reports/` as an immutable report;
+- ordinary local transient validation belongs in terminal output or ignored
+  local scratch.
 
-Task selection:
-
-1. Inspect `.agent_board/RUN_LOCK.md`.
-2. If a non-stale active lock exists and does not belong to this run, stop and report `BLOCK`.
-3. If `.agent_board/NEXT_TASK.json` and `.agent_board/RUN_LOCK.md` disagree about active task, owner, run_id, or status, record the inconsistency in `.agent_board/HANDOFF.md` and report `BLOCK`.
-4. Read `.agent_board/NEXT_TASK.json`.
-5. If the current slot is `READY`, claim it.
-6. If the current slot is `EMPTY`, `DONE`, `BLOCKED`, `FAILED`, or `SKIPPED`, read `.agent_board/TASK_BACKLOG.md`.
-7. Select the highest-priority eligible `READY` task inside scope.
-8. Exclude tasks with unmet dependencies, unclear project path, unclear scope, or no safe preparatory work before an approval-required action.
-9. Do not exclude tasks merely because their final action requires approval. Such tasks may be claimed for analysis, dry-run, mock validation, authorization checklist, risk notes, and handoff. Exclude only tasks that require immediate unsafe execution with no safe preparatory work available.
-10. Load the selected task into `.agent_board/NEXT_TASK.json` and `.agent_board/NEXT_TASK.md`.
-11. Mark the selected task `IN_PROGRESS` before editing when writes are allowed.
-12. Record the active task in `.agent_board/RUN_LOCK.md`.
-
-Task execution:
-
-1. Route to the target project.
-2. Read applicable workspace and project instructions.
-3. Execute the task using the smallest effective safe path.
-4. Validate inside the target project.
-5. Fix directly related failures and rerun validation when safe.
-6. Commit one scoped commit per completed task when project rules allow.
-7. Push safe branches when scoped by the task or repository delivery policy and the push does not cross the explicit approval boundary.
-8. Record validation evidence in `.agent_board/VALIDATION_LOG.md`.
-9. Record the task result in `.agent_board/TASK_LEDGER.md`.
-10. Update the task status to `DONE`, `BLOCKED`, `FAILED`, or `SKIPPED`.
-11. Update `.agent_board/HANDOFF.md`.
-12. Clear or refresh `.agent_board/RUN_LOCK.md`.
-13. Continue to the next eligible `READY` task.
-
-Do not stop merely because one task is complete. Do not produce a final stopping report after each task. Produce per-task ledger and validation updates, then continue.
-
-Stop the sustained loop only when:
-
-- no eligible `READY` tasks remain;
-- a non-local `BLOCK` affects the queue or workspace safety;
-- the queue is missing, malformed, or ambiguous;
-- the active lock is unsafe to override;
-- repository state is unsafe or contains unowned conflicting changes;
-- validation cannot be safely interpreted;
-- continuing would cross a core hard stop;
-- Jenn’s explicit current boundary requires stopping;
-- the run reaches the configured task, commit, failure, or time limit.
-
-Default run limits unless the current task states otherwise:
-
-- `max_tasks_per_run: 5`
-- `max_commits_per_run: 5`
-- `max_consecutive_failures: 2`
-
-Incidental findings must not become executable tasks automatically. Record them as `FOLLOW_UP` unless they are directly required for the current task or explicitly promoted to `READY`.
-
-For cross-project tasks, validate and report each affected project separately. Do not write across multiple projects unless the queue item explicitly authorizes cross-project work.
-
-Final sustained-loop report must include:
-
-```text
-Result:
-Tasks completed:
-Tasks blocked:
-Tasks failed:
-Tasks skipped:
-Remaining READY tasks:
-Validation summary:
-Git delivery:
-Memory writes:
-Stop reason:
-Risks:
-Next step:
-```
+Ordinary local validation does not require a committed validation log, task
+ledger, handoff file, or queue update. Final sustained-work reporting must still
+state completed, blocked, failed, skipped, and remaining authorized tasks;
+validation; Git delivery; stop reason; risks; and the next step.
 
 ---
 
@@ -582,7 +409,7 @@ Approved documentation / memory / evidence surfaces include:
 - `docs/evidence/`
 - `ops/reports/`
 - `ops/receipts/`
-- `.agent_board/` for lightweight handoff / run-state display only, when allowed by the active repo policy.
+- ignored `.agent_board/` only for local ephemeral scratch; never as durable project memory or evidence.
 
 Write durable project memory only when it is:
 

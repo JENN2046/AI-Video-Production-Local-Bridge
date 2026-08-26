@@ -48,7 +48,10 @@ Migration `0011` preserves all `0010` Proposal, Proposal-event and Storyboard Pa
 
 Composite foreign keys bind every Proposal to the same Focus principal, project, target and generation. Parent proposals, superseded focuses and superseded Storyboard packages cannot cross project or principal boundaries. Update/delete triggers protect immutable evidence.
 
-Runtime startup still never migrates a persistent database. Jenn's activity database remains at separately accepted `workbench-v2-6` / `0010`; it requires a new explicit backup, isolated `0011` migration, read-only `db:check`, restore drill and manifest comparison before this candidate may be run against it.
+Runtime startup still never migrates a persistent database. At this candidate's
+recorded boundary, the activity database was separately accepted at
+`workbench-v2-6` / `0010` and the candidate required `0011`. That historical
+precondition is not current readiness; see [Current State](../CURRENT_STATE.md).
 
 ## Contract validation
 

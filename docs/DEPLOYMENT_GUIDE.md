@@ -1,31 +1,37 @@
 # Deployment Guide
 
-Status: `UNIFIED_TRANSPORT_AND_SCHEMA_PASS` remains historical, commit-scoped evidence. Canonical source now includes Production Mutation Authority, Durable FFmpeg Assembly, Final Review, immutable Export, exact Closeout, and External Execution Integrity and requires `workbench-v2-11` / ledger `0016`. The activity database's last explicitly accepted runtime boundary remains `workbench-v2-6` / ledger `0011`; current-main activity runtime acceptance is not established. This is descriptive and does not authorize migration, runtime transition, publication or other external changes.
+Status: active deployment and recovery guidance. Current operational acceptance
+and authorization state are owned by [Current State](../CURRENT_STATE.md). This
+guide does not authorize migration, runtime transition, publication, Provider
+execution, or other external changes.
 
 ## Current-main source / activity database boundary
 
-Canonical source now requires `workbench-v2-11` / ledger `0016`. The existing activity database remains at its last explicitly accepted boundary, `workbench-v2-6` / ledger `0011`; its separately authorized migrations included backup, isolated migration, read-only `db:check`, restore rehearsal and logical-manifest comparison. Do not start current main against that database as though the new source/runtime combination were already accepted. Runtime never migrates or rolls back the database automatically, and no migration gate enables a Provider. A separate `ACTIVITY_DB_0011_TO_0016_ADMISSION_AND_MIGRATION` operation and runtime acceptance are required before making a current-main compatibility claim.
+Canonical source requires `workbench-v2-11` / ledger `0016`. See
+[Current State](../CURRENT_STATE.md) for the accepted Activity Runtime boundary
+and last verified terminal state. Runtime never migrates or rolls back a database
+automatically, and no migration or runtime gate enables a Provider.
 
 ## Deployment layers
 
 Deploy each layer independently. A PASS in one layer does not promote the next.
 
 ```text
-Layer 1  Local Workbench (source requires 0016; activity DB last accepted at 0011; current-main runtime not accepted)
+Layer 1  Local Workbench (source contract 0016; current acceptance in CURRENT_STATE.md)
 Layer 2  Remote Readonly MCP App + Auth0 + signed Snapshot (manual publish/recovery boundary)
 Layer 3  Local Media Gateway + Cloudflare ingress (candidate; isolated MP4 fixture playback PASS, byte-range pending)
 Layer 4  Windows automatic startup (frozen)
 Layer 5  Real Provider canary (frozen)
 ```
 
-## Layer 1 — local Workbench (historical `0011` bounded path accepted; current-main pending)
+## Layer 1 — local Workbench
 
 Prerequisites:
 
 - Windows 10/11;
 - Node 22;
 - FFmpeg/FFprobe 8.1.2;
-- an activity database admitted for the checked-out source. Canonical current source requires `workbench-v2-11` / ledger `0016`; the existing `workbench-v2-6` / `0011` activity database has not completed that separate admission.
+- an activity database admitted for the checked-out source; canonical current source requires `workbench-v2-11` / ledger `0016`.
 
 Install and validate:
 
@@ -39,13 +45,23 @@ npm run preflight
 
 Run these commands only from the verified Git root that owns the accepted activity database; do not hard-code or infer a workspace path from a similarly named clone. `db:check -- --read-only` disables media-activation recovery. The default writable `db:check` belongs only to a separately authorized recovery procedure.
 
-The historical `0011` Unified activity evidence includes a bounded local start through `npm run windows:start`, manual Snapshot publishing, and the single-Owner Director path. It does not authorize starting current main against the activity database before the separate `0011 → 0016` admission and runtime-acceptance gate. For any later authorized start, preserve the same boundary: bind only `127.0.0.1:4181`, verify `/healthz` and `/readyz`, and keep real Provider flags false unless a separate canary is authorized. A prior bounded PASS does not authorize a persistent runtime, automatic publish or a new external change.
+Historical `0011` Unified activity evidence remains valid only for its recorded
+boundary. For any newly authorized start, bind only `127.0.0.1:4181`, verify
+`/healthz` and `/readyz`, and keep real Provider flags false unless a separate
+canary is authorized. A prior bounded PASS does not authorize a persistent
+runtime, automatic publish, or a new external change.
 
-Database upgrade is not part of normal startup. The activity database remains accepted at `0011`, while current source requires `0016`; this source/runtime gap is an admission boundary, not migration authorization. Any future migration requires service stop, backup, logical manifest, isolated migration, `db:check`, restore rehearsal, explicit activity-database authorization and separate runtime acceptance.
+Database upgrade is not part of normal startup. Any future migration requires
+service stop, backup, logical manifest, isolated migration, `db:check`, restore
+rehearsal, explicit activity-database authorization, and separate runtime
+acceptance.
 
 ## Layer 2A — historical Remote Readonly MCP App
 
-The accepted Auth0/ChatGPT/Render wiring is retained as historical legacy-Readonly evidence. The Layer 1 `0010` migration gate is historical, and the activity runtime's last accepted boundary is `0011`; a new legacy Snapshot export, renewal or recovery still needs its own bounded acceptance and must not weaken the Unified rollback boundary.
+The accepted Auth0/ChatGPT/Render wiring is retained as historical
+legacy-Readonly evidence. A new legacy Snapshot export, renewal, or recovery
+still needs its own bounded authorization and acceptance and must not weaken the
+Unified rollback boundary.
 
 The accepted topology is:
 

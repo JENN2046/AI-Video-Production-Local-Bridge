@@ -1,10 +1,17 @@
 # User Guide
 
-Status: `CODE_COMPLETE_ON_CURRENT_MAIN` is established by the complete isolated Workbench fixture and staged `0011 → 0016` migration/restore fixture on the exact acceptance PR head. Canonical source includes Production Mutation Authority, Durable FFmpeg Assembly, Final Review, immutable Export, exact Closeout, External Execution Integrity, and responsive/WCAG acceptance and requires `workbench-v2-11` / ledger `0016`; the activity database's last explicitly accepted runtime boundary remains `workbench-v2-6` / ledger `0011`, and current-main activity runtime acceptance is not established. `UNIFIED_TRANSPORT_AND_SCHEMA_PASS`, the owner-only `0.1.0-beta.5` / ledger `0008`, bounded Unified Director, and isolated Media Gateway MP4 fixture results remain historical evidence; real Provider, real-project, broader Media, Memory and multi-user gates remain separate. See the [Current-main Fixture Acceptance](../ops/reports/2026-08-25-workbench-current-main-fixture-acceptance.md).
+Status: active user guidance. Current operational state, completed gates,
+remaining gates, and authorization state are owned by
+[Current State](../CURRENT_STATE.md). Exact code/fixture evidence remains in the
+[Current-main Fixture Acceptance](../ops/reports/2026-08-25-workbench-current-main-fixture-acceptance.md).
 
 ## Current-main source / activity database boundary
 
-Canonical source requires `workbench-v2-11` / ledger `0016`. The activity database has passed only its last explicitly accepted `workbench-v2-6` / `0011` migration and bounded runtime acceptance; that evidence does not transfer to current main. Runtime startup never migrates a database automatically. A separately authorized `0011 → 0016` activity-database admission/migration and runtime acceptance are required before using the current source/runtime combination. This boundary does not authorize Provider execution, automatic Snapshot publishing, Memory saveback or production delivery.
+Canonical source requires `workbench-v2-11` / ledger `0016`. The accepted
+Activity Runtime boundary and terminal state are recorded in
+[Current State](../CURRENT_STATE.md). Runtime startup never migrates a database
+automatically. Runtime acceptance does not authorize Provider execution,
+automatic Snapshot publishing, Memory saveback, or production delivery.
 
 ## What Jenn can do today
 
@@ -12,7 +19,10 @@ Canonical source requires `workbench-v2-11` / ledger `0016`. The activity databa
 
 The Workbench is the human production surface for projects, SHOTs, Storyboard, Generation, Review, Delivery and system operations. It is also the only surface allowed to confirm paid Provider work or adopt production decisions.
 
-The following is the historically accepted `0011` local startup sequence. Do not run it from current main against the activity database until the separate `0011 → 0016` admission/migration and runtime-acceptance gate has passed. In any later authorized use, verify the activity database and keep `REAL_PROVIDER_ENABLED=false` unless a separate Provider authorization exists:
+The following is the historical local startup sequence. Before any newly
+authorized use, verify the accepted source/runtime boundary in
+[Current State](../CURRENT_STATE.md), verify the activity database, and keep
+`REAL_PROVIDER_ENABLED=false` unless a separate Provider authorization exists:
 
 ```powershell
 Set-Location "<verified repository root that owns the accepted data\app.sqlite>"

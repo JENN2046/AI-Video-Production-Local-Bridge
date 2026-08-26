@@ -1,16 +1,15 @@
 # Unified ChatGPT Workspace Transport Runbook
 
-Status: `HISTORICAL_EXTERNAL_TRANSPORT_AND_ACTIVITY_GOLDEN_PATH_PASS — retain this runbook as commit-scoped evidence and a future revalidation boundary. Current-main execution requires separate ledger 0016 admission and runtime acceptance.`
+Status: `HISTORICAL_EXTERNAL_TRANSPORT_AND_ACTIVITY_GOLDEN_PATH_PASS` — retain
+this runbook as commit-scoped evidence and a future revalidation boundary.
 
 This is the operational companion to the [Unified Workspace contract](../UNIFIED_CHATGPT_WORKSPACE_MCP.md). The bounded Auth0, Render, ChatGPT App, Bridge and activity-database stages described here have passed once. It remains the recovery and revalidation boundary; it does **not** authorize a new Auth0, Render, ChatGPT, DNS, database or Provider change.
 
-Current-state override: canonical source requires
-`workbench-v2-11` / ledger `0016`; the activity runtime's last accepted boundary
-remains `workbench-v2-6` / ledger `0011`. Earlier external PASS results remain
+Current operational state and the accepted Activity Runtime boundary are owned
+by [Current State](../../CURRENT_STATE.md). Earlier external PASS results remain
 bounded to their recorded commits, and the Bridge lifecycle narrative below is
-historical rather than current runtime status. Do not start or recover a Bridge
-against current main until the target database has separate `0011 → 0016` admission
-and the exact source/runtime combination is accepted.
+historical rather than current runtime status. This runbook does not authorize a
+new Bridge start, recovery, database operation, or external change.
 
 ## Target and rollback topology
 
@@ -56,7 +55,7 @@ Complete this stage before creating anything. Record only a sanitized result; ne
 3. Confirm legacy `/mcp` health, PRMD, challenge and Readonly login are unchanged.
 4. Confirm Render can host the additional path without replacing the legacy runtime during the acceptance window.
 5. Confirm ChatGPT can install one test App and that any callback it generates can be added as exactly one allowlist entry.
-6. Historical precondition: the activity database was ledger `0010` before its separately authorized `0011` migration. The activity runtime's last accepted boundary is ledger `0011`; do not rerun, downgrade or treat the historical precondition as a current readiness check.
+6. Historical precondition: the activity database was ledger `0010` before its separately authorized `0011` migration. Do not rerun, downgrade, or treat that historical precondition as a current readiness check; current acceptance is in [Current State](../../CURRENT_STATE.md).
 
 Any mismatch is a stop condition. Do not reuse the legacy resource, broaden callbacks, enable M2M, share a key or change database schema to make preflight pass.
 

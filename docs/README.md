@@ -4,21 +4,17 @@ This index separates current operating truth from historical implementation evid
 
 ## Current reconciliation
 
-This reconciliation follows canonical source at migration `0016` /
-`workbench-v2-11`. The complete isolated current-main fixture and staged
-`0011 → 0016` migration/restore fixture establish
-`CODE_COMPLETE_ON_CURRENT_MAIN`. That is code and fixture evidence, not a new
-activity-database, runtime, Snapshot, Provider or real-project delivery
-acceptance. The activity runtime remains accepted only at migration `0011` /
-`workbench-v2-6`.
+The aggregate current operational truth, completed gates, remaining gates, and
+authorization state are owned only by [Current State](../CURRENT_STATE.md).
+Exact execution boundaries remain in their dated reports; GitHub owns exact
+commit, PR, CI, and review facts.
 
-The current production priority is the real Workbench generation, review,
-regeneration, assembly, export and closeout path. Media Gateway, Memory,
-multi-user, automatic Snapshot, Windows logon startup and new OAuth experiments
-are not blockers for the Delivery State Foundation. Use the repository
-[README](../README.md) and [Delivery State Foundation Closeout](DELIVERY_STATE_FOUNDATION_CLOSEOUT_2026-08-21.md)
-for the current source/runtime boundary. [Historical State Snapshot](../CURRENT_STATE.md)
-is retained only as dated evidence and is not current-main operator authority.
+Use [Current State](../CURRENT_STATE.md) for the current production priority,
+source/runtime boundary, remaining gates, and authorization state. Component
+classification and frozen surfaces remain defined by
+[Product Scope Freeze](PRODUCT_SCOPE_FREEZE.md). The
+[Pre-Governance Accumulated State Snapshot](history/CURRENT_STATE_PRE_GOVERNANCE_2026-08-25.md)
+is retained only as historical evidence and is not current operator authority.
 
 S1 is now complete. [Product Scope Freeze](PRODUCT_SCOPE_FREEZE.md) is the
 single current statement of component classification, stage dependencies,
@@ -32,8 +28,9 @@ used as current authority after PR #128.
 
 | Need | Document |
 |---|---|
-| Understand current status and open gates | [Repository README](../README.md) and [Delivery State Foundation Closeout](DELIVERY_STATE_FOUNDATION_CLOSEOUT_2026-08-21.md) |
-| Audit the pre-Foundation historical snapshot | [Historical State Snapshot](../CURRENT_STATE.md) |
+| Understand current status and open gates | [Current State](../CURRENT_STATE.md) |
+| Understand state ownership and update policy | [State Surface Governance](STATE_SURFACE_GOVERNANCE.md) |
+| Audit the pre-governance accumulated snapshot | [Historical State Snapshot](history/CURRENT_STATE_PRE_GOVERNANCE_2026-08-25.md) |
 | Audit the accepted Delivery State Foundation source/runtime boundary | [Delivery State Foundation Closeout](DELIVERY_STATE_FOUNDATION_CLOSEOUT_2026-08-21.md) |
 | Audit the disposable `0011 → 0012` backup/migration/restore rehearsal | [Activity DB 0012 Foundation Rehearsal](ACTIVITY_DB_0012_FOUNDATION_REHEARSAL_2026-08-24.md) |
 | Audit Production Mutation Authority and its 11 deferred review threads | [Production Mutation Authority](PRODUCTION_MUTATION_AUTHORITY_2026-08-24.md) |

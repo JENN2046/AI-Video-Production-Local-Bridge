@@ -1,6 +1,9 @@
 # ChatGPT Director Human Approval
 
-Status: `CANDIDATE` — PR4 local Workbench implementation. The controlled Artifact import-receipt candidate requires `workbench-v2-6` / ledger `0011`; the activity database separately reached only `0010` on 2026-07-22. This does not deploy a Director runtime, configure OAuth or call a Provider.
+Status: `HISTORICAL_CANDIDATE` — PR4 local Workbench implementation. Its
+`workbench-v2-6` / `0010` / `0011` statements describe the recorded candidate
+boundary, not current state; see [Current State](../CURRENT_STATE.md). This does
+not deploy a Director runtime, configure OAuth, or call a Provider.
 
 ## Purpose
 
