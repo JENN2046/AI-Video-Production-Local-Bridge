@@ -9,42 +9,43 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: windows-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   NODE_VERSION: "22"
   FFMPEG_VERSION: "8.1.2"
 
 jobs:
-  quality-and-integration:
-    name: Quality and integration
+  quality-core:
+    name: Quality lane A - Core / DB / Provider
     runs-on: windows-latest
     timeout-minutes: 45
+    env:
+      CI_REUSE_BUILD: "true"
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-
       - name: Install pinned FFmpeg
         shell: pwsh
         run: |
           winget install --id Gyan.FFmpeg --version $env:FFMPEG_VERSION --exact --source winget --accept-package-agreements --accept-source-agreements --disable-interactivity
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
           $root = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
           $ffmpeg = Get-ChildItem -Path $root -Recurse -Filter ffmpeg.exe -ErrorAction Stop |
             Where-Object { $_.FullName -like "*Gyan.FFmpeg*" } |
             Select-Object -First 1
           if (-not $ffmpeg) { throw "Pinned FFmpeg executable was not found after installation." }
-
           $bin = $ffmpeg.Directory.FullName
           $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           "FFMPEG_PATH=$($ffmpeg.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "FFPROBE_PATH=$(Join-Path $bin 'ffprobe.exe')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
       - name: Verify runtime versions
         shell: pwsh
         run: |
@@ -52,84 +53,158 @@ jobs:
           npm --version
           ffmpeg -version | Select-Object -First 1
           ffprobe -version | Select-Object -First 1
-
       - name: Install dependencies
         run: npm ci
-
       - name: Typecheck
         run: npm run typecheck
-
       - name: Build
         run: npm run build
-
       - name: Test selection gate
         run: npm run test:selection-gate
-
       - name: Foundation and media boundary tests
         run: npm run test:foundation-boundaries
-
       - name: T2 IS2.5 hybrid admission tests
         run: npm run test:s3b:t2:is2.5
-
       - name: T2 IS3 lean admission surface tests
         run: npm run test:s3b:t2:is3
-
       - name: Provider and transfer safety tests
         run: npm run test:provider-boundaries
-
       - name: Workbench V2 domain tests
         run: npm run test:v2
-
       - name: Database and authorization governance tests
         run: npm run test:db
-
       - name: Workbench V2 UI tests
         run: npm run test:v2:ui
 
+  quality-webgpt:
+    name: Quality lane B - WebGPT / Director / Media
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CI_REUSE_BUILD: "true"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install pinned FFmpeg
+        shell: pwsh
+        run: |
+          winget install --id Gyan.FFmpeg --version $env:FFMPEG_VERSION --exact --source winget --accept-package-agreements --accept-source-agreements --disable-interactivity
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $root = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+          $ffmpeg = Get-ChildItem -Path $root -Recurse -Filter ffmpeg.exe -ErrorAction Stop |
+            Where-Object { $_.FullName -like "*Gyan.FFmpeg*" } |
+            Select-Object -First 1
+          if (-not $ffmpeg) { throw "Pinned FFmpeg executable was not found after installation." }
+          $bin = $ffmpeg.Directory.FullName
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "FFMPEG_PATH=$($ffmpeg.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "FFPROBE_PATH=$(Join-Path $bin 'ffprobe.exe')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Verify runtime versions
+        shell: pwsh
+        run: |
+          node --version
+          npm --version
+          ffmpeg -version | Select-Object -First 1
+          ffprobe -version | Select-Object -First 1
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
       - name: WebGPT V4 integration tests
         run: npm run test:webgpt:v4
-
       - name: WebGPT cloud projection tests
         run: npm run test:webgpt:cloud
-
       - name: WebGPT MCP App tests
         run: npm run test:webgpt:app
-
       - name: ChatGPT Director domain tests
         run: npm run test:webgpt:director
-
       - name: Unified ChatGPT Workspace MCP contract tests
         run: npm run test:webgpt:workspace
-
       - name: Readonly media gateway contract tests
         run: npm run test:webgpt:media-gateway
-
       - name: Readonly media Apps smoke
         run: npm run smoke:webgpt:media
-
       - name: WebGPT Apps smoke
         run: npm run smoke:webgpt:app
-
-      - name: H1 Workbench tests
-        run: npm run test:h1
-
       - name: WebGPT legacy boundary tests
         run: npm run test:webgpt:legacy-boundaries
 
+  quality-runtime:
+    name: Quality lane C - Runtime / Governance / Audit
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CI_REUSE_BUILD: "true"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install pinned FFmpeg
+        shell: pwsh
+        run: |
+          winget install --id Gyan.FFmpeg --version $env:FFMPEG_VERSION --exact --source winget --accept-package-agreements --accept-source-agreements --disable-interactivity
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $root = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+          $ffmpeg = Get-ChildItem -Path $root -Recurse -Filter ffmpeg.exe -ErrorAction Stop |
+            Where-Object { $_.FullName -like "*Gyan.FFmpeg*" } |
+            Select-Object -First 1
+          if (-not $ffmpeg) { throw "Pinned FFmpeg executable was not found after installation." }
+          $bin = $ffmpeg.Directory.FullName
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "FFMPEG_PATH=$($ffmpeg.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "FFPROBE_PATH=$(Join-Path $bin 'ffprobe.exe')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Verify runtime versions
+        shell: pwsh
+        run: |
+          node --version
+          npm --version
+          ffmpeg -version | Select-Object -First 1
+          ffprobe -version | Select-Object -First 1
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
+      - name: H1 Workbench tests
+        run: npm run test:h1
       - name: Memory safety tests
         run: npm run test:memory
-
       - name: Source audit safety tests
         run: npm run test:source-audit
-
       - name: Windows managed runtime controls
         run: npm run test:windows-runtime
-
       - name: Legacy archive integrity
         run: npm run test:legacy
-
       - name: Secret scan
         run: npm run secret:scan
+
+  quality-and-integration:
+    name: Quality and integration
+    if: ${{ always() }}
+    needs:
+      - quality-core
+      - quality-webgpt
+      - quality-runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require all quality lanes
+        env:
+          LANE_A_RESULT: ${{ needs.quality-core.result }}
+          LANE_B_RESULT: ${{ needs.quality-webgpt.result }}
+          LANE_C_RESULT: ${{ needs.quality-runtime.result }}
+        run: |
+          test "$LANE_A_RESULT" = "success"
+          test "$LANE_B_RESULT" = "success"
+          test "$LANE_C_RESULT" = "success"
 
   browser-smoke:
     name: Browser smoke
@@ -138,22 +213,17 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-
       - name: Install dependencies
         run: npm ci
-
       - name: Install Playwright Chromium
         run: npx playwright install chromium
-
       - name: Run browser smoke tests
         run: npm run test:v2:browser
-
       - name: Upload browser failure evidence
         if: failure()
         uses: actions/upload-artifact@v4
