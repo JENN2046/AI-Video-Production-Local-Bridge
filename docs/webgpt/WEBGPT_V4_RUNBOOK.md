@@ -35,7 +35,7 @@ npm run start:webgpt
 
 ## Owner-only 日常发布（历史 legacy 流程；非 Unified 主入口）
 
-Human Workbench 的“系统 → 只读 App 发布”曾是接受的 Jenn 日常入口。以下 legacy 步骤保留为回滚参考；其 ledger `0011` runtime evidence 只表示当时 commit 的历史边界，不能自动转移到后来版本。当前 Activity Runtime authority 一律引用 [Current State](../../CURRENT_STATE.md)，本 runbook 不再复制当前 migration/runtime status。以下步骤不能替代当前 Unified profile 的有界发布/恢复确认，不能迁移活动库，也不能绕过任何外部授权：
+Human Workbench 的“系统 → 只读 App 发布”曾是接受的 Jenn 日常入口。以下 legacy 步骤保留为回滚参考；其 ledger `0011` runtime evidence 只表示当时 commit 的历史边界，不能自动转移到后来版本。当前 Activity Runtime authority 一律引用 [Current State](../../CURRENT_STATE.md)，但 Activity Runtime acceptance 不建立这个 legacy publisher 的 acceptance。默认 `系统 → 只读 App 发布` 及其 `data/webgpt/publisher/profile.json` 仍属于 legacy rollback surface；current-source publish/recovery acceptance 仍 pending，当前不可作为默认发布入口。Publisher-specific 当前边界一律引用 [Readonly MCP App Delivery Runbook](READONLY_MCP_APP_DELIVERY_RUNBOOK.md)；本 runbook 不再复制当前 migration number、Activity Runtime acceptance details 或 current next gate。以下步骤不能替代当前 Unified profile 的有界发布/恢复确认，不能迁移活动库，也不能绕过任何外部授权：
 
 1. 使用 `windows:start` 启动 Workbench，并确认 `windows:status` 为 ready。
 2. 打开“系统 → 只读 App 发布”，先读取低披露状态。
