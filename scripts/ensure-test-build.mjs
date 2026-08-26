@@ -22,11 +22,13 @@ if (reuseCiBuild) {
   process.exit(0);
 }
 
-const npm = process.argv[3] ?? (process.platform === "win32" ? "npm.cmd" : "npm");
 const buildScript = mode === "full" ? "build" : "build:server";
-const result = spawnSync(npm, ["run", buildScript], {
-  shell: process.platform === "win32",
-  stdio: "inherit"
-});
+const npmCli = process.env.npm_execpath;
+if (!npmCli || !existsSync(npmCli)) {
+  console.error("npm_execpath is unavailable; run this helper from an npm script.");
+  process.exit(1);
+}
+
+const result = spawnSync(process.execPath, [npmCli, "run", buildScript], { stdio: "inherit" });
 if (result.error) console.error(result.error.message);
 process.exit(result.status ?? 1);

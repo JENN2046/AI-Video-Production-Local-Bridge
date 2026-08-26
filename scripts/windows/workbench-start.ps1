@@ -52,7 +52,11 @@ try {
   try {
     & $runtime.NpmPath run preflight
     if ($LASTEXITCODE -ne 0) { throw "WORKBENCH_PREFLIGHT_FAILED" }
-    & $runtime.NodePath scripts/ensure-test-build.mjs full $runtime.NpmPath
+    if ($env:CI_REUSE_BUILD -eq "true") {
+      & $runtime.NodePath scripts/ensure-test-build.mjs full
+    } else {
+      & $runtime.NpmPath run build
+    }
     if ($LASTEXITCODE -ne 0) { throw "WORKBENCH_BUILD_FAILED" }
   } finally {
     Pop-Location
