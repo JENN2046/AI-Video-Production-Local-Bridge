@@ -79,7 +79,7 @@ try {
     $env:PATH = "$(Split-Path -Parent $runtime.NodePath);$priorPath"
     Push-Location $script:DirectorBridgeWorkspaceRoot
     try {
-      & $runtime.NpmPath run build:server *> $null
+      & $runtime.NodePath scripts/ensure-test-build.mjs server $runtime.NpmPath *> $null
       if ($LASTEXITCODE -ne 0) { throw "DIRECTOR_BRIDGE_BUILD_FAILED" }
     } finally {
       Pop-Location
